@@ -190,6 +190,24 @@ public final class FeagiNativeBindings {
     public static native int feagiConfigSetRegistrationRetries(long cfgHandle, int registrationRetries);
 
     /**
+     * Set the required agent descriptor fields for registration.
+     */
+    public static native int feagiConfigSetAgentDescriptor(
+            long cfgHandle,
+            String manufacturer,
+            String agentName,
+            int agentVersion
+    );
+
+    /**
+     * Set the required auth token as base64 (must decode to 32 bytes).
+     */
+    public static native int feagiConfigSetAuthTokenBase64(
+            long cfgHandle,
+            String authTokenBase64
+    );
+
+    /**
      * Set retry backoff in milliseconds.
      */
     public static native int feagiConfigSetRetryBackoffMs(long cfgHandle, long retryBackoffMs);
