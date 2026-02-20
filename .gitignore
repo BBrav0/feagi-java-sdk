@@ -16,6 +16,7 @@ Thumbs.db
 *.log
 *--temp.*
 
+# AI context file — per-developer, not tracked
 CLAUDE.md
 /python-sdk-reference/
 

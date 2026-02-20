@@ -34,6 +34,9 @@ public final class FeagiDiscovery {
 
     private static final Logger LOG = Logger.getLogger(FeagiDiscovery.class.getName());
 
+    private static final boolean IS_WINDOWS =
+            System.getProperty("os.name", "").toLowerCase().contains("win");
+
     /** Binary name for the current platform. */
     public static final String BINARY_NAME = isWindows() ? "feagi.exe" : "feagi";
 
@@ -149,7 +152,16 @@ public final class FeagiDiscovery {
      * Step 3 — scan the {@code PATH} environment variable.
      */
     static Optional<Path> findOnPath() {
-        String pathEnv = System.getenv("PATH");
+        return findOnPath(System.getenv("PATH"));
+    }
+
+    /**
+     * Scan the given PATH string for the FEAGI binary.
+     *
+     * @param pathEnv a {@link File#pathSeparator}-delimited list of directories
+     * @return the resolved path, or empty if not found
+     */
+    static Optional<Path> findOnPath(String pathEnv) {
         if (pathEnv == null || pathEnv.isEmpty()) return Optional.empty();
 
         for (String dir : pathEnv.split(File.pathSeparator)) {
@@ -169,9 +181,9 @@ public final class FeagiDiscovery {
         if (isWindows()) return Optional.empty();
 
         List<Path> locations = List.of(
-                Path.of("/usr/local/bin/feagi"),
-                Path.of("/usr/bin/feagi"),
-                Path.of(System.getProperty("user.home"), ".cargo", "bin", "feagi")
+                Path.of("/usr/local/bin").resolve(BINARY_NAME),
+                Path.of("/usr/bin").resolve(BINARY_NAME),
+                Path.of(System.getProperty("user.home")).resolve(".cargo").resolve("bin").resolve(BINARY_NAME)
         );
 
         for (Path candidate : locations) {
@@ -244,6 +256,6 @@ public final class FeagiDiscovery {
 
     /** Return {@code true} if the current OS is Windows. */
     static boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase().contains("win");
+        return IS_WINDOWS;
     }
 }
