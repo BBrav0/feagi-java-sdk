@@ -19,7 +19,7 @@ Thumbs.db
 # AI context file — per-developer, not tracked
 /CLAUDE.md
 
-# Main Python SDK for reference 
+# Main Python SDK for reference
 /python-sdk-reference/
 
 # Verification artifacts (jshell scripts, logs)

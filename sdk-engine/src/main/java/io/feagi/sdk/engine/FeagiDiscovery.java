@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Logger;
-import java.util.stream.Stream;
+import java.util.ArrayList;
 
 /**
  * Discovers the FEAGI engine executable on the local system.
@@ -183,20 +183,22 @@ public final class FeagiDiscovery {
     static Optional<Path> findAtCommonLocations() {
         if (isWindows()) return Optional.empty();
 
-        Stream.Builder<Path> candidates = Stream.builder();
-        candidates.accept(Path.of("/usr/local/bin").resolve(BINARY_NAME));
-        candidates.accept(Path.of("/usr/bin").resolve(BINARY_NAME));
-        candidates.accept(Path.of("/opt/homebrew/bin").resolve(BINARY_NAME));
+        List<Path> candidates = new ArrayList<>(4);
+        candidates.add(Path.of("/usr/local/bin").resolve(BINARY_NAME));
+        candidates.add(Path.of("/usr/bin").resolve(BINARY_NAME));
+        candidates.add(Path.of("/opt/homebrew/bin").resolve(BINARY_NAME));
         String home = System.getProperty("user.home");
         if (home != null) {
-            candidates.accept(Path.of(home, ".cargo", "bin", BINARY_NAME));
+            candidates.add(Path.of(home, ".cargo", "bin", BINARY_NAME));
         }
 
-        Optional<Path> found = candidates.build()
-                .filter(FeagiDiscovery::isUsable)
-                .findFirst();
-        found.ifPresent(p -> LOG.info(() -> "Found FEAGI at: " + p));
-        return found;
+        for (Path candidate : candidates) {
+            if (isUsable(candidate)) {
+                LOG.info(() -> "Found FEAGI at: " + candidate);
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
     }
 
     // ------------------------------------------------------------------
@@ -259,6 +261,9 @@ public final class FeagiDiscovery {
      * @return platform directory string, or empty if unsupported
      */
     static Optional<String> platformDir(String osName, String osArch) {
+        Objects.requireNonNull(osName, "osName");
+        Objects.requireNonNull(osArch, "osArch");
+
         String osPrefix;
         if (osName.contains("linux"))      osPrefix = "linux";
         else if (osName.contains("mac"))   osPrefix = "darwin";
