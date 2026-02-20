@@ -15,6 +15,4 @@ sourceSets {
 }
 
 dependencies {
-    // TODO: needed once FeagiEngine (Issue 2) references sdk-core types (FeagiSdkException, etc.)
-    implementation(project(":sdk-core"))
 }

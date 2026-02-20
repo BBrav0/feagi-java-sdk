@@ -8,6 +8,7 @@ package io.feagi.sdk.engine;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -62,12 +63,15 @@ class FeagiDiscoveryTest {
     }
 
     /**
-     * The no-arg discover() must return a non-null Optional (never throw).
+     * The no-arg discover() must never throw and always returns a valid Optional.
+     * If it finds something, that path must exist.
      */
     @Test
-    void testDiscoverReturnsOptional() {
+    void testDiscoverDoesNotThrow() {
         Optional<Path> result = FeagiDiscovery.discover();
         assertNotNull(result);
+        result.ifPresent(p -> assertTrue(Files.exists(p),
+                "Discovered path should exist: " + p));
     }
 
     /**
@@ -128,13 +132,13 @@ class FeagiDiscoveryTest {
     }
 
     /**
-     * sdkLocation() should return a non-null path when running from classes.
+     * sdkLocation() should return a present Optional when running from classes.
      */
     @Test
     void testSdkLocationResolvable() {
-        Path loc = FeagiDiscovery.sdkLocation();
-        assertNotNull(loc, "sdkLocation() should resolve when running from classes directory");
-        assertTrue(Files.exists(loc));
+        Optional<Path> loc = FeagiDiscovery.sdkLocation();
+        assertTrue(loc.isPresent(), "sdkLocation() should resolve when running from classes directory");
+        assertTrue(Files.exists(loc.get()));
     }
 
     // ------------------------------------------------------------------
@@ -182,14 +186,78 @@ class FeagiDiscoveryTest {
     /**
      * On Unix, findAtCommonLocations returns a non-null Optional.
      * Cannot assert empty because FEAGI may legitimately be installed.
+     * If it finds something, that path must exist.
      */
     @Test
     void testFindAtCommonLocationsReturnsOptionalOnUnix() {
         assumeTrue(!FeagiDiscovery.isWindows(), "Skipping — only runs on Unix");
-        // On a typical dev machine without FEAGI installed system-wide,
-        // none of /usr/local/bin/feagi, /usr/bin/feagi, ~/.cargo/bin/feagi exist.
-        // If FEAGI happens to be installed, this test will still pass (it just finds it).
         Optional<Path> result = FeagiDiscovery.findAtCommonLocations();
         assertNotNull(result);
+        result.ifPresent(p -> assertTrue(Files.exists(p),
+                "Discovered path should exist: " + p));
+    }
+
+    // ------------------------------------------------------------------
+    // findBundledBinary tests
+    // ------------------------------------------------------------------
+
+    /**
+     * findBundledBinary should discover a binary in the expected directory structure.
+     */
+    @Test
+    void testFindBundledBinaryFound(@TempDir Path tmp) throws IOException {
+        String platform = FeagiDiscovery.platformDir();
+        assumeTrue(platform != null, "Skipping on unsupported platform");
+
+        Path binDir = tmp.resolve("bin").resolve(platform);
+        Files.createDirectories(binDir);
+        Path binary = binDir.resolve(FeagiDiscovery.BINARY_NAME);
+        Files.createFile(binary);
+        if (!FeagiDiscovery.isWindows()) {
+            binary.toFile().setExecutable(true);
+        }
+
+        Optional<Path> result = FeagiDiscovery.findBundledBinary(tmp);
+        assertTrue(result.isPresent(), "findBundledBinary should find the binary");
+        assertEquals(binary, result.get());
+    }
+
+    /**
+     * findBundledBinary should return empty when the binary does not exist.
+     */
+    @Test
+    void testFindBundledBinaryMissing(@TempDir Path tmp) {
+        Optional<Path> result = FeagiDiscovery.findBundledBinary(tmp);
+        assertFalse(result.isPresent());
+    }
+
+    // ------------------------------------------------------------------
+    // platformDir cross-platform tests
+    // ------------------------------------------------------------------
+
+    /**
+     * Exhaustive test of platformDir mapping logic across all supported combinations.
+     * Uses the parameterized overload so these tests run on any CI platform.
+     */
+    @Test
+    void testPlatformDirAllCombinations() {
+        // Linux
+        assertEquals("linux-x86_64", FeagiDiscovery.platformDir("linux", "amd64"));
+        assertEquals("linux-x86_64", FeagiDiscovery.platformDir("linux", "x86_64"));
+        assertEquals("linux-aarch64", FeagiDiscovery.platformDir("linux", "aarch64"));
+        assertEquals("linux-aarch64", FeagiDiscovery.platformDir("linux", "arm64"));
+        // macOS
+        assertEquals("darwin-x86_64", FeagiDiscovery.platformDir("mac os x", "amd64"));
+        assertEquals("darwin-x86_64", FeagiDiscovery.platformDir("mac os x", "x86_64"));
+        assertEquals("darwin-aarch64", FeagiDiscovery.platformDir("mac os x", "aarch64"));
+        assertEquals("darwin-aarch64", FeagiDiscovery.platformDir("mac os x", "arm64"));
+        // Windows
+        assertEquals("windows-x86_64", FeagiDiscovery.platformDir("windows 11", "amd64"));
+        assertEquals("windows-x86_64", FeagiDiscovery.platformDir("windows 10", "x86_64"));
+        assertEquals("windows-aarch64", FeagiDiscovery.platformDir("windows 11", "aarch64"));
+        // Unsupported
+        assertNull(FeagiDiscovery.platformDir("linux", "riscv64"));
+        assertNull(FeagiDiscovery.platformDir("freebsd", "amd64"));
+        assertNull(FeagiDiscovery.platformDir("sunos", "sparc"));
     }
 }

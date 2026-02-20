@@ -81,8 +81,10 @@ public final class FeagiDiscovery {
      * @return the resolved path, or empty if not found
      */
     public static Optional<Path> discover() {
-        Optional<Path> result = findBundledBinary()
-                .or(FeagiDiscovery::findDevBuild)
+        Optional<Path> sdkRoot = sdkLocation();
+
+        Optional<Path> result = sdkRoot.flatMap(FeagiDiscovery::findBundledBinary)
+                .or(() -> sdkRoot.flatMap(FeagiDiscovery::findDevBuild))
                 .or(FeagiDiscovery::findOnPath)
                 .or(FeagiDiscovery::findAtCommonLocations);
 
@@ -99,16 +101,16 @@ public final class FeagiDiscovery {
     /**
      * Step 1 — look for a binary bundled alongside the SDK jar.
      *
-     * <p>Expected layout: {@code {jarDir}/bin/{platformDir}/feagi}
+     * <p>Expected layout: {@code {sdkRoot}/bin/{platformDir}/feagi}
+     *
+     * @param sdkRoot the directory containing the SDK jar or classes
+     * @return the resolved path, or empty if not found
      */
-    static Optional<Path> findBundledBinary() {
+    static Optional<Path> findBundledBinary(Path sdkRoot) {
         String platformDir = platformDir();
         if (platformDir == null) return Optional.empty();
 
-        Path jarDir = sdkLocation();
-        if (jarDir == null) return Optional.empty();
-
-        Path candidate = jarDir.resolve("bin").resolve(platformDir).resolve(BINARY_NAME);
+        Path candidate = sdkRoot.resolve("bin").resolve(platformDir).resolve(BINARY_NAME);
         if (isUsable(candidate)) {
             LOG.info(() -> "Found bundled FEAGI binary: " + candidate);
             return Optional.of(candidate);
@@ -127,11 +129,11 @@ public final class FeagiDiscovery {
      * {@code build/classes/java/main}), the parent will not be the project root
      * and this step will safely return empty, falling through to PATH discovery.
      * This step is most effective when running from a packaged jar.
+     *
+     * @param sdkRoot the directory containing the SDK jar or classes
+     * @return the resolved path, or empty if not found
      */
-    static Optional<Path> findDevBuild() {
-        Path sdkRoot = sdkLocation();
-        if (sdkRoot == null) return Optional.empty();
-
+    static Optional<Path> findDevBuild(Path sdkRoot) {
         Path parent = sdkRoot.getParent();
         if (parent == null) return Optional.empty();
 
@@ -219,21 +221,21 @@ public final class FeagiDiscovery {
     /**
      * Resolve the directory containing the SDK jar or classes.
      *
-     * @return directory path, or {@code null} if it cannot be determined
+     * @return directory path, or empty if it cannot be determined
      */
-    static Path sdkLocation() {
+    static Optional<Path> sdkLocation() {
         try {
             var source = FeagiDiscovery.class.getProtectionDomain().getCodeSource();
-            if (source == null) return null;
+            if (source == null) return Optional.empty();
             var loc = source.getLocation();
-            if (loc == null) return null;
+            if (loc == null) return Optional.empty();
             Path location = Path.of(loc.toURI());
             // If running from a jar, location is the jar file — return its parent.
             // If running from classes dir, location is the dir itself.
-            return Files.isRegularFile(location) ? location.getParent() : location;
+            return Optional.of(Files.isRegularFile(location) ? location.getParent() : location);
         } catch (URISyntaxException | SecurityException e) {
             LOG.fine(() -> "Could not determine SDK location: " + e.getMessage());
-            return null;
+            return Optional.empty();
         }
     }
 
@@ -244,22 +246,35 @@ public final class FeagiDiscovery {
      * <p>Examples: {@code linux-x86_64}, {@code darwin-aarch64}, {@code windows-x86_64}.
      */
     public static String platformDir() {
+        return platformDir(OS_NAME, OS_ARCH);
+    }
+
+    /**
+     * Return the platform directory name for the given OS and architecture strings.
+     *
+     * <p>Package-private overload for cross-platform testing.
+     *
+     * @param osName lower-cased OS name (e.g., {@code "linux"}, {@code "mac os x"}, {@code "windows 11"})
+     * @param osArch lower-cased architecture (e.g., {@code "amd64"}, {@code "aarch64"})
+     * @return platform directory string, or {@code null} if unsupported
+     */
+    static String platformDir(String osName, String osArch) {
         String osPrefix;
-        if (OS_NAME.contains("linux"))      osPrefix = "linux";
-        else if (OS_NAME.contains("mac"))   osPrefix = "darwin";
-        else if (OS_NAME.contains("win"))   osPrefix = "windows";
+        if (osName.contains("linux"))      osPrefix = "linux";
+        else if (osName.contains("mac"))   osPrefix = "darwin";
+        else if (osName.contains("win"))   osPrefix = "windows";
         else return null;
 
         String archSuffix;
-        if (OS_ARCH.equals("amd64") || OS_ARCH.equals("x86_64"))       archSuffix = "x86_64";
-        else if (OS_ARCH.equals("aarch64") || OS_ARCH.equals("arm64")) archSuffix = "aarch64";
+        if (osArch.equals("amd64") || osArch.equals("x86_64"))       archSuffix = "x86_64";
+        else if (osArch.equals("aarch64") || osArch.equals("arm64")) archSuffix = "aarch64";
         else return null;
 
         return osPrefix + "-" + archSuffix;
     }
 
     /** Return {@code true} if the current OS is Windows. */
-    static boolean isWindows() {
+    public static boolean isWindows() {
         return IS_WINDOWS;
     }
 }
