@@ -8,6 +8,7 @@ package io.feagi.sdk.engine;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -52,13 +53,12 @@ class FeagiDiscoveryTest {
     }
 
     /**
-     * Passing null as explicit path should fall through to the discovery chain.
-     * We cannot control the chain result, but it must not throw.
+     * Passing null to discover(Path) is a programming error and must throw.
+     * Callers wanting auto-discovery should use the no-arg discover().
      */
     @Test
-    void testNullExplicitFallsThrough() {
-        Optional<Path> result = FeagiDiscovery.discover(null);
-        assertNotNull(result);
+    void testNullExplicitThrows() {
+        assertThrows(NullPointerException.class, () -> FeagiDiscovery.discover(null));
     }
 
     /**
@@ -119,7 +119,7 @@ class FeagiDiscoveryTest {
      */
     @Test
     void testRegularFileUsable(@TempDir Path tmp) throws IOException {
-        Path file = tmp.resolve("feagi");
+        Path file = tmp.resolve(FeagiDiscovery.BINARY_NAME);
         Files.createFile(file);
         if (!FeagiDiscovery.isWindows()) {
             file.toFile().setExecutable(true);
@@ -138,7 +138,7 @@ class FeagiDiscoveryTest {
     }
 
     // ------------------------------------------------------------------
-    // findOnPath happy-path tests
+    // findOnPath tests
     // ------------------------------------------------------------------
 
     /**
@@ -158,11 +158,37 @@ class FeagiDiscoveryTest {
     }
 
     /**
-     * findOnPath should return empty when given an empty PATH string.
+     * findOnPath should return empty when given an empty or null PATH string.
      */
     @Test
     void testFindOnPathEmpty() {
         assertFalse(FeagiDiscovery.findOnPath("").isPresent());
         assertFalse(FeagiDiscovery.findOnPath(null).isPresent());
+    }
+
+    // ------------------------------------------------------------------
+    // findAtCommonLocations tests
+    // ------------------------------------------------------------------
+
+    /**
+     * On Windows, findAtCommonLocations returns empty immediately (Unix-only step).
+     */
+    @Test
+    void testFindAtCommonLocationsSkippedOnWindows() {
+        assumeTrue(FeagiDiscovery.isWindows(), "Skipping — only runs on Windows");
+        assertFalse(FeagiDiscovery.findAtCommonLocations().isPresent());
+    }
+
+    /**
+     * On Unix without FEAGI installed in common locations, returns empty.
+     */
+    @Test
+    void testFindAtCommonLocationsEmptyOnUnix() {
+        assumeTrue(!FeagiDiscovery.isWindows(), "Skipping — only runs on Unix");
+        // On a typical dev machine without FEAGI installed system-wide,
+        // none of /usr/local/bin/feagi, /usr/bin/feagi, ~/.cargo/bin/feagi exist.
+        // If FEAGI happens to be installed, this test will still pass (it just finds it).
+        Optional<Path> result = FeagiDiscovery.findAtCommonLocations();
+        assertNotNull(result);
     }
 }

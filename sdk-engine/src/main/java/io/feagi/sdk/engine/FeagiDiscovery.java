@@ -10,6 +10,7 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Logger;
 
@@ -47,24 +48,25 @@ public final class FeagiDiscovery {
     // ------------------------------------------------------------------
 
     /**
-     * Discover the FEAGI executable with an optional explicit override.
+     * Validate an explicit FEAGI executable path.
      *
-     * <p>If {@code explicitPath} is non-null the method validates it and returns it directly
-     * without searching. Pass {@code null} to use the full discovery chain.
+     * <p>This method does <b>not</b> fall through to the discovery chain — use the no-arg
+     * {@link #discover()} for auto-discovery. Passing {@code null} is a programming error
+     * and throws immediately, consistent with the project's fail-fast convention.
      *
-     * @param explicitPath caller-supplied path to the FEAGI binary, or {@code null}
-     * @return the resolved path, or empty if not found
+     * @param explicitPath caller-supplied path to the FEAGI binary (must not be {@code null})
+     * @return the path if usable, or empty if it does not exist or is not executable
+     * @throws NullPointerException if {@code explicitPath} is {@code null}
      */
     public static Optional<Path> discover(Path explicitPath) {
-        if (explicitPath != null) {
-            if (isUsable(explicitPath)) {
-                LOG.info(() -> "Using explicit FEAGI path: " + explicitPath);
-                return Optional.of(explicitPath);
-            }
-            LOG.warning(() -> "Explicit FEAGI path not usable: " + explicitPath);
-            return Optional.empty();
+        Objects.requireNonNull(explicitPath,
+                "explicitPath must not be null; use discover() for auto-discovery");
+        if (isUsable(explicitPath)) {
+            LOG.info(() -> "Using explicit FEAGI path: " + explicitPath);
+            return Optional.of(explicitPath);
         }
-        return discover();
+        LOG.warning(() -> "Explicit FEAGI path not usable: " + explicitPath);
+        return Optional.empty();
     }
 
     /**
@@ -122,21 +124,25 @@ public final class FeagiDiscovery {
      *
      * <p>Checks {@code feagi/target/release}, {@code feagi/target/debug},
      * {@code feagi-core/target/release}, and {@code feagi-core/target/debug}
-     * relative to the SDK root.
+     * relative to the parent of the SDK location.
+     *
+     * <p>Note: when running from a Gradle classes directory (e.g.,
+     * {@code build/classes/java/main}), the parent will not be the project root
+     * and this step will safely return empty, falling through to PATH discovery.
+     * This step is most effective when running from a packaged jar.
      */
     static Optional<Path> findDevBuild() {
         Path sdkRoot = sdkLocation();
         if (sdkRoot == null) return Optional.empty();
 
-        // Go up one level from the jar/classes directory to the project root
-        Path projectRoot = sdkRoot.getParent();
-        if (projectRoot == null) return Optional.empty();
+        Path parent = sdkRoot.getParent();
+        if (parent == null) return Optional.empty();
 
         List<Path> candidates = List.of(
-                projectRoot.resolve("feagi").resolve("target").resolve("release").resolve(BINARY_NAME),
-                projectRoot.resolve("feagi").resolve("target").resolve("debug").resolve(BINARY_NAME),
-                projectRoot.resolve("feagi-core").resolve("target").resolve("release").resolve(BINARY_NAME),
-                projectRoot.resolve("feagi-core").resolve("target").resolve("debug").resolve(BINARY_NAME)
+                parent.resolve("feagi").resolve("target").resolve("release").resolve(BINARY_NAME),
+                parent.resolve("feagi").resolve("target").resolve("debug").resolve(BINARY_NAME),
+                parent.resolve("feagi-core").resolve("target").resolve("release").resolve(BINARY_NAME),
+                parent.resolve("feagi-core").resolve("target").resolve("debug").resolve(BINARY_NAME)
         );
 
         for (Path candidate : candidates) {
@@ -167,7 +173,7 @@ public final class FeagiDiscovery {
         for (String dir : pathEnv.split(File.pathSeparator)) {
             Path candidate = Path.of(dir).resolve(BINARY_NAME);
             if (isUsable(candidate)) {
-                LOG.info("Found FEAGI in system PATH");
+                LOG.info(() -> "Found FEAGI in system PATH: " + candidate);
                 return Optional.of(candidate);
             }
         }
@@ -220,7 +226,9 @@ public final class FeagiDiscovery {
         try {
             var source = FeagiDiscovery.class.getProtectionDomain().getCodeSource();
             if (source == null) return null;
-            Path location = Path.of(source.getLocation().toURI());
+            var loc = source.getLocation();
+            if (loc == null) return null;
+            Path location = Path.of(loc.toURI());
             // If running from a jar, location is the jar file — return its parent.
             // If running from classes dir, location is the dir itself.
             return Files.isRegularFile(location) ? location.getParent() : location;
