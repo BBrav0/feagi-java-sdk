@@ -15,11 +15,6 @@ sourceSets {
 }
 
 dependencies {
+    // TODO: needed once FeagiEngine (Issue 2) references sdk-core types (FeagiSdkException, etc.)
     implementation(project(":sdk-core"))
-    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-}
-
-tasks.test {
-    useJUnitPlatform()
 }

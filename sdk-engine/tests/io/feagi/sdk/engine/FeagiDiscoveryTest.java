@@ -180,10 +180,11 @@ class FeagiDiscoveryTest {
     }
 
     /**
-     * On Unix without FEAGI installed in common locations, returns empty.
+     * On Unix, findAtCommonLocations returns a non-null Optional.
+     * Cannot assert empty because FEAGI may legitimately be installed.
      */
     @Test
-    void testFindAtCommonLocationsEmptyOnUnix() {
+    void testFindAtCommonLocationsReturnsOptionalOnUnix() {
         assumeTrue(!FeagiDiscovery.isWindows(), "Skipping — only runs on Unix");
         // On a typical dev machine without FEAGI installed system-wide,
         // none of /usr/local/bin/feagi, /usr/bin/feagi, ~/.cargo/bin/feagi exist.

@@ -9,6 +9,7 @@ import java.io.File;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -35,8 +36,11 @@ public final class FeagiDiscovery {
 
     private static final Logger LOG = Logger.getLogger(FeagiDiscovery.class.getName());
 
-    private static final boolean IS_WINDOWS =
-            System.getProperty("os.name", "").toLowerCase().contains("win");
+    private static final String OS_NAME =
+            System.getProperty("os.name", "").toLowerCase();
+    private static final String OS_ARCH =
+            System.getProperty("os.arch", "").toLowerCase();
+    private static final boolean IS_WINDOWS = OS_NAME.contains("win");
 
     /** Binary name for the current platform. */
     public static final String BINARY_NAME = isWindows() ? "feagi.exe" : "feagi";
@@ -77,22 +81,15 @@ public final class FeagiDiscovery {
      * @return the resolved path, or empty if not found
      */
     public static Optional<Path> discover() {
-        Optional<Path> result;
+        Optional<Path> result = findBundledBinary()
+                .or(FeagiDiscovery::findDevBuild)
+                .or(FeagiDiscovery::findOnPath)
+                .or(FeagiDiscovery::findAtCommonLocations);
 
-        result = findBundledBinary();
-        if (result.isPresent()) return result;
-
-        result = findDevBuild();
-        if (result.isPresent()) return result;
-
-        result = findOnPath();
-        if (result.isPresent()) return result;
-
-        result = findAtCommonLocations();
-        if (result.isPresent()) return result;
-
-        LOG.warning("FEAGI executable not found. Please specify an explicit path.");
-        return Optional.empty();
+        if (result.isEmpty()) {
+            LOG.warning("FEAGI executable not found. Please specify an explicit path.");
+        }
+        return result;
     }
 
     // ------------------------------------------------------------------
@@ -186,11 +183,13 @@ public final class FeagiDiscovery {
     static Optional<Path> findAtCommonLocations() {
         if (isWindows()) return Optional.empty();
 
-        List<Path> locations = List.of(
-                Path.of("/usr/local/bin").resolve(BINARY_NAME),
-                Path.of("/usr/bin").resolve(BINARY_NAME),
-                Path.of(System.getProperty("user.home")).resolve(".cargo").resolve("bin").resolve(BINARY_NAME)
-        );
+        List<Path> locations = new ArrayList<>();
+        locations.add(Path.of("/usr/local/bin").resolve(BINARY_NAME));
+        locations.add(Path.of("/usr/bin").resolve(BINARY_NAME));
+        String home = System.getProperty("user.home");
+        if (home != null) {
+            locations.add(Path.of(home).resolve(".cargo").resolve("bin").resolve(BINARY_NAME));
+        }
 
         for (Path candidate : locations) {
             if (isUsable(candidate)) {
@@ -245,18 +244,15 @@ public final class FeagiDiscovery {
      * <p>Examples: {@code linux-x86_64}, {@code darwin-aarch64}, {@code windows-x86_64}.
      */
     public static String platformDir() {
-        String os = System.getProperty("os.name", "").toLowerCase();
-        String arch = System.getProperty("os.arch", "").toLowerCase();
-
         String osPrefix;
-        if (os.contains("linux"))      osPrefix = "linux";
-        else if (os.contains("mac"))   osPrefix = "darwin";
-        else if (os.contains("win"))   osPrefix = "windows";
+        if (OS_NAME.contains("linux"))      osPrefix = "linux";
+        else if (OS_NAME.contains("mac"))   osPrefix = "darwin";
+        else if (OS_NAME.contains("win"))   osPrefix = "windows";
         else return null;
 
         String archSuffix;
-        if (arch.equals("amd64") || arch.equals("x86_64"))       archSuffix = "x86_64";
-        else if (arch.equals("aarch64") || arch.equals("arm64")) archSuffix = "aarch64";
+        if (OS_ARCH.equals("amd64") || OS_ARCH.equals("x86_64"))       archSuffix = "x86_64";
+        else if (OS_ARCH.equals("aarch64") || OS_ARCH.equals("arm64")) archSuffix = "aarch64";
         else return null;
 
         return osPrefix + "-" + archSuffix;
