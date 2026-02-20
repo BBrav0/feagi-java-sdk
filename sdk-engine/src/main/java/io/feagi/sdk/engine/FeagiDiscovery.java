@@ -43,7 +43,7 @@ public final class FeagiDiscovery {
     private static final boolean IS_WINDOWS = OS_NAME.contains("win");
 
     /** Binary name for the current platform. */
-    public static final String BINARY_NAME = isWindows() ? "feagi.exe" : "feagi";
+    public static final String BINARY_NAME = OS_NAME.contains("win") ? "feagi.exe" : "feagi";
 
     private FeagiDiscovery() {}
 
@@ -107,6 +107,7 @@ public final class FeagiDiscovery {
      * @return the resolved path, or empty if not found
      */
     static Optional<Path> findBundledBinary(Path sdkRoot) {
+        Objects.requireNonNull(sdkRoot, "sdkRoot");
         Optional<Path> candidate = platformDir()
                 .map(pd -> sdkRoot.resolve("bin").resolve(pd).resolve(BINARY_NAME))
                 .filter(FeagiDiscovery::isUsable);
@@ -130,6 +131,7 @@ public final class FeagiDiscovery {
      * @return the resolved path, or empty if not found
      */
     static Optional<Path> findDevBuild(Path sdkRoot) {
+        Objects.requireNonNull(sdkRoot, "sdkRoot");
         Path parent = sdkRoot.getParent();
         if (parent == null) return Optional.empty();
 

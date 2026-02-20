@@ -198,6 +198,7 @@ class FeagiDiscoveryTest {
 
     /**
      * On Windows, findAtCommonLocations returns empty immediately (Unix-only step).
+     * Note: this test only runs on Windows CI; it is skipped on Linux/macOS.
      */
     @Test
     void testFindAtCommonLocationsSkippedOnWindows() {
@@ -323,8 +324,9 @@ class FeagiDiscoveryTest {
      * findDevBuild should return empty when no dev build exists.
      */
     @Test
-    void testFindDevBuildMissing(@TempDir Path tmp) {
+    void testFindDevBuildMissing(@TempDir Path tmp) throws IOException {
         Path fakeRoot = tmp.resolve("sdk");
+        Files.createDirectories(fakeRoot);
         Optional<Path> result = FeagiDiscovery.findDevBuild(fakeRoot);
         assertFalse(result.isPresent());
     }
