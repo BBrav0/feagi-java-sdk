@@ -25,7 +25,7 @@ import java.util.stream.Stream;
  *       {@code feagi/} or {@code feagi-core/} directories relative to the SDK root</li>
  *   <li><b>System PATH</b> — scans each directory in the {@code PATH} environment variable</li>
  *   <li><b>Common system locations</b> — {@code /usr/local/bin}, {@code /usr/bin},
- *       {@code ~/.cargo/bin} (Unix only)</li>
+ *       {@code /opt/homebrew/bin} (macOS Homebrew), {@code ~/.cargo/bin} (Unix only)</li>
  * </ol>
  *
  * <p>An explicit path override bypasses the chain entirely.
@@ -62,7 +62,7 @@ public final class FeagiDiscovery {
      * @return the path if usable, or empty if it does not exist or is not executable
      * @throws NullPointerException if {@code explicitPath} is {@code null}
      */
-    public static Optional<Path> discover(Path explicitPath) {
+    public static Optional<Path> validate(Path explicitPath) {
         Objects.requireNonNull(explicitPath,
                 "explicitPath must not be null; use discover() for auto-discovery");
         if (isUsable(explicitPath)) {

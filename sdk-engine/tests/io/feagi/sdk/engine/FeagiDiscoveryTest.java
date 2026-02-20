@@ -21,6 +21,8 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * Unit tests for {@link FeagiDiscovery}.
@@ -38,7 +40,7 @@ class FeagiDiscoveryTest {
             fakeBinary.toFile().setExecutable(true);
         }
 
-        Optional<Path> result = FeagiDiscovery.discover(fakeBinary);
+        Optional<Path> result = FeagiDiscovery.validate(fakeBinary);
         assertTrue(result.isPresent());
         assertEquals(fakeBinary, result.get());
     }
@@ -49,7 +51,7 @@ class FeagiDiscoveryTest {
     @Test
     void testExplicitPathNotFound(@TempDir Path tmp) {
         Path missing = tmp.resolve("no-such-feagi");
-        Optional<Path> result = FeagiDiscovery.discover(missing);
+        Optional<Path> result = FeagiDiscovery.validate(missing);
         assertFalse(result.isPresent());
     }
 
@@ -59,7 +61,7 @@ class FeagiDiscoveryTest {
      */
     @Test
     void testNullExplicitThrows() {
-        assertThrows(NullPointerException.class, () -> FeagiDiscovery.discover(null));
+        assertThrows(NullPointerException.class, () -> FeagiDiscovery.validate(null));
     }
 
     /**
@@ -298,6 +300,26 @@ class FeagiDiscoveryTest {
     }
 
     /**
+     * findDevBuild should fall through to feagi-core/ sibling when feagi/ has no build.
+     */
+    @Test
+    void testFindDevBuildFeagiCoreSibling(@TempDir Path tmp) throws IOException {
+        Path fakeRoot = tmp.resolve("sdk");
+        Files.createDirectories(fakeRoot);
+        Path releaseDir = tmp.resolve("feagi-core").resolve("target").resolve("release");
+        Files.createDirectories(releaseDir);
+        Path binary = releaseDir.resolve(FeagiDiscovery.BINARY_NAME);
+        Files.createFile(binary);
+        if (!FeagiDiscovery.isWindows()) {
+            binary.toFile().setExecutable(true);
+        }
+
+        Optional<Path> result = FeagiDiscovery.findDevBuild(fakeRoot);
+        assertTrue(result.isPresent(), "findDevBuild should fall through to feagi-core sibling");
+        assertEquals(binary, result.get());
+    }
+
+    /**
      * findDevBuild should return empty when no dev build exists.
      */
     @Test
@@ -312,28 +334,37 @@ class FeagiDiscoveryTest {
     // ------------------------------------------------------------------
 
     /**
-     * Exhaustive test of platformDir mapping logic across all supported combinations.
-     * Uses the parameterized overload so these tests run on any CI platform.
+     * Parameterized test of platformDir mapping for all supported OS/arch combinations.
+     * Uses the package-private overload so these tests run on any CI platform.
      */
-    @Test
-    void testPlatformDirAllCombinations() {
-        // Linux
-        assertEquals(Optional.of("linux-x86_64"), FeagiDiscovery.platformDir("linux", "amd64"));
-        assertEquals(Optional.of("linux-x86_64"), FeagiDiscovery.platformDir("linux", "x86_64"));
-        assertEquals(Optional.of("linux-aarch64"), FeagiDiscovery.platformDir("linux", "aarch64"));
-        assertEquals(Optional.of("linux-aarch64"), FeagiDiscovery.platformDir("linux", "arm64"));
-        // macOS
-        assertEquals(Optional.of("darwin-x86_64"), FeagiDiscovery.platformDir("mac os x", "amd64"));
-        assertEquals(Optional.of("darwin-x86_64"), FeagiDiscovery.platformDir("mac os x", "x86_64"));
-        assertEquals(Optional.of("darwin-aarch64"), FeagiDiscovery.platformDir("mac os x", "aarch64"));
-        assertEquals(Optional.of("darwin-aarch64"), FeagiDiscovery.platformDir("mac os x", "arm64"));
-        // Windows
-        assertEquals(Optional.of("windows-x86_64"), FeagiDiscovery.platformDir("windows 11", "amd64"));
-        assertEquals(Optional.of("windows-x86_64"), FeagiDiscovery.platformDir("windows 10", "x86_64"));
-        assertEquals(Optional.of("windows-aarch64"), FeagiDiscovery.platformDir("windows 11", "aarch64"));
-        // Unsupported
-        assertEquals(Optional.empty(), FeagiDiscovery.platformDir("linux", "riscv64"));
-        assertEquals(Optional.empty(), FeagiDiscovery.platformDir("freebsd", "amd64"));
-        assertEquals(Optional.empty(), FeagiDiscovery.platformDir("sunos", "sparc"));
+    @ParameterizedTest(name = "{0} / {1} -> {2}")
+    @CsvSource({
+            "linux, amd64, linux-x86_64",
+            "linux, x86_64, linux-x86_64",
+            "linux, aarch64, linux-aarch64",
+            "linux, arm64, linux-aarch64",
+            "'mac os x', amd64, darwin-x86_64",
+            "'mac os x', x86_64, darwin-x86_64",
+            "'mac os x', aarch64, darwin-aarch64",
+            "'mac os x', arm64, darwin-aarch64",
+            "'windows 11', amd64, windows-x86_64",
+            "'windows 10', x86_64, windows-x86_64",
+            "'windows 11', aarch64, windows-aarch64"
+    })
+    void testPlatformDirSupported(String os, String arch, String expected) {
+        assertEquals(Optional.of(expected), FeagiDiscovery.platformDir(os, arch));
+    }
+
+    /**
+     * Parameterized test of platformDir for unsupported OS/arch combinations.
+     */
+    @ParameterizedTest(name = "{0} / {1} -> empty")
+    @CsvSource({
+            "linux, riscv64",
+            "freebsd, amd64",
+            "sunos, sparc"
+    })
+    void testPlatformDirUnsupported(String os, String arch) {
+        assertEquals(Optional.empty(), FeagiDiscovery.platformDir(os, arch));
     }
 }
