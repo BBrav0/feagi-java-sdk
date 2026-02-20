@@ -16,3 +16,13 @@ Thumbs.db
 *.log
 *--temp.*
 
+# AI context file — per-developer, not tracked
+/CLAUDE.md
+
+# Main Python SDK for reference
+/python-sdk-reference/
+
+# Verification artifacts (jshell scripts, logs)
+feagi-discovery-jshell.jsh
+feagi-discovery-path-jshell.jsh
+feagi-discovery-verification-log.txt

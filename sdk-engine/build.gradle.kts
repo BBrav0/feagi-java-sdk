@@ -13,8 +13,3 @@ sourceSets {
         java.setSrcDirs(listOf("tests"))
     }
 }
-
-dependencies {
-    // Intentionally minimal for the skeleton.
-}
-
