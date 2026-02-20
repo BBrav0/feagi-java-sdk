@@ -133,6 +133,7 @@ public final class FeagiDiscovery {
         Path parent = sdkRoot.getParent();
         if (parent == null) return Optional.empty();
 
+        // Prefer release over debug; check both sibling directory names.
         List<Path> candidates = List.of(
                 parent.resolve("feagi").resolve("target").resolve("release").resolve(BINARY_NAME),
                 parent.resolve("feagi").resolve("target").resolve("debug").resolve(BINARY_NAME),
@@ -166,6 +167,7 @@ public final class FeagiDiscovery {
         if (pathEnv == null || pathEnv.isEmpty()) return Optional.empty();
 
         for (String dir : pathEnv.split(File.pathSeparator)) {
+            if (dir.isBlank()) continue;
             Path candidate = Path.of(dir).resolve(BINARY_NAME);
             if (isUsable(candidate)) {
                 LOG.info(() -> "Found FEAGI in system PATH: " + candidate);
@@ -184,6 +186,7 @@ public final class FeagiDiscovery {
         Stream.Builder<Path> candidates = Stream.builder();
         candidates.accept(Path.of("/usr/local/bin").resolve(BINARY_NAME));
         candidates.accept(Path.of("/usr/bin").resolve(BINARY_NAME));
+        candidates.accept(Path.of("/opt/homebrew/bin").resolve(BINARY_NAME));
         String home = System.getProperty("user.home");
         if (home != null) {
             candidates.accept(Path.of(home, ".cargo", "bin", BINARY_NAME));
@@ -230,7 +233,7 @@ public final class FeagiDiscovery {
             // If running from a jar, location is the jar file — return its parent.
             // If running from classes dir, location is the dir itself.
             return Optional.of(Files.isRegularFile(location) ? location.getParent() : location);
-        } catch (URISyntaxException | SecurityException e) {
+        } catch (URISyntaxException | SecurityException | IllegalArgumentException e) {
             LOG.fine(() -> "Could not determine SDK location: " + e.getMessage());
             return Optional.empty();
         }

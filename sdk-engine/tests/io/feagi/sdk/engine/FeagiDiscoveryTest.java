@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -171,6 +172,24 @@ class FeagiDiscoveryTest {
         assertFalse(FeagiDiscovery.findOnPath(null).isPresent());
     }
 
+    /**
+     * findOnPath should skip blank segments (e.g., from trailing ":" or "::").
+     * Without the fix, Path.of("").resolve(BINARY_NAME) would resolve to CWD.
+     */
+    @Test
+    void testFindOnPathSkipsEmptySegments(@TempDir Path tmp) throws IOException {
+        Path fakeBinary = tmp.resolve(FeagiDiscovery.BINARY_NAME);
+        Files.createFile(fakeBinary);
+        if (!FeagiDiscovery.isWindows()) {
+            fakeBinary.toFile().setExecutable(true);
+        }
+
+        // Leading empty segment from path separator
+        Optional<Path> result = FeagiDiscovery.findOnPath(File.pathSeparator + tmp.toString());
+        assertTrue(result.isPresent(), "Should find binary after skipping empty segment");
+        assertEquals(fakeBinary, result.get());
+    }
+
     // ------------------------------------------------------------------
     // findAtCommonLocations tests
     // ------------------------------------------------------------------
@@ -255,6 +274,26 @@ class FeagiDiscoveryTest {
 
         Optional<Path> result = FeagiDiscovery.findDevBuild(fakeRoot);
         assertTrue(result.isPresent(), "findDevBuild should find the release binary");
+        assertEquals(binary, result.get());
+    }
+
+    /**
+     * findDevBuild should fall through to debug when only a debug build exists.
+     */
+    @Test
+    void testFindDevBuildDebugFallback(@TempDir Path tmp) throws IOException {
+        Path fakeRoot = tmp.resolve("sdk");
+        Files.createDirectories(fakeRoot);
+        Path debugDir = tmp.resolve("feagi").resolve("target").resolve("debug");
+        Files.createDirectories(debugDir);
+        Path binary = debugDir.resolve(FeagiDiscovery.BINARY_NAME);
+        Files.createFile(binary);
+        if (!FeagiDiscovery.isWindows()) {
+            binary.toFile().setExecutable(true);
+        }
+
+        Optional<Path> result = FeagiDiscovery.findDevBuild(fakeRoot);
+        assertTrue(result.isPresent(), "findDevBuild should fall through to debug binary");
         assertEquals(binary, result.get());
     }
 
