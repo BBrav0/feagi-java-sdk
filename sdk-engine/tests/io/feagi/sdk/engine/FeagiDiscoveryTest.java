@@ -8,7 +8,6 @@ package io.feagi.sdk.engine;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -97,9 +96,9 @@ class FeagiDiscoveryTest {
         Set<String> supported = Set.of("amd64", "x86_64", "aarch64", "arm64");
         assumeTrue(supported.contains(arch), "Skipping on unsupported architecture: " + arch);
 
-        String dir = FeagiDiscovery.platformDir();
-        assertNotNull(dir, "platformDir() returned null on a supported platform");
-        assertTrue(dir.contains("-"), "platformDir() should be os-arch format: " + dir);
+        Optional<String> dir = FeagiDiscovery.platformDir();
+        assertTrue(dir.isPresent(), "platformDir() returned empty on a supported platform");
+        assertTrue(dir.get().contains("-"), "platformDir() should be os-arch format: " + dir.get());
     }
 
     /**
@@ -133,11 +132,13 @@ class FeagiDiscoveryTest {
 
     /**
      * sdkLocation() should return a present Optional when running from classes.
+     * Uses assumeTrue so the test skips gracefully in restricted environments
+     * (e.g., SecurityManager blocking getProtectionDomain).
      */
     @Test
     void testSdkLocationResolvable() {
         Optional<Path> loc = FeagiDiscovery.sdkLocation();
-        assertTrue(loc.isPresent(), "sdkLocation() should resolve when running from classes directory");
+        assumeTrue(loc.isPresent(), "sdkLocation() could not resolve — likely restricted environment");
         assertTrue(Files.exists(loc.get()));
     }
 
@@ -206,10 +207,10 @@ class FeagiDiscoveryTest {
      */
     @Test
     void testFindBundledBinaryFound(@TempDir Path tmp) throws IOException {
-        String platform = FeagiDiscovery.platformDir();
-        assumeTrue(platform != null, "Skipping on unsupported platform");
+        Optional<String> platform = FeagiDiscovery.platformDir();
+        assumeTrue(platform.isPresent(), "Skipping on unsupported platform");
 
-        Path binDir = tmp.resolve("bin").resolve(platform);
+        Path binDir = tmp.resolve("bin").resolve(platform.get());
         Files.createDirectories(binDir);
         Path binary = binDir.resolve(FeagiDiscovery.BINARY_NAME);
         Files.createFile(binary);
@@ -232,6 +233,42 @@ class FeagiDiscoveryTest {
     }
 
     // ------------------------------------------------------------------
+    // findDevBuild tests
+    // ------------------------------------------------------------------
+
+    /**
+     * findDevBuild should discover a release binary in the expected sibling structure.
+     * Creates a subdirectory as fake sdkRoot so getParent() lands in @TempDir.
+     */
+    @Test
+    void testFindDevBuildRelease(@TempDir Path tmp) throws IOException {
+        Path fakeRoot = tmp.resolve("sdk");
+        Files.createDirectories(fakeRoot);
+        // fakeRoot.getParent() == tmp, so looks for tmp/feagi/target/release/BINARY_NAME
+        Path releaseDir = tmp.resolve("feagi").resolve("target").resolve("release");
+        Files.createDirectories(releaseDir);
+        Path binary = releaseDir.resolve(FeagiDiscovery.BINARY_NAME);
+        Files.createFile(binary);
+        if (!FeagiDiscovery.isWindows()) {
+            binary.toFile().setExecutable(true);
+        }
+
+        Optional<Path> result = FeagiDiscovery.findDevBuild(fakeRoot);
+        assertTrue(result.isPresent(), "findDevBuild should find the release binary");
+        assertEquals(binary, result.get());
+    }
+
+    /**
+     * findDevBuild should return empty when no dev build exists.
+     */
+    @Test
+    void testFindDevBuildMissing(@TempDir Path tmp) {
+        Path fakeRoot = tmp.resolve("sdk");
+        Optional<Path> result = FeagiDiscovery.findDevBuild(fakeRoot);
+        assertFalse(result.isPresent());
+    }
+
+    // ------------------------------------------------------------------
     // platformDir cross-platform tests
     // ------------------------------------------------------------------
 
@@ -242,22 +279,22 @@ class FeagiDiscoveryTest {
     @Test
     void testPlatformDirAllCombinations() {
         // Linux
-        assertEquals("linux-x86_64", FeagiDiscovery.platformDir("linux", "amd64"));
-        assertEquals("linux-x86_64", FeagiDiscovery.platformDir("linux", "x86_64"));
-        assertEquals("linux-aarch64", FeagiDiscovery.platformDir("linux", "aarch64"));
-        assertEquals("linux-aarch64", FeagiDiscovery.platformDir("linux", "arm64"));
+        assertEquals(Optional.of("linux-x86_64"), FeagiDiscovery.platformDir("linux", "amd64"));
+        assertEquals(Optional.of("linux-x86_64"), FeagiDiscovery.platformDir("linux", "x86_64"));
+        assertEquals(Optional.of("linux-aarch64"), FeagiDiscovery.platformDir("linux", "aarch64"));
+        assertEquals(Optional.of("linux-aarch64"), FeagiDiscovery.platformDir("linux", "arm64"));
         // macOS
-        assertEquals("darwin-x86_64", FeagiDiscovery.platformDir("mac os x", "amd64"));
-        assertEquals("darwin-x86_64", FeagiDiscovery.platformDir("mac os x", "x86_64"));
-        assertEquals("darwin-aarch64", FeagiDiscovery.platformDir("mac os x", "aarch64"));
-        assertEquals("darwin-aarch64", FeagiDiscovery.platformDir("mac os x", "arm64"));
+        assertEquals(Optional.of("darwin-x86_64"), FeagiDiscovery.platformDir("mac os x", "amd64"));
+        assertEquals(Optional.of("darwin-x86_64"), FeagiDiscovery.platformDir("mac os x", "x86_64"));
+        assertEquals(Optional.of("darwin-aarch64"), FeagiDiscovery.platformDir("mac os x", "aarch64"));
+        assertEquals(Optional.of("darwin-aarch64"), FeagiDiscovery.platformDir("mac os x", "arm64"));
         // Windows
-        assertEquals("windows-x86_64", FeagiDiscovery.platformDir("windows 11", "amd64"));
-        assertEquals("windows-x86_64", FeagiDiscovery.platformDir("windows 10", "x86_64"));
-        assertEquals("windows-aarch64", FeagiDiscovery.platformDir("windows 11", "aarch64"));
+        assertEquals(Optional.of("windows-x86_64"), FeagiDiscovery.platformDir("windows 11", "amd64"));
+        assertEquals(Optional.of("windows-x86_64"), FeagiDiscovery.platformDir("windows 10", "x86_64"));
+        assertEquals(Optional.of("windows-aarch64"), FeagiDiscovery.platformDir("windows 11", "aarch64"));
         // Unsupported
-        assertNull(FeagiDiscovery.platformDir("linux", "riscv64"));
-        assertNull(FeagiDiscovery.platformDir("freebsd", "amd64"));
-        assertNull(FeagiDiscovery.platformDir("sunos", "sparc"));
+        assertEquals(Optional.empty(), FeagiDiscovery.platformDir("linux", "riscv64"));
+        assertEquals(Optional.empty(), FeagiDiscovery.platformDir("freebsd", "amd64"));
+        assertEquals(Optional.empty(), FeagiDiscovery.platformDir("sunos", "sparc"));
     }
 }

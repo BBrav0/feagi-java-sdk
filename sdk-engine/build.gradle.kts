@@ -13,6 +13,3 @@ sourceSets {
         java.setSrcDirs(listOf("tests"))
     }
 }
-
-dependencies {
-}

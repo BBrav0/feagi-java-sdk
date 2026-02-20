@@ -9,11 +9,11 @@ import java.io.File;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 
 /**
  * Discovers the FEAGI engine executable on the local system.
@@ -107,15 +107,11 @@ public final class FeagiDiscovery {
      * @return the resolved path, or empty if not found
      */
     static Optional<Path> findBundledBinary(Path sdkRoot) {
-        String platformDir = platformDir();
-        if (platformDir == null) return Optional.empty();
-
-        Path candidate = sdkRoot.resolve("bin").resolve(platformDir).resolve(BINARY_NAME);
-        if (isUsable(candidate)) {
-            LOG.info(() -> "Found bundled FEAGI binary: " + candidate);
-            return Optional.of(candidate);
-        }
-        return Optional.empty();
+        Optional<Path> candidate = platformDir()
+                .map(pd -> sdkRoot.resolve("bin").resolve(pd).resolve(BINARY_NAME))
+                .filter(FeagiDiscovery::isUsable);
+        candidate.ifPresent(p -> LOG.info(() -> "Found bundled FEAGI binary: " + p));
+        return candidate;
     }
 
     /**
@@ -185,21 +181,19 @@ public final class FeagiDiscovery {
     static Optional<Path> findAtCommonLocations() {
         if (isWindows()) return Optional.empty();
 
-        List<Path> locations = new ArrayList<>();
-        locations.add(Path.of("/usr/local/bin").resolve(BINARY_NAME));
-        locations.add(Path.of("/usr/bin").resolve(BINARY_NAME));
+        Stream.Builder<Path> candidates = Stream.builder();
+        candidates.accept(Path.of("/usr/local/bin").resolve(BINARY_NAME));
+        candidates.accept(Path.of("/usr/bin").resolve(BINARY_NAME));
         String home = System.getProperty("user.home");
         if (home != null) {
-            locations.add(Path.of(home).resolve(".cargo").resolve("bin").resolve(BINARY_NAME));
+            candidates.accept(Path.of(home, ".cargo", "bin", BINARY_NAME));
         }
 
-        for (Path candidate : locations) {
-            if (isUsable(candidate)) {
-                LOG.info(() -> "Found FEAGI at: " + candidate);
-                return Optional.of(candidate);
-            }
-        }
-        return Optional.empty();
+        Optional<Path> found = candidates.build()
+                .filter(FeagiDiscovery::isUsable)
+                .findFirst();
+        found.ifPresent(p -> LOG.info(() -> "Found FEAGI at: " + p));
+        return found;
     }
 
     // ------------------------------------------------------------------
@@ -211,6 +205,9 @@ public final class FeagiDiscovery {
      *
      * <p>On Windows, {@link Files#isExecutable} is unreliable for {@code .exe} files,
      * so we only check existence.
+     *
+     * <p>Note: benign TOCTOU — a file could vanish between the {@code exists()} and
+     * {@code isExecutable()} checks. Acceptable for a discovery utility, not a security gate.
      */
     static boolean isUsable(Path path) {
         if (!Files.exists(path)) return false;
@@ -241,11 +238,11 @@ public final class FeagiDiscovery {
 
     /**
      * Return the platform directory name matching the Python SDK convention,
-     * or {@code null} if the current platform is unsupported.
+     * or empty if the current platform is unsupported.
      *
      * <p>Examples: {@code linux-x86_64}, {@code darwin-aarch64}, {@code windows-x86_64}.
      */
-    public static String platformDir() {
+    public static Optional<String> platformDir() {
         return platformDir(OS_NAME, OS_ARCH);
     }
 
@@ -256,21 +253,21 @@ public final class FeagiDiscovery {
      *
      * @param osName lower-cased OS name (e.g., {@code "linux"}, {@code "mac os x"}, {@code "windows 11"})
      * @param osArch lower-cased architecture (e.g., {@code "amd64"}, {@code "aarch64"})
-     * @return platform directory string, or {@code null} if unsupported
+     * @return platform directory string, or empty if unsupported
      */
-    static String platformDir(String osName, String osArch) {
+    static Optional<String> platformDir(String osName, String osArch) {
         String osPrefix;
         if (osName.contains("linux"))      osPrefix = "linux";
         else if (osName.contains("mac"))   osPrefix = "darwin";
         else if (osName.contains("win"))   osPrefix = "windows";
-        else return null;
+        else return Optional.empty();
 
         String archSuffix;
         if (osArch.equals("amd64") || osArch.equals("x86_64"))       archSuffix = "x86_64";
         else if (osArch.equals("aarch64") || osArch.equals("arm64")) archSuffix = "aarch64";
-        else return null;
+        else return Optional.empty();
 
-        return osPrefix + "-" + archSuffix;
+        return Optional.of(osPrefix + "-" + archSuffix);
     }
 
     /** Return {@code true} if the current OS is Windows. */
