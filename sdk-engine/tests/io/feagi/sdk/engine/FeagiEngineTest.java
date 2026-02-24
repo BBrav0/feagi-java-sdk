@@ -33,12 +33,10 @@ class FeagiEngineTest {
     // ------------------------------------------------------------------
 
     /**
-     * Building without feagiPath when discovery fails should throw.
+     * Explicit feagiPath pointing to a non-existent binary should throw.
      */
     @Test
-    void testBuilderThrowsWhenNoFeagiFound() {
-        // Discovery will likely fail in a CI environment without FEAGI installed,
-        // but we cannot guarantee it. Use an explicit missing path instead.
+    void testBuilderThrowsForUnusableFeagiPath() {
         Path missing = Path.of("/nonexistent/feagi-binary-" + System.nanoTime());
         assertThrows(IllegalArgumentException.class, () ->
                 FeagiEngine.builder().feagiPath(missing).build());
@@ -376,7 +374,7 @@ class FeagiEngineTest {
             Thread.sleep(300);
             assertTrue(engine.isRunning());
             // Capture the process reference to check after close.
-            processRef = getProcessField(engine);
+            processRef = engine.processForTesting();
         }
 
         // After close, the process should have been stopped.
@@ -490,16 +488,4 @@ class FeagiEngineTest {
         return file;
     }
 
-    /**
-     * Reflectively get the process field for testing AutoCloseable.
-     */
-    private static Process getProcessField(FeagiEngine engine) {
-        try {
-            var field = FeagiEngine.class.getDeclaredField("process");
-            field.setAccessible(true);
-            return (Process) field.get(engine);
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
-    }
 }

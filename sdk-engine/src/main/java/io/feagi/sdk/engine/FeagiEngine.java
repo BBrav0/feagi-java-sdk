@@ -57,7 +57,7 @@ public final class FeagiEngine implements AutoCloseable {
     private final String host;
     private final int restPort;
 
-    private Process process;
+    private volatile Process process;
 
     private FeagiEngine(Builder builder) {
         this.feagiPath = builder.feagiPath;
@@ -115,7 +115,8 @@ public final class FeagiEngine implements AutoCloseable {
 
         ProcessBuilder pb = new ProcessBuilder(command)
                 .directory(workingDirectory.toFile())
-                .redirectErrorStream(true);
+                .redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD);
 
         // Set RUST_LOG if not already present.
         pb.environment().putIfAbsent("RUST_LOG", "info");
@@ -128,7 +129,7 @@ public final class FeagiEngine implements AutoCloseable {
             LOG.info(() -> "Checking REST API at: http://" + host + ":" + restPort
                     + "/v1/system/health_check");
 
-            if (waitForReady(timeout)) {
+            if (awaitReady(timeout)) {
                 LOG.info("FEAGI is ready");
                 return true;
             } else {
@@ -224,9 +225,16 @@ public final class FeagiEngine implements AutoCloseable {
         return feagiPath;
     }
 
+    /** Package-private accessor for testing. */
+    Process processForTesting() {
+        return process;
+    }
+
     @Override
     public void close() {
-        stop();
+        if (!stop()) {
+            LOG.warning("close() called but stop() returned false — process may still be running");
+        }
     }
 
     // ------------------------------------------------------------------
@@ -260,8 +268,9 @@ public final class FeagiEngine implements AutoCloseable {
     /**
      * Poll the FEAGI REST health check endpoint until ready or timeout.
      */
-    private boolean waitForReady(Duration timeout) {
-        long deadlineMs = System.currentTimeMillis() + timeout.toMillis();
+    private boolean awaitReady(Duration timeout) {
+        long startNanos = System.nanoTime();
+        long timeoutNanos = timeout.toNanos();
         int attempts = 0;
 
         HttpClient httpClient = HttpClient.newBuilder()
@@ -274,12 +283,11 @@ public final class FeagiEngine implements AutoCloseable {
                 .GET()
                 .build();
 
-        while (System.currentTimeMillis() < deadlineMs) {
+        while (System.nanoTime() - startNanos < timeoutNanos) {
             attempts++;
-            long elapsed = System.currentTimeMillis() - (deadlineMs - timeout.toMillis());
 
             if (attempts % HEALTH_LOG_EVERY_N_ATTEMPTS == 0) {
-                long elapsedSec = elapsed / 1000;
+                long elapsedSec = (System.nanoTime() - startNanos) / 1_000_000_000L;
                 long totalSec = timeout.toSeconds();
                 LOG.info(() -> "  Still waiting... (" + elapsedSec + "s / " + totalSec + "s)");
             }
@@ -439,6 +447,13 @@ public final class FeagiEngine implements AutoCloseable {
             // Default working directory.
             if (workingDirectory == null) {
                 workingDirectory = Path.of(System.getProperty("user.dir"));
+            }
+
+            // Validate host produces a legal URI.
+            try {
+                URI.create("http://" + host + ":" + restPort + "/");
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid host: " + host, e);
             }
 
             // Validate paths exist.
