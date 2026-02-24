@@ -61,7 +61,7 @@ public final class FeagiEngine implements AutoCloseable {
 
     private Process process;
     private volatile boolean stopRequested;
-    private int lastExitCode = -1;
+    private volatile int lastExitCode = -1;
     private final HttpClient httpClient;
 
     private FeagiEngine(Builder builder) {
@@ -125,6 +125,7 @@ public final class FeagiEngine implements AutoCloseable {
             }
 
             stopRequested = false;
+            lastExitCode = -1;
 
             LOG.info(() -> "Starting FEAGI engine: " + feagiPath);
 

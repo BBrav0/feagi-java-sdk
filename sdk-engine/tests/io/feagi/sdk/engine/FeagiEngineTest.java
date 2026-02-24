@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -387,6 +388,33 @@ class FeagiEngineTest {
         assertFalse(engine.isRunning());
     }
 
+    /**
+     * lastExitCode() should be empty on a never-started engine.
+     */
+    @Test
+    void testLastExitCodeEmptyBeforeStart(@TempDir Path tmp) throws IOException {
+        Path binary = createFakeBinary(tmp);
+        FeagiEngine engine = FeagiEngine.builder().feagiPath(binary).build();
+        assertTrue(engine.lastExitCode().isEmpty());
+    }
+
+    /**
+     * lastExitCode() should capture the process exit code after it exits.
+     */
+    @Test
+    void testLastExitCodeCaptured(@TempDir Path tmp) throws Exception {
+        Path script = createExitScript(tmp, 42);
+        FeagiEngine engine = FeagiEngine.builder().feagiPath(script).build();
+
+        engine.start(false, Duration.ofSeconds(5));
+        engine.processForTesting().waitFor(5, TimeUnit.SECONDS);
+        engine.stop();
+
+        OptionalInt code = engine.lastExitCode();
+        assertTrue(code.isPresent(), "lastExitCode should be present after process exits");
+        assertEquals(42, code.getAsInt());
+    }
+
     // ------------------------------------------------------------------
     // AutoCloseable
     // ------------------------------------------------------------------
@@ -449,16 +477,16 @@ class FeagiEngineTest {
     void testHealthCheckTimesOut(@TempDir Path tmp) throws Exception {
         Path script = createSleepScript(tmp, 60);
 
-        // Find a free ephemeral port (avoids hardcoded port conflicts in CI).
-        int freePort;
-        try (ServerSocket ss = new ServerSocket(0)) {
-            freePort = ss.getLocalPort();
-        }
+        // Hold the ServerSocket open through build() to prevent TOCTOU races.
+        ServerSocket holder = new ServerSocket(0);
+        int freePort = holder.getLocalPort();
 
         FeagiEngine engine = FeagiEngine.builder()
                 .feagiPath(script)
                 .restPort(freePort)
                 .build();
+
+        holder.close();
 
         try {
             // Short timeout to avoid slow tests.
@@ -500,15 +528,16 @@ class FeagiEngineTest {
     void testStopInterruptsHealthCheck(@TempDir Path tmp) throws Exception {
         Path script = createSleepScript(tmp, 60);
 
-        int freePort;
-        try (ServerSocket ss = new ServerSocket(0)) {
-            freePort = ss.getLocalPort();
-        }
+        // Hold the ServerSocket open through build() to prevent TOCTOU races.
+        ServerSocket holder = new ServerSocket(0);
+        int freePort = holder.getLocalPort();
 
         FeagiEngine engine = FeagiEngine.builder()
                 .feagiPath(script)
                 .restPort(freePort)
                 .build();
+
+        holder.close();
 
         AtomicBoolean startResult = new AtomicBoolean(true);
         Thread starter = new Thread(() -> {
