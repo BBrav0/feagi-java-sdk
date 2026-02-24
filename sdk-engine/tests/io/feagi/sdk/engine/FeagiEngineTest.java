@@ -9,8 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -44,13 +46,18 @@ class FeagiEngineTest {
     }
 
     /**
-     * Explicit feagiPath that does not exist should throw.
+     * Existing file that is not executable should throw (Unix only).
+     * On Windows, Files.isExecutable() is unreliable, so this test is skipped.
      */
     @Test
-    void testBuilderThrowsForMissingFeagiPath(@TempDir Path tmp) {
-        Path missing = tmp.resolve("no-such-feagi");
+    void testBuilderThrowsForNonExecutableFeagiPath(@TempDir Path tmp) throws IOException {
+        assumeTrue(!FeagiDiscovery.isWindows(),
+                "Windows does not enforce executable permission");
+        Path file = tmp.resolve("feagi");
+        Files.createFile(file);
+        // file exists but is not executable
         assertThrows(IllegalArgumentException.class, () ->
-                FeagiEngine.builder().feagiPath(missing).build());
+                FeagiEngine.builder().feagiPath(file).build());
     }
 
     /**
@@ -132,6 +139,19 @@ class FeagiEngineTest {
                 FeagiEngine.builder().restPort(65536));
         assertThrows(IllegalArgumentException.class, () ->
                 FeagiEngine.builder().restPort(-1));
+    }
+
+    /**
+     * Invalid host string should throw at build time.
+     */
+    @Test
+    void testBuilderThrowsForInvalidHost(@TempDir Path tmp) throws IOException {
+        Path binary = createFakeBinary(tmp);
+        assertThrows(IllegalArgumentException.class, () ->
+                FeagiEngine.builder()
+                        .feagiPath(binary)
+                        .host("not a valid host:8080")
+                        .build());
     }
 
     /**
@@ -417,9 +437,15 @@ class FeagiEngineTest {
     void testHealthCheckTimesOut(@TempDir Path tmp) throws Exception {
         Path script = createSleepScript(tmp, 60);
 
+        // Find a free ephemeral port (avoids hardcoded port conflicts in CI).
+        int freePort;
+        try (ServerSocket ss = new ServerSocket(0)) {
+            freePort = ss.getLocalPort();
+        }
+
         FeagiEngine engine = FeagiEngine.builder()
                 .feagiPath(script)
-                .restPort(19999) // Port with nothing listening.
+                .restPort(freePort)
                 .build();
 
         try {

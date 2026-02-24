@@ -56,10 +56,11 @@ public final class FeagiEngine implements AutoCloseable {
     private final Path connectomePath;
     private final String host;
     private final int restPort;
+    private final boolean quiet;
 
     private Process process;
     private volatile boolean stopRequested;
-    private HttpClient httpClient;
+    private volatile HttpClient httpClient;
 
     private FeagiEngine(Builder builder) {
         this.feagiPath = builder.feagiPath;
@@ -69,6 +70,7 @@ public final class FeagiEngine implements AutoCloseable {
         this.connectomePath = builder.connectomePath;
         this.host = builder.host;
         this.restPort = builder.restPort;
+        this.quiet = builder.quiet;
     }
 
     // ------------------------------------------------------------------
@@ -125,10 +127,14 @@ public final class FeagiEngine implements AutoCloseable {
             LOG.info(() -> "Command: " + String.join(" ", command));
             LOG.info(() -> "Working dir: " + workingDirectory);
 
+            ProcessBuilder.Redirect outputRedirect = quiet
+                    ? ProcessBuilder.Redirect.DISCARD
+                    : ProcessBuilder.Redirect.INHERIT;
+
             ProcessBuilder pb = new ProcessBuilder(command)
                     .directory(workingDirectory.toFile())
-                    .redirectOutput(ProcessBuilder.Redirect.INHERIT)
-                    .redirectError(ProcessBuilder.Redirect.INHERIT);
+                    .redirectOutput(outputRedirect)
+                    .redirectError(outputRedirect);
 
             // Set RUST_LOG if not already present.
             pb.environment().putIfAbsent("RUST_LOG", "info");
@@ -324,7 +330,7 @@ public final class FeagiEngine implements AutoCloseable {
             attempts++;
 
             if (attempts % HEALTH_LOG_EVERY_N_ATTEMPTS == 0) {
-                long elapsedSec = (System.nanoTime() - startNanos) / 1_000_000_000L;
+                long elapsedSec = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startNanos);
                 long totalSec = timeout.toSeconds();
                 LOG.info(() -> "  Still waiting... (" + elapsedSec + "s / " + totalSec + "s)");
             }
@@ -344,7 +350,7 @@ public final class FeagiEngine implements AutoCloseable {
                     return true;
                 }
             } catch (IOException e) {
-                // Connection refused — still starting up.
+                LOG.fine(() -> "Health check attempt failed: " + e.getMessage());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
@@ -374,8 +380,6 @@ public final class FeagiEngine implements AutoCloseable {
      */
     public static final class Builder {
 
-        private static final Logger LOG = Logger.getLogger(Builder.class.getName());
-
         private Path feagiPath;
         private Path workingDirectory;
         private Path configPath;
@@ -383,6 +387,7 @@ public final class FeagiEngine implements AutoCloseable {
         private Path connectomePath;
         private String host = "localhost";
         private int restPort = 8000;
+        private boolean quiet;
 
         private Builder() {}
 
@@ -453,6 +458,17 @@ public final class FeagiEngine implements AutoCloseable {
                 throw new IllegalArgumentException("restPort must be 1–65535: " + restPort);
             }
             this.restPort = restPort;
+            return this;
+        }
+
+        /**
+         * Suppress FEAGI process output (default: {@code false}).
+         *
+         * <p>When {@code true}, stdout and stderr are discarded. When {@code false}
+         * (the default), output is inherited by the parent process.
+         */
+        public Builder quiet(boolean quiet) {
+            this.quiet = quiet;
             return this;
         }
 
