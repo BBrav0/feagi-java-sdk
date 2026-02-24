@@ -57,7 +57,8 @@ public final class FeagiEngine implements AutoCloseable {
     private final String host;
     private final int restPort;
 
-    private volatile Process process;
+    private Process process;
+    private HttpClient httpClient;
 
     private FeagiEngine(Builder builder) {
         this.feagiPath = builder.feagiPath;
@@ -100,7 +101,7 @@ public final class FeagiEngine implements AutoCloseable {
      * @return {@code true} if the engine started (and became ready, if requested)
      * @throws IOException if the process cannot be spawned
      */
-    public boolean start(boolean waitForReady, Duration timeout) throws IOException {
+    public synchronized boolean start(boolean waitForReady, Duration timeout) throws IOException {
         Objects.requireNonNull(timeout, "timeout");
         if (process != null && process.isAlive()) {
             LOG.warning("FEAGI is already running");
@@ -115,8 +116,8 @@ public final class FeagiEngine implements AutoCloseable {
 
         ProcessBuilder pb = new ProcessBuilder(command)
                 .directory(workingDirectory.toFile())
-                .redirectErrorStream(true)
-                .redirectOutput(ProcessBuilder.Redirect.DISCARD);
+                .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+                .redirectError(ProcessBuilder.Redirect.INHERIT);
 
         // Set RUST_LOG if not already present.
         pb.environment().putIfAbsent("RUST_LOG", "info");
@@ -162,10 +163,10 @@ public final class FeagiEngine implements AutoCloseable {
      * @param timeout maximum time to wait for graceful shutdown
      * @return {@code true} if the engine stopped
      */
-    public boolean stop(Duration timeout) {
+    public synchronized boolean stop(Duration timeout) {
         Objects.requireNonNull(timeout, "timeout");
         if (process == null) {
-            LOG.warning("FEAGI is not running");
+            LOG.fine("FEAGI is not running");
             return true;
         }
 
@@ -204,7 +205,7 @@ public final class FeagiEngine implements AutoCloseable {
     /**
      * Return {@code true} if the FEAGI process is currently running.
      */
-    public boolean isRunning() {
+    public synchronized boolean isRunning() {
         return process != null && process.isAlive();
     }
 
@@ -233,7 +234,7 @@ public final class FeagiEngine implements AutoCloseable {
     @Override
     public void close() {
         if (!stop()) {
-            LOG.warning("close() called but stop() returned false — process may still be running");
+            LOG.warning("stop() returned false during close() — process may still be running");
         }
     }
 
@@ -273,9 +274,11 @@ public final class FeagiEngine implements AutoCloseable {
         long timeoutNanos = timeout.toNanos();
         int attempts = 0;
 
-        HttpClient httpClient = HttpClient.newBuilder()
-                .connectTimeout(HEALTH_CHECK_HTTP_TIMEOUT)
-                .build();
+        if (httpClient == null) {
+            httpClient = HttpClient.newBuilder()
+                    .connectTimeout(HEALTH_CHECK_HTTP_TIMEOUT)
+                    .build();
+        }
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("http://" + host + ":" + restPort + "/v1/system/health_check"))
@@ -447,6 +450,12 @@ public final class FeagiEngine implements AutoCloseable {
             // Default working directory.
             if (workingDirectory == null) {
                 workingDirectory = Path.of(System.getProperty("user.dir"));
+            }
+
+            // Validate working directory exists.
+            if (!Files.isDirectory(workingDirectory)) {
+                throw new IllegalArgumentException(
+                        "Working directory not found: " + workingDirectory);
             }
 
             // Validate host produces a legal URI.

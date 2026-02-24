@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -281,8 +282,8 @@ class FeagiEngineTest {
         // Start without waiting for ready (no health check endpoint).
         engine.start(false, Duration.ofSeconds(5));
 
-        // Give it a moment to exit.
-        Thread.sleep(500);
+        // Wait for the process to finish (it exits immediately).
+        engine.processForTesting().waitFor(5, TimeUnit.SECONDS);
 
         assertFalse(engine.isRunning(), "Process should have exited");
     }
@@ -299,9 +300,6 @@ class FeagiEngineTest {
                 .build();
 
         engine.start(false, Duration.ofSeconds(5));
-
-        // Give it a moment to start.
-        Thread.sleep(300);
         assertTrue(engine.isRunning(), "Process should be running");
 
         boolean stopped = engine.stop(Duration.ofSeconds(5));
@@ -322,7 +320,6 @@ class FeagiEngineTest {
 
         try {
             engine.start(false, Duration.ofSeconds(5));
-            Thread.sleep(300);
             assertTrue(engine.isRunning());
 
             // Second start should be idempotent.
@@ -371,7 +368,6 @@ class FeagiEngineTest {
                 .feagiPath(script)
                 .build()) {
             engine.start(false, Duration.ofSeconds(5));
-            Thread.sleep(300);
             assertTrue(engine.isRunning());
             // Capture the process reference to check after close.
             processRef = engine.processForTesting();
