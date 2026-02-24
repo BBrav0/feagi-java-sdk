@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
@@ -60,7 +61,8 @@ public final class FeagiEngine implements AutoCloseable {
 
     private Process process;
     private volatile boolean stopRequested;
-    private volatile HttpClient httpClient;
+    private int lastExitCode = -1;
+    private final HttpClient httpClient;
 
     private FeagiEngine(Builder builder) {
         this.feagiPath = builder.feagiPath;
@@ -71,6 +73,9 @@ public final class FeagiEngine implements AutoCloseable {
         this.host = builder.host;
         this.restPort = builder.restPort;
         this.quiet = builder.quiet;
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(HEALTH_CHECK_HTTP_TIMEOUT)
+                .build();
     }
 
     // ------------------------------------------------------------------
@@ -197,6 +202,7 @@ public final class FeagiEngine implements AutoCloseable {
             process.destroy();
 
             if (process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                lastExitCode = process.exitValue();
                 LOG.info("FEAGI stopped gracefully");
                 process = null;
                 return true;
@@ -207,6 +213,7 @@ public final class FeagiEngine implements AutoCloseable {
             process.destroyForcibly();
 
             if (process.waitFor(FORCE_KILL_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {
+                lastExitCode = process.exitValue();
                 LOG.info("FEAGI stopped (forced)");
                 process = null;
                 return true;
@@ -246,8 +253,16 @@ public final class FeagiEngine implements AutoCloseable {
         return feagiPath;
     }
 
+    /**
+     * Return the exit code of the last FEAGI process, or empty if no process
+     * has exited yet.
+     */
+    public synchronized OptionalInt lastExitCode() {
+        return lastExitCode == -1 ? OptionalInt.empty() : OptionalInt.of(lastExitCode);
+    }
+
     /** Package-private accessor for testing. */
-    Process processForTesting() {
+    synchronized Process processForTesting() {
         return process;
     }
 
@@ -309,12 +324,6 @@ public final class FeagiEngine implements AutoCloseable {
         long timeoutNanos = timeout.toNanos();
         int attempts = 0;
 
-        if (httpClient == null) {
-            httpClient = HttpClient.newBuilder()
-                    .connectTimeout(HEALTH_CHECK_HTTP_TIMEOUT)
-                    .build();
-        }
-
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("http://" + host + ":" + restPort + "/v1/system/health_check"))
                 .timeout(HEALTH_CHECK_HTTP_TIMEOUT)
@@ -337,7 +346,9 @@ public final class FeagiEngine implements AutoCloseable {
 
             // Check if the process died.
             if (!proc.isAlive()) {
-                LOG.severe("FEAGI process terminated unexpectedly");
+                lastExitCode = proc.exitValue();
+                LOG.severe(() -> "FEAGI process terminated unexpectedly (exit code: "
+                        + lastExitCode + ")");
                 return false;
             }
 
@@ -346,7 +357,6 @@ public final class FeagiEngine implements AutoCloseable {
                 HttpResponse<Void> response = httpClient.send(
                         request, HttpResponse.BodyHandlers.discarding());
                 if (response.statusCode() == 200) {
-                    LOG.info("REST API is ready");
                     return true;
                 }
             } catch (IOException e) {

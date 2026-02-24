@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -413,6 +414,17 @@ class FeagiEngineTest {
     }
 
     /**
+     * close() on a never-started engine should not throw.
+     */
+    @Test
+    void testCloseOnNeverStartedEngine(@TempDir Path tmp) throws IOException {
+        Path binary = createFakeBinary(tmp);
+        FeagiEngine engine = FeagiEngine.builder().feagiPath(binary).build();
+        engine.close();
+        assertFalse(engine.isRunning());
+    }
+
+    /**
      * waitForReady should return false when process exits during health check.
      */
     @Test
@@ -477,6 +489,52 @@ class FeagiEngineTest {
     }
 
     // ------------------------------------------------------------------
+    // Concurrency
+    // ------------------------------------------------------------------
+
+    /**
+     * stop() from another thread should interrupt a health-check loop in start().
+     * Validates the narrow-lock + volatile stopRequested design.
+     */
+    @Test
+    void testStopInterruptsHealthCheck(@TempDir Path tmp) throws Exception {
+        Path script = createSleepScript(tmp, 60);
+
+        int freePort;
+        try (ServerSocket ss = new ServerSocket(0)) {
+            freePort = ss.getLocalPort();
+        }
+
+        FeagiEngine engine = FeagiEngine.builder()
+                .feagiPath(script)
+                .restPort(freePort)
+                .build();
+
+        AtomicBoolean startResult = new AtomicBoolean(true);
+        Thread starter = new Thread(() -> {
+            try {
+                startResult.set(engine.start(true, Duration.ofSeconds(30)));
+            } catch (IOException e) {
+                startResult.set(false);
+            }
+        });
+
+        try {
+            starter.start();
+            Thread.sleep(500); // Let health check loop begin.
+            engine.stop();
+            starter.join(5000);
+
+            assertFalse(startResult.get(),
+                    "start() should return false when stop() interrupts health check");
+            assertFalse(engine.isRunning());
+        } finally {
+            engine.stop();
+            starter.join(5000);
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 
@@ -519,7 +577,8 @@ class FeagiEngineTest {
     private static Path createSleepScript(Path dir, int seconds) throws IOException {
         if (FeagiDiscovery.isWindows()) {
             Path bat = dir.resolve("feagi.bat");
-            // ping -n N localhost is a common Windows sleep substitute.
+            // Use ping as a sleep substitute. "timeout /t" conflicts with
+            // Git Bash's coreutils timeout on PATH.
             Files.writeString(bat, "@echo off\r\nping -n " + (seconds + 1)
                     + " 127.0.0.1 > nul\r\n");
             return bat;
