@@ -135,6 +135,20 @@ class FeagiEngineTest {
     }
 
     /**
+     * Working directory that does not exist should throw.
+     */
+    @Test
+    void testBuilderThrowsForMissingWorkingDirectory(@TempDir Path tmp) throws IOException {
+        Path binary = createFakeBinary(tmp);
+        Path missingDir = tmp.resolve("no-such-dir");
+        assertThrows(IllegalArgumentException.class, () ->
+                FeagiEngine.builder()
+                        .feagiPath(binary)
+                        .workingDirectory(missingDir)
+                        .build());
+    }
+
+    /**
      * Setting genome after connectome should clear connectome (last-one-wins).
      */
     @Test
@@ -374,8 +388,7 @@ class FeagiEngineTest {
         }
 
         // After close, the process should have been stopped.
-        // processRef might be null (cleared by stop()) or not alive.
-        assertTrue(processRef == null || !processRef.isAlive(),
+        assertFalse(processRef.isAlive(),
                 "Process should be stopped after close()");
     }
 
@@ -418,6 +431,23 @@ class FeagiEngineTest {
         } finally {
             engine.stop();
         }
+    }
+
+    /**
+     * No-arg start() delegates to start(true, 60s). Should return false
+     * quickly when the process exits immediately (no 60-second wait).
+     */
+    @Test
+    void testNoArgStartReturnsWhenProcessDies(@TempDir Path tmp) throws Exception {
+        Path script = createExitScript(tmp, 1);
+
+        FeagiEngine engine = FeagiEngine.builder()
+                .feagiPath(script)
+                .build();
+
+        boolean result = engine.start();
+        assertFalse(result, "start() should return false when process dies during health check");
+        assertFalse(engine.isRunning());
     }
 
     // ------------------------------------------------------------------

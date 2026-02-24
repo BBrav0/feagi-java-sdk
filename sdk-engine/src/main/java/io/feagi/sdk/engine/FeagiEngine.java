@@ -58,6 +58,7 @@ public final class FeagiEngine implements AutoCloseable {
     private final int restPort;
 
     private Process process;
+    private volatile boolean stopRequested;
     private HttpClient httpClient;
 
     private FeagiEngine(Builder builder) {
@@ -96,41 +97,53 @@ public final class FeagiEngine implements AutoCloseable {
     /**
      * Start the FEAGI engine.
      *
+     * <p>The synchronized block is intentionally narrow — it covers only the
+     * process-spawning section. The health-check polling runs outside the lock
+     * so that {@link #stop()} can be called from another thread without blocking
+     * for the full timeout.
+     *
      * @param waitForReady if {@code true}, poll the REST health check until ready
      * @param timeout      maximum time to wait for the engine to become ready
      * @return {@code true} if the engine started (and became ready, if requested)
      * @throws IOException if the process cannot be spawned
      */
-    public synchronized boolean start(boolean waitForReady, Duration timeout) throws IOException {
+    public boolean start(boolean waitForReady, Duration timeout) throws IOException {
         Objects.requireNonNull(timeout, "timeout");
-        if (process != null && process.isAlive()) {
-            LOG.warning("FEAGI is already running");
-            return true;
+
+        Process proc;
+        synchronized (this) {
+            if (process != null && process.isAlive()) {
+                LOG.warning("FEAGI is already running");
+                return true;
+            }
+
+            stopRequested = false;
+
+            LOG.info(() -> "Starting FEAGI engine: " + feagiPath);
+
+            List<String> command = buildCommand();
+            LOG.info(() -> "Command: " + String.join(" ", command));
+            LOG.info(() -> "Working dir: " + workingDirectory);
+
+            ProcessBuilder pb = new ProcessBuilder(command)
+                    .directory(workingDirectory.toFile())
+                    .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+                    .redirectError(ProcessBuilder.Redirect.INHERIT);
+
+            // Set RUST_LOG if not already present.
+            pb.environment().putIfAbsent("RUST_LOG", "info");
+
+            process = pb.start();
+            proc = process;
+            LOG.info(() -> "FEAGI started (PID: " + proc.pid() + ")");
         }
-
-        LOG.info(() -> "Starting FEAGI engine: " + feagiPath);
-
-        List<String> command = buildCommand();
-        LOG.info(() -> "Command: " + String.join(" ", command));
-        LOG.info(() -> "Working dir: " + workingDirectory);
-
-        ProcessBuilder pb = new ProcessBuilder(command)
-                .directory(workingDirectory.toFile())
-                .redirectOutput(ProcessBuilder.Redirect.INHERIT)
-                .redirectError(ProcessBuilder.Redirect.INHERIT);
-
-        // Set RUST_LOG if not already present.
-        pb.environment().putIfAbsent("RUST_LOG", "info");
-
-        process = pb.start();
-        LOG.info(() -> "FEAGI started (PID: " + process.pid() + ")");
 
         if (waitForReady) {
             LOG.info(() -> "Waiting for FEAGI to be ready (timeout: " + timeout.toSeconds() + "s)...");
             LOG.info(() -> "Checking REST API at: http://" + host + ":" + restPort
                     + "/v1/system/health_check");
 
-            if (awaitReady(timeout)) {
+            if (awaitReady(proc, timeout)) {
                 LOG.info("FEAGI is ready");
                 return true;
             } else {
@@ -165,6 +178,7 @@ public final class FeagiEngine implements AutoCloseable {
      */
     public synchronized boolean stop(Duration timeout) {
         Objects.requireNonNull(timeout, "timeout");
+        stopRequested = true;
         if (process == null) {
             LOG.fine("FEAGI is not running");
             return true;
@@ -236,6 +250,15 @@ public final class FeagiEngine implements AutoCloseable {
         if (!stop()) {
             LOG.warning("stop() returned false during close() — process may still be running");
         }
+        // HttpClient implements AutoCloseable starting in Java 21.
+        // Forward-compatible: on Java 17 the condition is false (no-op).
+        if (httpClient instanceof AutoCloseable ac) {
+            try {
+                ac.close();
+            } catch (Exception e) {
+                LOG.fine(() -> "Error closing HttpClient: " + e.getMessage());
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -268,8 +291,14 @@ public final class FeagiEngine implements AutoCloseable {
 
     /**
      * Poll the FEAGI REST health check endpoint until ready or timeout.
+     *
+     * <p>Runs outside the synchronized block so {@link #stop()} is not blocked.
+     * Uses a local {@code proc} reference (safe — no field access) and checks
+     * the {@code volatile stopRequested} flag each iteration.
+     *
+     * @param proc the process to monitor (captured before releasing the lock)
      */
-    private boolean awaitReady(Duration timeout) {
+    private boolean awaitReady(Process proc, Duration timeout) {
         long startNanos = System.nanoTime();
         long timeoutNanos = timeout.toNanos();
         int attempts = 0;
@@ -287,6 +316,11 @@ public final class FeagiEngine implements AutoCloseable {
                 .build();
 
         while (System.nanoTime() - startNanos < timeoutNanos) {
+            if (stopRequested) {
+                LOG.info("Stop requested during health check");
+                return false;
+            }
+
             attempts++;
 
             if (attempts % HEALTH_LOG_EVERY_N_ATTEMPTS == 0) {
@@ -296,7 +330,7 @@ public final class FeagiEngine implements AutoCloseable {
             }
 
             // Check if the process died.
-            if (process != null && !process.isAlive()) {
+            if (!proc.isAlive()) {
                 LOG.severe("FEAGI process terminated unexpectedly");
                 return false;
             }
