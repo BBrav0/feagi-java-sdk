@@ -105,6 +105,7 @@ final class PidFileManager {
         handle.destroy();
 
         // Wait for graceful shutdown via OS-signalled future
+        boolean interrupted = false;
         try {
             handle.onExit().get(timeout.toMillis(), TimeUnit.MILLISECONDS);
             cleanup();
@@ -112,7 +113,8 @@ final class PidFileManager {
         } catch (TimeoutException e) {
             // Graceful shutdown timed out — force kill
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            interrupted = true;
+            // Clear interrupt flag so force-kill wait can proceed
         } catch (ExecutionException e) {
             // Process already exited
             cleanup();
@@ -126,9 +128,13 @@ final class PidFileManager {
         } catch (ProcessUtils.ProcessNotFoundException e) {
             // Already gone — success
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            interrupted = true;
         } catch (ExecutionException | TimeoutException e) {
             // Ignore
+        }
+
+        if (interrupted) {
+            Thread.currentThread().interrupt();
         }
 
         if (ProcessUtils.isProcessRunning(pid)) {

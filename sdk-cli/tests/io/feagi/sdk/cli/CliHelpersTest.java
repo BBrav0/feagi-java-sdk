@@ -88,32 +88,32 @@ class CliHelpersTest {
     @Test
     void testSplitStopTimeoutNormal() {
         // 10s → 30% = 3000 for BV, 70% = 7000 for FEAGI
-        long[] split = CliHelpers.splitStopTimeout(10_000);
-        assertEquals(3000, split[0], "BV timeout");
-        assertEquals(7000, split[1], "FEAGI timeout");
+        CliHelpers.StopTimeouts split = CliHelpers.splitStopTimeout(10_000);
+        assertEquals(3000, split.bvMs(), "BV timeout");
+        assertEquals(7000, split.feagiMs(), "FEAGI timeout");
     }
 
     @Test
     void testSplitStopTimeoutSmall() {
         // 1s → 30% = 300, clamped to 2000 for BV; FEAGI = max(0, 1000 - 2000) = 0
-        long[] split = CliHelpers.splitStopTimeout(1000);
-        assertEquals(2000, split[0], "BV timeout clamped to floor");
-        assertEquals(0, split[1], "FEAGI timeout clamped to zero");
+        CliHelpers.StopTimeouts split = CliHelpers.splitStopTimeout(1000);
+        assertEquals(2000, split.bvMs(), "BV timeout clamped to floor");
+        assertEquals(0, split.feagiMs(), "FEAGI timeout clamped to zero");
     }
 
     @Test
     void testSplitStopTimeoutLarge() {
         // 20s → 30% = 6000 for BV, 70% = 14000 for FEAGI
-        long[] split = CliHelpers.splitStopTimeout(20_000);
-        assertEquals(6000, split[0], "BV timeout");
-        assertEquals(14_000, split[1], "FEAGI timeout");
+        CliHelpers.StopTimeouts split = CliHelpers.splitStopTimeout(20_000);
+        assertEquals(6000, split.bvMs(), "BV timeout");
+        assertEquals(14_000, split.feagiMs(), "FEAGI timeout");
     }
 
     @Test
     void testSplitStopTimeoutZero() {
         // 0 → BV clamped to 2000, FEAGI = max(0, 0 - 2000) = 0
-        long[] split = CliHelpers.splitStopTimeout(0);
-        assertEquals(2000, split[0], "BV timeout clamped to floor");
-        assertEquals(0, split[1], "FEAGI timeout clamped to zero");
+        CliHelpers.StopTimeouts split = CliHelpers.splitStopTimeout(0);
+        assertEquals(2000, split.bvMs(), "BV timeout clamped to floor");
+        assertEquals(0, split.feagiMs(), "FEAGI timeout clamped to zero");
     }
 }

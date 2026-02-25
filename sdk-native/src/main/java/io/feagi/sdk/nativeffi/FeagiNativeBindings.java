@@ -220,6 +220,11 @@ public final class FeagiNativeBindings {
             String authTokenBase64
     ) {
         Objects.requireNonNull(authTokenBase64, "authTokenBase64");
+        if (authTokenBase64.contains("-") || authTokenBase64.contains("_")) {
+            throw new IllegalArgumentException(
+                    "Auth token appears to use URL-safe Base64 (- or _ characters). "
+                    + "Use standard Base64 encoding (+ and /) instead.");
+        }
         byte[] decoded = Base64.getDecoder().decode(authTokenBase64);
         if (decoded.length != 32) {
             throw new IllegalArgumentException(

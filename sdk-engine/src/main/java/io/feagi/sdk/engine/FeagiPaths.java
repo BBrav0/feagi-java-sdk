@@ -51,6 +51,8 @@ import java.util.logging.Logger;
  */
 public final class FeagiPaths {
 
+    private static final Logger LOG = Logger.getLogger(FeagiPaths.class.getName());
+
     private static final DateTimeFormatter RUN_DIR_FORMAT =
             DateTimeFormatter.ofPattern("'run_'yyyyMMdd_HHmmss");
 
@@ -184,9 +186,8 @@ public final class FeagiPaths {
                 case "config":     return configDir.resolve(path);
                 case "log":        return logsDir.resolve(path);
                 default:
-                    Logger.getLogger(FeagiPaths.class.getName())
-                            .warning("Unknown path category: " + category
-                                    + ". Resolving relative to working directory.");
+                    LOG.warning("Unknown path category: " + category
+                            + ". Resolving relative to working directory.");
                     break;
             }
         }

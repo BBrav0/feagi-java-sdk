@@ -20,7 +20,8 @@ import java.util.OptionalLong;
  */
 final class CliHelpers {
 
-    /** Brief pause after process launch to detect immediate crashes. */
+    /** Brief pause after process launch to detect immediate crashes.
+     *  Longer than BV's 500 ms because the Python FEAGI engine has slower startup. */
     private static final long CRASH_GUARD_DELAY_MS = 1000;
 
     private CliHelpers() {}
@@ -43,13 +44,16 @@ final class CliHelpers {
      * with a 2 000 ms floor. FEAGI gets the remainder, clamped to zero.
      *
      * @param totalMs total timeout in milliseconds
-     * @return {@code {bvMs, feagiMs}}
+     * @return split timeouts for BV and FEAGI
      */
-    static long[] splitStopTimeout(long totalMs) {
+    static StopTimeouts splitStopTimeout(long totalMs) {
         long bvMs = Math.max(2000, totalMs * 3 / 10);
         long feagiMs = Math.max(0, totalMs - bvMs);
-        return new long[]{bvMs, feagiMs};
+        return new StopTimeouts(bvMs, feagiMs);
     }
+
+    /** Timeout allocation for stop operations. */
+    record StopTimeouts(long bvMs, long feagiMs) {}
 
     /**
      * Read the {@code timeouts.service_startup} value from a FEAGI config file.

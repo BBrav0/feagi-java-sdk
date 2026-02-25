@@ -24,6 +24,8 @@ import java.util.OptionalLong;
 final class BvProcessManager {
 
     private static final int LOG_RETENTION = 10;
+    /** Brief pause after launch to detect immediate crashes.
+     *  Shorter than FEAGI's 1000 ms because the native BV binary crashes fast or not at all. */
     private static final long STARTUP_VERIFY_DELAY_MS = 500;
 
     private final FeagiPaths paths;

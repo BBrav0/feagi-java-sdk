@@ -27,9 +27,9 @@ final class StopCommand implements Callable<Integer> {
         try {
             FeagiPaths paths = FeagiPaths.withDefaults();
             long totalMs = CliHelpers.secondsToMillis(timeout);
-            long[] split = CliHelpers.splitStopTimeout(totalMs);
-            long bvTimeoutMs = split[0];
-            long feagiTimeoutMs = split[1];
+            CliHelpers.StopTimeouts split = CliHelpers.splitStopTimeout(totalMs);
+            long bvTimeoutMs = split.bvMs();
+            long feagiTimeoutMs = split.feagiMs();
 
             // Stop BV first (depends on FEAGI)
             BvProcessManager bvManager = new BvProcessManager(paths);

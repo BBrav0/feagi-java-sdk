@@ -28,17 +28,14 @@ final class ConfigShowCommand implements Callable<Integer> {
         try {
             FeagiPaths paths = FeagiPaths.withDefaults();
             Path target = (configPath != null) ? configPath : paths.getDefaultConfig();
-            if (!Files.exists(target)) {
-                System.err.println("No config file found. Run: feagi init");
-                return 1;
-            }
 
             String contents = Files.readString(target);
             System.out.println("Config file: " + target);
             System.out.println(contents);
             return 0;
         } catch (NoSuchFileException e) {
-            System.err.println("Config file not found: " + e.getFile());
+            System.err.println("Config file not found: " + e.getFile()
+                    + ". Run: feagi init");
             return 1;
         } catch (Exception e) {
             System.err.println("Failed to read config file: " + CliHelpers.errorMessage(e));

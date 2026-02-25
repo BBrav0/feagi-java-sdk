@@ -13,6 +13,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -285,14 +287,21 @@ class FeagiPathsTest {
     @Test
     void testCreateLogRunDirHandlesCollision(@TempDir Path home) throws IOException {
         FeagiPaths paths = new FeagiPaths(home, "Linux");
+        paths.ensureLogsDir();
+        Path componentDir = Files.createDirectories(paths.logsDir.resolve("test"));
 
-        // Create two run dirs in quick succession (same second)
-        Path first = paths.createLogRunDir("test", 10);
-        Path second = paths.createLogRunDir("test", 10);
+        // Pre-create a directory matching the expected timestamp format
+        // to guarantee a collision when createLogRunDir runs
+        String timestamp = LocalDateTime.now().format(
+                DateTimeFormatter.ofPattern("'run_'yyyyMMdd_HHmmss"));
+        Path preExisting = Files.createDirectory(componentDir.resolve(timestamp));
 
-        assertNotEquals(first, second, "Concurrent run dirs should have unique names");
-        assertTrue(Files.isDirectory(first));
-        assertTrue(Files.isDirectory(second));
+        Path result = paths.createLogRunDir("test", 10);
+
+        assertNotEquals(preExisting, result, "Should create a suffixed directory");
+        assertTrue(result.getFileName().toString().startsWith(timestamp),
+                "Should share the same timestamp prefix");
+        assertTrue(Files.isDirectory(result));
     }
 
     // ------------------------------------------------------------------

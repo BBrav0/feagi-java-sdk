@@ -107,8 +107,18 @@ final class ProcessUtils {
         ProcessHandle handle = ProcessHandle.of(pid)
                 .orElseThrow(() -> new ProcessNotFoundException(pid));
         handle.destroyForcibly();
-        if (handle.isAlive()) {
-            throw new IOException("Failed to force kill PID " + pid);
+        try {
+            handle.onExit().get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while killing PID " + pid, e);
+        } catch (ExecutionException e) {
+            // Process exited (possibly with error) — success
+        } catch (TimeoutException e) {
+            if (handle.isAlive()) {
+                throw new IOException("Failed to force kill PID " + pid
+                        + " (still alive after 5s)");
+            }
         }
     }
 
