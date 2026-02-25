@@ -44,7 +44,7 @@ public final class FeagiCli implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        spec.commandLine().usage(System.out);
+        spec.commandLine().usage(spec.commandLine().getOut());
         return 0;
     }
 
@@ -71,7 +71,8 @@ public final class FeagiCli implements Callable<Integer> {
                     "For more information: https://github.com/feagi/feagi/tree/main/docs"
             );
         } catch (Exception e) {
-            LOG.fine("Could not resolve FEAGI directories for help footer: " + e.getMessage());
+            LOG.fine(() -> "Could not resolve FEAGI directories for help footer: "
+                    + CliHelpers.errorMessage(e));
         }
     }
 
