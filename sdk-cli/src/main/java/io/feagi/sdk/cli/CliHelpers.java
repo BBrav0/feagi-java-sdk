@@ -22,6 +22,11 @@ final class CliHelpers {
 
     private CliHelpers() {}
 
+    /** Convert a timeout in seconds (double) to milliseconds (long). */
+    static long secondsToMillis(double seconds) {
+        return (long) (seconds * 1000);
+    }
+
     /**
      * Read the {@code timeouts.service_startup} value from a FEAGI config file.
      *
@@ -81,7 +86,7 @@ final class CliHelpers {
 
         boolean started;
         if (wait && waitTimeout != null) {
-            started = engine.start(true, Duration.ofMillis((long) (waitTimeout * 1000)));
+            started = engine.start(true, Duration.ofMillis(secondsToMillis(waitTimeout)));
         } else {
             started = engine.start(false, Duration.ofSeconds(60));
         }
@@ -95,7 +100,9 @@ final class CliHelpers {
             manager.storePid(pid.getAsLong());
         }
 
-        Thread.sleep((long) (serviceStartup * 1000));
+        // Crash-immediately guard: detect processes that fail on launch.
+        // This is NOT a readiness check — the process may crash after this window.
+        Thread.sleep(secondsToMillis(serviceStartup));
         if (!manager.isRunning()) {
             manager.cleanupPidFile();
             throw new IOException(

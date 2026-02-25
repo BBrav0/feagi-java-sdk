@@ -5,7 +5,6 @@
 
 package io.feagi.sdk.cli;
 
-import io.feagi.sdk.engine.FeagiConfig;
 import io.feagi.sdk.engine.FeagiPaths;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -45,7 +44,11 @@ final class ConfigShowCommand implements Callable<Integer> {
     public Integer call() {
         try {
             FeagiPaths paths = FeagiPaths.withDefaults();
-            Path target = (configPath != null) ? configPath : FeagiConfig.ensureDefaultConfig(paths);
+            Path target = (configPath != null) ? configPath : paths.getDefaultConfig();
+            if (!Files.exists(target)) {
+                System.err.println("No config file found. Run: feagi init");
+                return 1;
+            }
 
             String contents = Files.readString(target);
             System.out.println("Config file: " + target);

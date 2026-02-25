@@ -26,7 +26,7 @@ final class StopCommand implements Callable<Integer> {
     public Integer call() {
         try {
             FeagiPaths paths = FeagiPaths.withDefaults();
-            long totalMs = (long) (timeout * 1000);
+            long totalMs = CliHelpers.secondsToMillis(timeout);
             // 30% of timeout for BV, 70% for FEAGI (BV depends on FEAGI, so stop BV first)
             long bvTimeoutMs = Math.max(2000, totalMs * 3 / 10);
             long feagiTimeoutMs = totalMs - bvTimeoutMs;

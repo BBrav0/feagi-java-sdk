@@ -38,6 +38,7 @@ public final class FeagiCli implements Runnable {
     public void run() {
         System.out.println(VERSION);
         System.out.println();
+        // Keep in sync with @Command.subcommands above.
         System.out.println("Available commands:");
         System.out.println("  feagi start          - Start FEAGI");
         System.out.println("  feagi stop           - Stop FEAGI");

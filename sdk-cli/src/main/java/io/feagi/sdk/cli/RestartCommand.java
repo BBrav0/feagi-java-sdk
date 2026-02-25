@@ -43,7 +43,7 @@ final class RestartCommand implements Callable<Integer> {
             // Stop existing instance
             if (manager.isRunning()) {
                 System.out.println("Stopping FEAGI...");
-                manager.stop(Duration.ofMillis((long) (timeout * 1000)));
+                manager.stop(Duration.ofMillis(CliHelpers.secondsToMillis(timeout)));
             }
 
             // Resolve config

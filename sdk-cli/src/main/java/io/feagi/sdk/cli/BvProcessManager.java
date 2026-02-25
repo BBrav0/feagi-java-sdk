@@ -66,7 +66,8 @@ public final class BvProcessManager {
         long pid = proc.pid();
         pidManager.writePid(pid);
 
-        // Verify process survives initial startup
+        // Crash-immediately guard: detect processes that fail on launch.
+        // This is NOT a readiness check — the process may crash after this window.
         try {
             Thread.sleep(STARTUP_VERIFY_DELAY_MS);
         } catch (InterruptedException e) {

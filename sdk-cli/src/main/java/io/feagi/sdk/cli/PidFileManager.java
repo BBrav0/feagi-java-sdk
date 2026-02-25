@@ -127,11 +127,10 @@ final class PidFileManager {
             // Ignore
         }
 
-        cleanup();
-
         if (ProcessUtils.isProcessRunning(pid)) {
             throw new IOException("Failed to stop " + processName + " (PID: " + pid + ")");
         }
+        cleanup();
         return true;
     }
 }
