@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.logging.Logger;
 
 /**
  * Cross-platform path manager for FEAGI directories.
@@ -182,7 +183,11 @@ public final class FeagiPaths {
                 case "connectome": return connectomesDir.resolve(path);
                 case "config":     return configDir.resolve(path);
                 case "log":        return logsDir.resolve(path);
-                default:           break;
+                default:
+                    Logger.getLogger(FeagiPaths.class.getName())
+                            .warning("Unknown path category: " + category
+                                    + ". Resolving relative to working directory.");
+                    break;
             }
         }
         return Path.of("").toAbsolutePath().resolve(path);
@@ -266,7 +271,7 @@ public final class FeagiPaths {
         if (!Files.exists(candidate)) {
             return ensureDir(candidate);
         }
-        for (int counter = 1; counter <= 1000; counter++) {
+        for (int counter = 1; counter <= 20; counter++) {
             candidate = parentDir.resolve(timestamp + "_" + counter);
             if (!Files.exists(candidate)) {
                 return ensureDir(candidate);

@@ -98,8 +98,11 @@ public final class FeagiConfig {
         try {
             Files.setPosixFilePermissions(path,
                     PosixFilePermissions.fromString("rw-------"));
-        } catch (UnsupportedOperationException | IOException ignored) {
-            // Non-POSIX (Windows) or permissions not supported — skip
+        } catch (UnsupportedOperationException e) {
+            LOG.fine("POSIX permissions not supported on this platform; "
+                    + "config file may be world-readable: " + path);
+        } catch (IOException ignored) {
+            // Permissions not supported on this filesystem — skip
         }
     }
 

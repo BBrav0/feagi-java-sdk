@@ -47,18 +47,18 @@ final class BvHelpers {
         Long wsPort = toml.getLong("websocket.visualization_port");
 
         if (apiHost == null || apiHost.isBlank() || wsHost == null || wsHost.isBlank()) {
-            throw new IllegalStateException(
+            throw new IOException(
                     "Config must define non-blank api.host and websocket.host.");
         }
         if (apiPort == null || wsPort == null) {
-            throw new IllegalStateException(
+            throw new IOException(
                     "Config must define api.port and websocket.visualization_port.");
         }
         if (apiPort < 1 || apiPort > 65535) {
-            throw new IllegalStateException("api.port must be 1-65535, got: " + apiPort);
+            throw new IOException("api.port must be 1-65535, got: " + apiPort);
         }
         if (wsPort < 1 || wsPort > 65535) {
-            throw new IllegalStateException(
+            throw new IOException(
                     "websocket.visualization_port must be 1-65535, got: " + wsPort);
         }
 
@@ -78,7 +78,8 @@ final class BvHelpers {
      * requiring many platform-specific variables (PATH, DISPLAY, WAYLAND_DISPLAY,
      * XDG_*, DBUS_*, HOME, etc.) that differ across operating systems. Since the
      * BV process is a local, trusted application launched by the same user, the
-     * risk is accepted.
+     * risk is accepted. Callers needing tighter isolation can copy this map and
+     * remove sensitive keys before launching the process.
      */
     static Map<String, String> buildBvEnv(String apiUrl, String wsHost, int wsPort) {
         Map<String, String> env = new HashMap<>(System.getenv());

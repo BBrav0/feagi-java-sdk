@@ -107,12 +107,16 @@ final class BvProcessManager {
     /**
      * Restart the Brain Visualizer.
      *
+     * <p>If the process is running, it is stopped first. If {@code stop()} throws
+     * (e.g. force-kill fails), the exception propagates and no new process is started;
+     * the old process may still be running.
+     *
      * @param binary      path to the BV executable
      * @param workingDir  working directory
      * @param env         environment variables
      * @param stopTimeout timeout for stopping the existing process
      * @return PID of the new process
-     * @throws IOException if restart fails
+     * @throws IOException if stop or start fails
      */
     long restart(Path binary, Path workingDir, Map<String, String> env,
                         Duration stopTimeout) throws IOException {

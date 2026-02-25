@@ -207,6 +207,11 @@ public final class FeagiNativeBindings {
      *
      * <p>Validates the token at the Java layer before passing to native code.
      *
+     * @param cfgHandle        native configuration handle
+     * @param authTokenBase64  the auth token encoded in standard Base64
+     *                         (RFC 4648 section 4, using {@code +} and {@code /}).
+     *                         URL-safe Base64 ({@code -} and {@code _}) is not accepted.
+     * @return native status code
      * @throws NullPointerException     if authTokenBase64 is null
      * @throws IllegalArgumentException if the token is not valid base64 or does not decode to 32 bytes
      */

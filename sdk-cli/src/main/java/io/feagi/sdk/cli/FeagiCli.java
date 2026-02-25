@@ -9,6 +9,8 @@ import io.feagi.sdk.engine.FeagiPaths;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
+import java.util.concurrent.Callable;
+
 /**
  * FEAGI CLI entry point.
  *
@@ -30,7 +32,7 @@ import picocli.CommandLine.Command;
                 BvCommand.class,
         }
 )
-public final class FeagiCli implements Runnable {
+public final class FeagiCli implements Callable<Integer> {
 
     static final String VERSION = "FEAGI CLI v0.0.1-beta.0";
 
@@ -38,7 +40,7 @@ public final class FeagiCli implements Runnable {
     CommandLine.Model.CommandSpec spec;
 
     @Override
-    public void run() {
+    public Integer call() {
         spec.commandLine().usage(System.out);
         System.out.println();
         try {
@@ -53,8 +55,10 @@ public final class FeagiCli implements Runnable {
         } catch (Exception e) {
             System.err.println("Warning: Could not resolve FEAGI directories: "
                     + CliHelpers.errorMessage(e));
+            return 1;
         }
         System.out.println("For more information: https://github.com/feagi/feagi/tree/main/docs");
+        return 0;
     }
 
     public static void main(String[] args) {

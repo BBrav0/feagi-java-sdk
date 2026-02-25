@@ -56,7 +56,7 @@ class BvHelpersTest {
                 visualization_port = 8080
                 """);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(IOException.class,
                 () -> BvHelpers.readNetworkSettings(config));
     }
 
@@ -72,7 +72,7 @@ class BvHelpersTest {
                 visualization_port = 8080
                 """);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(IOException.class,
                 () -> BvHelpers.readNetworkSettings(config));
     }
 
@@ -88,7 +88,7 @@ class BvHelpersTest {
                 host = "127.0.0.1"
                 """);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(IOException.class,
                 () -> BvHelpers.readNetworkSettings(config));
     }
 
@@ -105,7 +105,7 @@ class BvHelpersTest {
                 visualization_port = 8080
                 """);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(IOException.class,
                 () -> BvHelpers.readNetworkSettings(config));
     }
 
@@ -126,7 +126,7 @@ class BvHelpersTest {
                 visualization_port = 8080
                 """);
 
-        IllegalStateException ex = assertThrows(IllegalStateException.class,
+        IOException ex = assertThrows(IOException.class,
                 () -> BvHelpers.readNetworkSettings(config));
         assertTrue(ex.getMessage().contains("99999"));
     }
@@ -144,7 +144,7 @@ class BvHelpersTest {
                 visualization_port = 8080
                 """);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(IOException.class,
                 () -> BvHelpers.readNetworkSettings(config));
     }
 
@@ -161,7 +161,7 @@ class BvHelpersTest {
                 visualization_port = -1
                 """);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(IOException.class,
                 () -> BvHelpers.readNetworkSettings(config));
     }
 

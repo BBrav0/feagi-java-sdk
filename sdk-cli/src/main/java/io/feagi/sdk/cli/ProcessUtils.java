@@ -106,7 +106,8 @@ final class ProcessUtils {
     private static void forceKillUnix(long pid) throws IOException {
         ProcessHandle handle = ProcessHandle.of(pid)
                 .orElseThrow(() -> new ProcessNotFoundException(pid));
-        if (!handle.destroyForcibly()) {
+        handle.destroyForcibly();
+        if (handle.isAlive()) {
             throw new IOException("Failed to force kill PID " + pid);
         }
     }

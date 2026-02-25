@@ -169,6 +169,17 @@ class FeagiPathsTest {
         assertEquals(lower, upper);
     }
 
+    @Test
+    void testResolveUnknownCategoryResolvesRelativeToCwd(@TempDir Path home) {
+        FeagiPaths paths = new FeagiPaths(home, "Linux");
+        Path resolved = paths.resolvePath(Path.of("file.txt"), "bogus");
+        assertTrue(resolved.isAbsolute(), "Should resolve to absolute path");
+        assertTrue(resolved.endsWith("file.txt"));
+        // Should NOT resolve under any FEAGI directory
+        assertFalse(resolved.startsWith(home),
+                "Unknown category should not resolve under home");
+    }
+
     // ------------------------------------------------------------------
     // Directory creation
     // ------------------------------------------------------------------
