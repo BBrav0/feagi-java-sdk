@@ -177,4 +177,23 @@ class FeagiCliTest {
         String usage = cli.getSubcommands().get("stop").getUsageMessage();
         assertTrue(usage.contains("--timeout"), "Should show --timeout option");
     }
+
+    // ------------------------------------------------------------------
+    // Footer failure path
+    // ------------------------------------------------------------------
+
+    @Test
+    void testHelpFlagWithoutDirectoryFooter() {
+        CommandLine cli = new CommandLine(new FeagiCli());
+        StringWriter out = new StringWriter();
+        cli.setOut(new PrintWriter(out));
+
+        int exitCode = cli.execute("--help");
+
+        assertEquals(0, exitCode);
+        String output = out.toString();
+        assertTrue(output.contains("feagi"), "Should contain command name");
+        assertFalse(output.contains("FEAGI Directories:"),
+                "Should not show directories when footer not applied");
+    }
 }

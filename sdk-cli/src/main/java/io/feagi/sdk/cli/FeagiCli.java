@@ -10,6 +10,7 @@ import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
 import java.util.concurrent.Callable;
+import java.util.logging.Logger;
 
 /**
  * FEAGI CLI entry point.
@@ -34,6 +35,8 @@ import java.util.concurrent.Callable;
 )
 public final class FeagiCli implements Callable<Integer> {
 
+    private static final Logger LOG = Logger.getLogger(FeagiCli.class.getName());
+
     static final String VERSION = "FEAGI CLI v0.0.1-beta.0";
 
     @CommandLine.Spec
@@ -42,16 +45,16 @@ public final class FeagiCli implements Callable<Integer> {
     @Override
     public Integer call() {
         spec.commandLine().usage(System.out);
-        System.out.println();
-        System.out.println("For more information: https://github.com/feagi/feagi/tree/main/docs");
         return 0;
     }
 
     /**
-     * Set the usage footer to display FEAGI directory paths.
+     * Set the usage footer to display FEAGI directory paths and docs URL.
      *
      * <p>Mirrors the Python SDK's argparse {@code epilog}. Non-fatal on failure —
      * directories simply won't appear in help output.
+     *
+     * <p>Package-private for testing.
      */
     static void applyDirectoryFooter(CommandLine cmd) {
         try {
@@ -63,10 +66,12 @@ public final class FeagiCli implements Callable<Integer> {
                     "  Logs:        " + paths.logsDir,
                     "  Cache:       " + paths.cacheDir,
                     "  Genomes:     " + paths.genomesDir,
-                    "  Connectomes: " + paths.connectomesDir
+                    "  Connectomes: " + paths.connectomesDir,
+                    "",
+                    "For more information: https://github.com/feagi/feagi/tree/main/docs"
             );
-        } catch (Exception ignored) {
-            // Non-fatal — directories just won't appear in help
+        } catch (Exception e) {
+            LOG.fine("Could not resolve FEAGI directories for help footer: " + e.getMessage());
         }
     }
 
