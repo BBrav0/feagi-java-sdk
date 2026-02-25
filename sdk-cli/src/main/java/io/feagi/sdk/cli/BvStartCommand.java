@@ -29,7 +29,7 @@ final class BvStartCommand implements Callable<Integer> {
         try {
             if (BvDiscovery.isMacOs()) {
                 BvHelpers.printMacOsInstructions();
-                return 0;
+                return 1;
             }
 
             FeagiPaths paths = FeagiPaths.withDefaults();

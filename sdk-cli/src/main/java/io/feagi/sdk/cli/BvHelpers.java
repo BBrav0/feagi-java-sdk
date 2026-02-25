@@ -71,6 +71,14 @@ final class BvHelpers {
      * <p>Inherits the full parent environment to ensure PATH, DISPLAY,
      * WAYLAND_DISPLAY, and other platform-required variables are available
      * to the BV process. FEAGI-specific variables are then overlaid.
+     *
+     * <p><strong>Security note:</strong> This forwards the entire parent environment,
+     * which may include sensitive variables (e.g. API keys, tokens). An allowlist
+     * approach is impractical because the Brain Visualizer is a GUI application
+     * requiring many platform-specific variables (PATH, DISPLAY, WAYLAND_DISPLAY,
+     * XDG_*, DBUS_*, HOME, etc.) that differ across operating systems. Since the
+     * BV process is a local, trusted application launched by the same user, the
+     * risk is accepted.
      */
     static Map<String, String> buildBvEnv(String apiUrl, String wsHost, int wsPort) {
         Map<String, String> env = new HashMap<>(System.getenv());
@@ -82,12 +90,15 @@ final class BvHelpers {
     }
 
     static boolean checkFeagiRunning(String apiUrl) {
+        // Build the request outside the try-catch so malformed URLs
+        // (IllegalArgumentException from URI.create) propagate to the caller
+        // instead of being silently swallowed as "not running".
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(apiUrl + HEALTH_CHECK_PATH))
+                .timeout(Duration.ofSeconds(2))
+                .GET()
+                .build();
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(apiUrl + HEALTH_CHECK_PATH))
-                    .timeout(Duration.ofSeconds(2))
-                    .GET()
-                    .build();
             HttpResponse<Void> response = HTTP_CLIENT.send(request,
                     HttpResponse.BodyHandlers.discarding());
             return response.statusCode() / 100 == 2;

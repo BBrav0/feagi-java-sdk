@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -44,11 +45,11 @@ public final class FeagiConfig {
             # For more information, see: https://github.com/feagi/feagi/tree/main/docs
 
             [api]
-            host = "127.0.0.1"  # Localhost only - secure by default, no firewall prompts. Override with FEAGI_API_HOST for network deployments
+            host = "127.0.0.1"  # Localhost only - secure by default, no firewall prompts
             port = 8000
 
             [websocket]
-            host = "127.0.0.1"  # Localhost only - secure by default, no firewall prompts. Override with FEAGI_WS_HOST for network deployments
+            host = "127.0.0.1"  # Localhost only - secure by default, no firewall prompts
             enabled = true
             visualization_port = 8080
             sensory_port = 5558
@@ -92,6 +93,16 @@ public final class FeagiConfig {
 
     private FeagiConfig() {}
 
+    /** Best-effort: restrict file to owner-only (rw-------) on POSIX systems. */
+    private static void setOwnerOnly(Path path) {
+        try {
+            Files.setPosixFilePermissions(path,
+                    PosixFilePermissions.fromString("rw-------"));
+        } catch (UnsupportedOperationException | IOException ignored) {
+            // Non-POSIX (Windows) or permissions not supported — skip
+        }
+    }
+
     /**
      * Generate a default FEAGI configuration file.
      *
@@ -124,6 +135,7 @@ public final class FeagiConfig {
         }
 
         Files.writeString(target, DEFAULT_CONFIG_CONTENT);
+        setOwnerOnly(target);
         LOG.info("Generated default config: " + target);
         return target;
     }
@@ -144,6 +156,7 @@ public final class FeagiConfig {
         }
         paths.ensureConfigDir();
         Files.writeString(configPath, DEFAULT_CONFIG_CONTENT);
+        setOwnerOnly(configPath);
         LOG.info("Created default config: " + configPath);
         return configPath;
     }

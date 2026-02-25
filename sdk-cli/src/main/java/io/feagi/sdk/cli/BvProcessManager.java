@@ -40,6 +40,11 @@ final class BvProcessManager {
     /**
      * Start the Brain Visualizer process.
      *
+     * <p>Note: the {@code isRunning()} check and subsequent PID file write are not
+     * atomic. Concurrent invocations of {@code feagi bv start} can race past the
+     * guard. This is a known limitation of PID-file–based locking; the CLI is
+     * designed for single-user, single-invocation use.
+     *
      * @param binary     path to the BV executable
      * @param workingDir working directory for the process
      * @param env        environment variables for the process

@@ -260,9 +260,14 @@ public final class FeagiEngine implements AutoCloseable {
      * is currently alive.
      */
     public synchronized OptionalLong pid() {
-        return process != null && process.isAlive()
-                ? OptionalLong.of(process.pid())
-                : OptionalLong.empty();
+        if (process == null || !process.isAlive()) {
+            return OptionalLong.empty();
+        }
+        try {
+            return OptionalLong.of(process.pid());
+        } catch (UnsupportedOperationException e) {
+            return OptionalLong.empty();
+        }
     }
 
     /**

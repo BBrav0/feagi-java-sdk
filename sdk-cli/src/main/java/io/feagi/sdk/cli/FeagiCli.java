@@ -34,9 +34,12 @@ public final class FeagiCli implements Runnable {
 
     static final String VERSION = "FEAGI CLI v0.0.1-beta.0";
 
+    @CommandLine.Spec
+    CommandLine.Model.CommandSpec spec;
+
     @Override
     public void run() {
-        new CommandLine(this).usage(System.out);
+        spec.commandLine().usage(System.out);
         System.out.println();
         try {
             FeagiPaths paths = FeagiPaths.withDefaults();

@@ -10,6 +10,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -286,7 +287,13 @@ public final class FeagiPaths {
             return; // best-effort pruning
         }
 
-        runDirs.sort(Comparator.comparing(p -> p.getFileName().toString()));
+        runDirs.sort(Comparator.comparing(p -> {
+            try {
+                return Files.getLastModifiedTime(p);
+            } catch (IOException e) {
+                return FileTime.fromMillis(0);
+            }
+        }));
         int excess = runDirs.size() - retention;
         if (excess <= 0) {
             return;

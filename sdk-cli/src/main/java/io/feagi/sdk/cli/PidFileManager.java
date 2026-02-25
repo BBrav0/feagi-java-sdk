@@ -8,6 +8,7 @@ package io.feagi.sdk.cli;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.OptionalLong;
@@ -63,7 +64,10 @@ final class PidFileManager {
     }
 
     void writePid(long pid) throws IOException {
-        Files.writeString(pidFile, pid + "\n");
+        Path tmp = pidFile.resolveSibling(pidFile.getFileName() + ".tmp");
+        Files.writeString(tmp, pid + "\n");
+        Files.move(tmp, pidFile,
+                StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
     /**

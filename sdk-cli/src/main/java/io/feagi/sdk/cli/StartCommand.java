@@ -43,8 +43,8 @@ final class StartCommand implements Callable<Integer> {
                 description = "Wait for FEAGI to report ready before returning.")
         boolean wait;
 
-        @Option(names = "--timeout", required = true,
-                description = "Seconds to wait for readiness (required with --wait).")
+        @Option(names = "--timeout", defaultValue = "60",
+                description = "Seconds to wait for readiness (default: 60).")
         Double timeout;
     }
 
