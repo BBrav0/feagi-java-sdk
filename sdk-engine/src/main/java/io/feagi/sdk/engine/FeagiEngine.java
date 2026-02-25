@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
@@ -252,6 +253,16 @@ public final class FeagiEngine implements AutoCloseable {
      */
     public Path feagiPath() {
         return feagiPath;
+    }
+
+    /**
+     * Return the PID of the running FEAGI process, or empty if no process
+     * is currently alive.
+     */
+    public synchronized OptionalLong pid() {
+        return process != null && process.isAlive()
+                ? OptionalLong.of(process.pid())
+                : OptionalLong.empty();
     }
 
     /**
