@@ -11,6 +11,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
@@ -43,25 +44,17 @@ final class ConfigShowCommand implements Callable<Integer> {
     public Integer call() {
         try {
             FeagiPaths paths = FeagiPaths.withDefaults();
-
-            Path target;
-            if (configPath != null) {
-                target = configPath;
-            } else {
-                target = FeagiConfig.ensureDefaultConfig(paths);
-            }
-
-            if (!Files.exists(target)) {
-                System.err.println("Config file not found: " + target);
-                return 1;
-            }
+            Path target = (configPath != null) ? configPath : FeagiConfig.ensureDefaultConfig(paths);
 
             String contents = Files.readString(target);
             System.out.println("Config file: " + target);
             System.out.println(contents);
             return 0;
+        } catch (NoSuchFileException e) {
+            System.err.println("Config file not found: " + e.getFile());
+            return 1;
         } catch (Exception e) {
-            System.err.println("Failed to read config file: " + e.getMessage());
+            System.err.println("Failed to read config file: " + e.toString());
             return 1;
         }
     }

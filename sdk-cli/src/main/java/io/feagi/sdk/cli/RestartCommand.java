@@ -53,7 +53,7 @@ final class RestartCommand implements Callable<Integer> {
                 configPath = FeagiConfig.ensureDefaultConfig(paths);
             }
 
-            double serviceStartup = StartCommand.readServiceStartupTimeout(configPath);
+            double serviceStartup = CliHelpers.readServiceStartupTimeout(configPath);
 
             // Build and start engine
             FeagiEngine.Builder builder = FeagiEngine.builder().config(configPath);
@@ -93,7 +93,7 @@ final class RestartCommand implements Callable<Integer> {
             System.err.println("Interrupted during FEAGI restart");
             return 130;
         } catch (Exception e) {
-            System.err.println("Failed to restart FEAGI: " + e.getMessage());
+            System.err.println("Failed to restart FEAGI: " + e.toString());
             return 1;
         }
     }

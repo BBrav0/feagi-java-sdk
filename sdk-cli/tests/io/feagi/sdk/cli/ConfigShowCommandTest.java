@@ -36,30 +36,6 @@ class ConfigShowCommandTest {
     }
 
     // ------------------------------------------------------------------
-    // Config show — explicit --config path
-    // ------------------------------------------------------------------
-
-    @Test
-    void testExplicitConfigPath(@TempDir Path tmp) throws Exception {
-        Path customConfig = tmp.resolve("custom.toml");
-        Files.writeString(customConfig, "[api]\nhost = \"10.0.0.1\"\nport = 9000\n");
-
-        String content = Files.readString(customConfig);
-        assertTrue(content.contains("10.0.0.1"));
-        assertTrue(content.contains("9000"));
-    }
-
-    // ------------------------------------------------------------------
-    // Config show — missing file
-    // ------------------------------------------------------------------
-
-    @Test
-    void testMissingConfigFileDoesNotExist(@TempDir Path tmp) {
-        Path missing = tmp.resolve("nonexistent.toml");
-        assertFalse(Files.exists(missing));
-    }
-
-    // ------------------------------------------------------------------
     // CLI registration
     // ------------------------------------------------------------------
 

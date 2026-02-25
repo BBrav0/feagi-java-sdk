@@ -8,13 +8,10 @@ package io.feagi.sdk.cli;
 import io.feagi.sdk.engine.FeagiConfig;
 import io.feagi.sdk.engine.FeagiEngine;
 import io.feagi.sdk.engine.FeagiPaths;
-import org.tomlj.Toml;
-import org.tomlj.TomlParseResult;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.OptionalLong;
@@ -73,7 +70,7 @@ final class StartCommand implements Callable<Integer> {
             }
 
             // Read service startup timeout from config
-            double serviceStartup = readServiceStartupTimeout(configPath);
+            double serviceStartup = CliHelpers.readServiceStartupTimeout(configPath);
 
             // Build engine
             FeagiEngine.Builder builder = FeagiEngine.builder().config(configPath);
@@ -120,24 +117,8 @@ final class StartCommand implements Callable<Integer> {
             System.err.println("Interrupted during FEAGI startup");
             return 130;
         } catch (Exception e) {
-            System.err.println("Failed to start FEAGI: " + e.getMessage());
+            System.err.println("Failed to start FEAGI: " + e.toString());
             return 1;
         }
-    }
-
-    static double readServiceStartupTimeout(Path configPath) {
-        try {
-            if (Files.exists(configPath)) {
-                TomlParseResult toml = Toml.parse(configPath);
-                Double value = toml.getDouble("timeouts.service_startup");
-                if (value != null) {
-                    return value;
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("Warning: Could not read service_startup timeout from config: "
-                    + e.getMessage() + ". Using default 3.0s.");
-        }
-        return 3.0;
     }
 }

@@ -32,7 +32,7 @@ final class StatusCommand implements Callable<Integer> {
             System.out.println("PID file: " + status.pidFile());
             return 0;
         } catch (Exception e) {
-            System.err.println("Failed to get status: " + e.getMessage());
+            System.err.println("Failed to get status: " + e.toString());
             return 1;
         }
     }

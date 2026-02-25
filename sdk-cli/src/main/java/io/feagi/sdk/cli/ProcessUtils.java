@@ -6,6 +6,7 @@
 package io.feagi.sdk.cli;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -65,7 +66,7 @@ final class ProcessUtils {
             if (exitCode == 0) {
                 return;
             }
-            String output = new String(proc.getInputStream().readAllBytes());
+            String output = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             String lower = output.toLowerCase();
             if (exitCode == 128 || exitCode == 1 || lower.contains("not found")) {
                 throw new ProcessNotFoundException(pid);

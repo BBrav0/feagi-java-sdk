@@ -19,7 +19,7 @@ import picocli.CommandLine.Command;
         name = "feagi",
         description = "FEAGI CLI utilities.",
         mixinStandardHelpOptions = true,
-        version = "FEAGI CLI v0.0.1-beta.0",
+        version = FeagiCli.VERSION,
         subcommands = {
                 StartCommand.class,
                 StopCommand.class,
@@ -32,9 +32,11 @@ import picocli.CommandLine.Command;
 )
 public final class FeagiCli implements Runnable {
 
+    static final String VERSION = "FEAGI CLI v0.0.1-beta.0";
+
     @Override
     public void run() {
-        System.out.println("FEAGI CLI v0.0.1-beta.0");
+        System.out.println(VERSION);
         System.out.println();
         System.out.println("Available commands:");
         System.out.println("  feagi start          - Start FEAGI");
