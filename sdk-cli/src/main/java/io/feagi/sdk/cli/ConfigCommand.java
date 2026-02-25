@@ -23,11 +23,12 @@ import java.util.concurrent.Callable;
         description = "FEAGI configuration utilities.",
         subcommands = {ConfigShowCommand.class}
 )
-final class ConfigCommand implements Runnable {
+final class ConfigCommand implements Callable<Integer> {
 
     @Override
-    public void run() {
+    public Integer call() {
         System.err.println("Please specify a subcommand: feagi config show");
+        return 1;
     }
 }
 

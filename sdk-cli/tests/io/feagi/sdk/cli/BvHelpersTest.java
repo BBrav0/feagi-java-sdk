@@ -8,6 +8,7 @@ package io.feagi.sdk.cli;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -144,6 +145,19 @@ class BvHelpersTest {
                 """);
 
         assertThrows(IllegalStateException.class,
+                () -> BvHelpers.readNetworkSettings(config));
+    }
+
+    // ------------------------------------------------------------------
+    // readNetworkSettings — malformed TOML
+    // ------------------------------------------------------------------
+
+    @Test
+    void testReadNetworkSettingsThrowsOnMalformedToml(@TempDir Path tmp) throws Exception {
+        Path config = tmp.resolve("bad.toml");
+        Files.writeString(config, "this is not valid [[ toml");
+
+        assertThrows(IOException.class,
                 () -> BvHelpers.readNetworkSettings(config));
     }
 

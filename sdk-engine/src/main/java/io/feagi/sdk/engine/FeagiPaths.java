@@ -82,7 +82,7 @@ public final class FeagiPaths {
     /**
      * Create a path manager with explicit home directory and OS name.
      *
-     * <p>Package-private for testing with mock OS names.
+     * <p>Primarily useful for testing with mock OS names and temp directories.
      *
      * @param homeDir user home directory
      * @param osName  operating system name (e.g. "Windows 11", "Linux", "Mac OS X")
@@ -265,14 +265,14 @@ public final class FeagiPaths {
         if (!Files.exists(candidate)) {
             return ensureDir(candidate);
         }
-        int counter = 1;
-        while (true) {
+        for (int counter = 1; counter <= 1000; counter++) {
             candidate = parentDir.resolve(timestamp + "_" + counter);
             if (!Files.exists(candidate)) {
                 return ensureDir(candidate);
             }
-            counter++;
         }
+        throw new UncheckedIOException(new IOException(
+                "Could not create unique run directory in " + parentDir));
     }
 
     private void pruneLogRuns(Path parentDir, int retention) {

@@ -56,11 +56,11 @@ final class InitCommand implements Callable<Integer> {
             }
             return 0;
         } catch (FileAlreadyExistsException e) {
-            System.err.println("Error: " + e.getMessage());
+            System.err.println("Error: " + e.toString());
             System.err.println("Use --force to overwrite existing files.");
             return 1;
         } catch (Exception e) {
-            System.err.println("Failed to initialize FEAGI environment: " + e.getMessage());
+            System.err.println("Failed to initialize FEAGI environment: " + e.toString());
             return 1;
         }
     }

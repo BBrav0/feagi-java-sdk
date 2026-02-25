@@ -29,11 +29,12 @@ import java.util.concurrent.Callable;
                 BvRestartCommand.class,
         }
 )
-final class BvCommand implements Runnable {
+final class BvCommand implements Callable<Integer> {
 
     @Override
-    public void run() {
+    public Integer call() {
         System.err.println("Please specify a subcommand: feagi bv {start|stop|status|restart}");
+        return 1;
     }
 }
 

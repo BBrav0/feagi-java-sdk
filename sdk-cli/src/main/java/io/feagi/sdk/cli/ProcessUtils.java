@@ -7,7 +7,10 @@ package io.feagi.sdk.cli;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Cross-platform process utilities for FEAGI CLI.
@@ -57,6 +60,17 @@ final class ProcessUtils {
             proc = new ProcessBuilder("taskkill", "/F", "/PID", String.valueOf(pid))
                     .redirectErrorStream(true)
                     .start();
+
+            // Drain output concurrently to prevent pipe buffer deadlock
+            Process drainTarget = proc;
+            CompletableFuture<byte[]> outputFuture = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return drainTarget.getInputStream().readAllBytes();
+                } catch (IOException e) {
+                    return new byte[0];
+                }
+            });
+
             boolean finished = proc.waitFor(10, TimeUnit.SECONDS);
             if (!finished) {
                 proc.destroyForcibly();
@@ -66,7 +80,14 @@ final class ProcessUtils {
             if (exitCode == 0) {
                 return;
             }
-            String output = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+
+            byte[] outputBytes;
+            try {
+                outputBytes = outputFuture.get(2, TimeUnit.SECONDS);
+            } catch (ExecutionException | TimeoutException e) {
+                outputBytes = new byte[0];
+            }
+            String output = new String(outputBytes, StandardCharsets.UTF_8);
             String lower = output.toLowerCase();
             if (exitCode == 128 || exitCode == 1 || lower.contains("not found")) {
                 throw new ProcessNotFoundException(pid);

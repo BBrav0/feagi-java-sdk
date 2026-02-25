@@ -6,7 +6,6 @@
 package io.feagi.sdk.cli;
 
 import io.feagi.sdk.engine.FeagiConfig;
-import io.feagi.sdk.engine.FeagiEngine;
 import io.feagi.sdk.engine.FeagiPaths;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -53,38 +52,8 @@ final class RestartCommand implements Callable<Integer> {
                 configPath = FeagiConfig.ensureDefaultConfig(paths);
             }
 
-            double serviceStartup = CliHelpers.readServiceStartupTimeout(configPath);
-
-            // Build and start engine
-            FeagiEngine.Builder builder = FeagiEngine.builder().config(configPath);
-            if (genome != null) {
-                builder.genome(genome);
-            } else if (connectome != null) {
-                builder.connectome(connectome);
-            }
-            FeagiEngine engine = builder.build();
-
-            boolean started = engine.start(false, Duration.ofSeconds(60));
-            if (!started) {
-                System.err.println("Failed to restart FEAGI");
-                return 1;
-            }
-
-            // Store PID
-            OptionalLong pid = engine.pid();
-            if (pid.isPresent()) {
-                manager.storePid(pid.getAsLong());
-            }
-
-            // Verify process survives
-            Thread.sleep((long) (serviceStartup * 1000));
-            if (!manager.isRunning()) {
-                System.err.println("FEAGI process died immediately after start. "
-                        + "Check logs for errors.");
-                manager.cleanupPidFile();
-                return 1;
-            }
-
+            OptionalLong pid = CliHelpers.launchFeagiEngine(
+                    manager, configPath, genome, connectome, false, null);
             System.out.println("FEAGI restarted successfully (PID: "
                     + (pid.isPresent() ? pid.getAsLong() : "unknown") + ")");
             return 0;

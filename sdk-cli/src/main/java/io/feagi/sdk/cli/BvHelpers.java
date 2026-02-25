@@ -35,6 +35,10 @@ final class BvHelpers {
 
     static NetworkSettings readNetworkSettings(Path configPath) throws IOException {
         TomlParseResult toml = Toml.parse(configPath);
+        if (toml.hasErrors()) {
+            throw new IOException("Failed to parse config " + configPath + ": "
+                    + toml.errors().get(0).toString());
+        }
 
         String apiHost = toml.getString("api.host");
         Long apiPort = toml.getLong("api.port");
@@ -59,8 +63,14 @@ final class BvHelpers {
         return new NetworkSettings(apiHost, apiPort.intValue(), wsHost, wsPort.intValue());
     }
 
+    /**
+     * Build environment variables for the BV process.
+     *
+     * <p>Inherits the full parent environment to ensure PATH, DISPLAY,
+     * WAYLAND_DISPLAY, and other platform-required variables are available
+     * to the BV process. FEAGI-specific variables are then overlaid.
+     */
     static Map<String, String> buildBvEnv(String apiUrl, String wsHost, int wsPort) {
-        // Inherit parent env to propagate PATH, DISPLAY, WAYLAND_DISPLAY, etc.
         Map<String, String> env = new HashMap<>(System.getenv());
         env.put("FEAGI_MODE", "remote");
         env.put("FEAGI_API_URL", apiUrl);
@@ -78,7 +88,7 @@ final class BvHelpers {
                     .build();
             HttpResponse<Void> response = HTTP_CLIENT.send(request,
                     HttpResponse.BodyHandlers.discarding());
-            return response.statusCode() == 200;
+            return response.statusCode() / 100 == 2;
         } catch (Exception e) {
             return false;
         }

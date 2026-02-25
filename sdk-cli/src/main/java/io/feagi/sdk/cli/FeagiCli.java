@@ -60,7 +60,7 @@ public final class FeagiCli implements Runnable {
             System.out.println("  Connectomes: " + paths.connectomesDir);
             System.out.println();
         } catch (Exception e) {
-            // Don't let path resolution failure crash the help display
+            System.err.println("Warning: Could not resolve FEAGI directories: " + e.toString());
         }
         System.out.println("For more information: https://github.com/feagi/feagi/tree/main/docs");
     }

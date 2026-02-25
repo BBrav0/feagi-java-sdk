@@ -93,11 +93,6 @@ final class PidFileManager {
         }
         long pid = maybePid.getAsLong();
 
-        if (!ProcessUtils.isProcessRunning(pid)) {
-            cleanup();
-            return false;
-        }
-
         ProcessHandle handle = ProcessHandle.of(pid).orElse(null);
         if (handle == null) {
             cleanup();

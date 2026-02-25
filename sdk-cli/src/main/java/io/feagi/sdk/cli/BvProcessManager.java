@@ -63,6 +63,7 @@ public final class BvProcessManager {
 
         Process proc = pb.start();
         long pid = proc.pid();
+        pidManager.writePid(pid);
 
         // Verify process survives initial startup
         try {
@@ -72,11 +73,11 @@ public final class BvProcessManager {
         }
 
         if (!proc.isAlive()) {
+            pidManager.cleanup();
             throw new IOException("Brain Visualizer process died immediately after start. "
                     + "Check logs at: " + logDir);
         }
 
-        pidManager.writePid(pid);
         return pid;
     }
 
