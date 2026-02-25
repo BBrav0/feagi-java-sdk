@@ -78,7 +78,7 @@ final class ProcessUtils {
             }
             int exitCode = proc.exitValue();
             if (exitCode == 0) {
-                return;
+                return; // outputFuture is abandoned — safe since process already exited
             }
 
             byte[] outputBytes;

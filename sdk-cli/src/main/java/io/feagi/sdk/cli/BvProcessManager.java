@@ -24,6 +24,7 @@ import java.util.OptionalLong;
 public final class BvProcessManager {
 
     private static final int LOG_RETENTION = 10;
+    private static final long STARTUP_VERIFY_DELAY_MS = 500;
 
     private final FeagiPaths paths;
     private final PidFileManager pidManager;
@@ -67,7 +68,7 @@ public final class BvProcessManager {
 
         // Verify process survives initial startup
         try {
-            Thread.sleep(500);
+            Thread.sleep(STARTUP_VERIFY_DELAY_MS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

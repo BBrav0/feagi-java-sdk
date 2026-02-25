@@ -92,6 +92,23 @@ class BvHelpersTest {
                 () -> BvHelpers.readNetworkSettings(config));
     }
 
+    @Test
+    void testReadNetworkSettingsBlankHost(@TempDir Path tmp) throws Exception {
+        Path config = tmp.resolve("feagi.toml");
+        Files.writeString(config, """
+                [api]
+                host = "  "
+                port = 8000
+
+                [websocket]
+                host = "127.0.0.1"
+                visualization_port = 8080
+                """);
+
+        assertThrows(IllegalStateException.class,
+                () -> BvHelpers.readNetworkSettings(config));
+    }
+
     // ------------------------------------------------------------------
     // readNetworkSettings — out-of-range ports
     // ------------------------------------------------------------------

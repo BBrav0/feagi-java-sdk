@@ -45,8 +45,9 @@ final class BvHelpers {
         String wsHost = toml.getString("websocket.host");
         Long wsPort = toml.getLong("websocket.visualization_port");
 
-        if (apiHost == null || wsHost == null) {
-            throw new IllegalStateException("Config must define api.host and websocket.host.");
+        if (apiHost == null || apiHost.isBlank() || wsHost == null || wsHost.isBlank()) {
+            throw new IllegalStateException(
+                    "Config must define non-blank api.host and websocket.host.");
         }
         if (apiPort == null || wsPort == null) {
             throw new IllegalStateException(
@@ -89,6 +90,9 @@ final class BvHelpers {
             HttpResponse<Void> response = HTTP_CLIENT.send(request,
                     HttpResponse.BodyHandlers.discarding());
             return response.statusCode() / 100 == 2;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
         } catch (Exception e) {
             return false;
         }

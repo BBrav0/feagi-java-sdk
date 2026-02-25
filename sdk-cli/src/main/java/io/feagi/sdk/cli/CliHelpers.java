@@ -67,7 +67,7 @@ final class CliHelpers {
      */
     static OptionalLong launchFeagiEngine(FeagiProcessManager manager, Path configPath,
             Path genome, Path connectome,
-            boolean wait, Double waitTimeout) throws Exception {
+            boolean wait, Double waitTimeout) throws IOException, InterruptedException {
 
         double serviceStartup = readServiceStartupTimeout(configPath);
 
