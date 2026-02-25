@@ -36,20 +36,7 @@ public final class FeagiCli implements Runnable {
 
     @Override
     public void run() {
-        System.out.println(VERSION);
-        System.out.println();
-        // Keep in sync with @Command.subcommands above.
-        System.out.println("Available commands:");
-        System.out.println("  feagi start          - Start FEAGI");
-        System.out.println("  feagi stop           - Stop FEAGI");
-        System.out.println("  feagi status         - Check FEAGI status");
-        System.out.println("  feagi restart        - Restart FEAGI");
-        System.out.println("  feagi bv start       - Launch Brain Visualizer");
-        System.out.println("  feagi bv stop        - Stop Brain Visualizer");
-        System.out.println("  feagi bv status      - Check Brain Visualizer status");
-        System.out.println("  feagi bv restart     - Restart Brain Visualizer");
-        System.out.println("  feagi init           - Initialize FEAGI environment");
-        System.out.println("  feagi config show    - Show configuration");
+        new CommandLine(this).usage(System.out);
         System.out.println();
         try {
             FeagiPaths paths = FeagiPaths.withDefaults();
@@ -61,7 +48,8 @@ public final class FeagiCli implements Runnable {
             System.out.println("  Connectomes: " + paths.connectomesDir);
             System.out.println();
         } catch (Exception e) {
-            System.err.println("Warning: Could not resolve FEAGI directories: " + e.toString());
+            System.err.println("Warning: Could not resolve FEAGI directories: "
+                    + CliHelpers.errorMessage(e));
         }
         System.out.println("For more information: https://github.com/feagi/feagi/tree/main/docs");
     }

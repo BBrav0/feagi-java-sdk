@@ -58,7 +58,7 @@ final class BvStartCommand implements Callable<Integer> {
             System.out.println("Brain Visualizer started (PID: " + pid + ")");
             return 0;
         } catch (Exception e) {
-            System.err.println("Failed to start Brain Visualizer: " + e.toString());
+            System.err.println("Failed to start Brain Visualizer: " + CliHelpers.errorMessage(e));
             return 1;
         }
     }

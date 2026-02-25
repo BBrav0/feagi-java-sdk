@@ -62,7 +62,7 @@ final class RestartCommand implements Callable<Integer> {
             System.err.println("Interrupted during FEAGI restart");
             return 130;
         } catch (Exception e) {
-            System.err.println("Failed to restart FEAGI: " + e.toString());
+            System.err.println("Failed to restart FEAGI: " + CliHelpers.errorMessage(e));
             return 1;
         }
     }

@@ -21,7 +21,7 @@ import java.util.OptionalLong;
  * at {@code ~/.feagi/cache/bv.pid}. Process output is redirected to
  * {@code ~/.feagi/logs/bv/run_YYYYMMDD_HHMMSS/}.
  */
-public final class BvProcessManager {
+final class BvProcessManager {
 
     private static final int LOG_RETENTION = 10;
     private static final long STARTUP_VERIFY_DELAY_MS = 500;
@@ -29,7 +29,7 @@ public final class BvProcessManager {
     private final FeagiPaths paths;
     private final PidFileManager pidManager;
 
-    public BvProcessManager(FeagiPaths paths) {
+    BvProcessManager(FeagiPaths paths) {
         Objects.requireNonNull(paths, "paths");
         this.paths = paths;
         paths.ensureCacheDir();
@@ -46,7 +46,7 @@ public final class BvProcessManager {
      * @return PID of the started process
      * @throws IOException if the process cannot be started or a duplicate is running
      */
-    public long start(Path binary, Path workingDir, Map<String, String> env) throws IOException {
+    long start(Path binary, Path workingDir, Map<String, String> env) throws IOException {
         if (isRunning()) {
             throw new IOException("Brain Visualizer is already running (PID: "
                     + getPid().orElse(-1) + ")");
@@ -83,19 +83,19 @@ public final class BvProcessManager {
         return pid;
     }
 
-    public boolean stop(Duration timeout) throws IOException {
+    boolean stop(Duration timeout) throws IOException {
         return pidManager.stop(timeout);
     }
 
-    public OptionalLong getPid() {
+    OptionalLong getPid() {
         return pidManager.getPid();
     }
 
-    public boolean isRunning() {
+    boolean isRunning() {
         return pidManager.isRunning();
     }
 
-    public ProcessStatus getStatus() {
+    ProcessStatus getStatus() {
         return pidManager.getStatus();
     }
 
@@ -109,7 +109,7 @@ public final class BvProcessManager {
      * @return PID of the new process
      * @throws IOException if restart fails
      */
-    public long restart(Path binary, Path workingDir, Map<String, String> env,
+    long restart(Path binary, Path workingDir, Map<String, String> env,
                         Duration stopTimeout) throws IOException {
         if (isRunning()) {
             stop(stopTimeout);

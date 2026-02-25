@@ -183,9 +183,13 @@ class BvHelpersTest {
     // ------------------------------------------------------------------
 
     @Test
-    void testCheckFeagiRunningReturnsFalseForClosedPort() {
-        // Port 1 is almost certainly not running an HTTP server
-        assertFalse(BvHelpers.checkFeagiRunning("http://127.0.0.1:1"));
+    void testCheckFeagiRunningReturnsFalseForClosedPort() throws Exception {
+        int port;
+        try (var ss = new java.net.ServerSocket(0)) {
+            port = ss.getLocalPort();
+        }
+        // Port is now guaranteed closed and unreserved
+        assertFalse(BvHelpers.checkFeagiRunning("http://127.0.0.1:" + port));
     }
 
     // ------------------------------------------------------------------

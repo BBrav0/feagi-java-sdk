@@ -18,11 +18,11 @@ import java.util.OptionalLong;
  * <p>Mirrors the Python SDK's {@code cli/feagi_process.py}. The PID file is stored
  * at {@code ~/.feagi/cache/feagi.pid}.
  */
-public final class FeagiProcessManager {
+final class FeagiProcessManager {
 
     private final PidFileManager pidManager;
 
-    public FeagiProcessManager(FeagiPaths paths) {
+    FeagiProcessManager(FeagiPaths paths) {
         Objects.requireNonNull(paths, "paths");
         paths.ensureCacheDir();
         this.pidManager = new PidFileManager(
@@ -35,23 +35,23 @@ public final class FeagiProcessManager {
      * @param pid the process ID to store
      * @throws IOException if the PID file cannot be written
      */
-    public void storePid(long pid) throws IOException {
+    void storePid(long pid) throws IOException {
         pidManager.writePid(pid);
     }
 
-    public OptionalLong getPid() {
+    OptionalLong getPid() {
         return pidManager.getPid();
     }
 
-    public boolean isRunning() {
+    boolean isRunning() {
         return pidManager.isRunning();
     }
 
-    public boolean stop(Duration timeout) throws IOException {
+    boolean stop(Duration timeout) throws IOException {
         return pidManager.stop(timeout);
     }
 
-    public ProcessStatus getStatus() {
+    ProcessStatus getStatus() {
         return pidManager.getStatus();
     }
 

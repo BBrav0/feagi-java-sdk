@@ -62,7 +62,7 @@ final class BvRestartCommand implements Callable<Integer> {
             System.out.println("Brain Visualizer restarted (PID: " + pid + ")");
             return 0;
         } catch (Exception e) {
-            System.err.println("Failed to restart Brain Visualizer: " + e.toString());
+            System.err.println("Failed to restart Brain Visualizer: " + CliHelpers.errorMessage(e));
             return 1;
         }
     }

@@ -32,7 +32,7 @@ final class BvStatusCommand implements Callable<Integer> {
             System.out.println("PID file: " + status.pidFile());
             return 0;
         } catch (Exception e) {
-            System.err.println("Failed to get status: " + e.toString());
+            System.err.println("Failed to get status: " + CliHelpers.errorMessage(e));
             return 1;
         }
     }

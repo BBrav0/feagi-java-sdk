@@ -35,20 +35,22 @@ final class StartCommand implements Callable<Integer> {
         Path connectome;
     }
 
-    @Option(names = "--wait", description = "Wait for FEAGI to report ready before returning.")
-    private boolean wait;
+    @ArgGroup(exclusive = false)
+    private WaitOptions waitOptions;
 
-    @Option(names = "--timeout", description = "Seconds to wait for readiness (required with --wait).")
-    private Double timeout;
+    static class WaitOptions {
+        @Option(names = "--wait", required = true,
+                description = "Wait for FEAGI to report ready before returning.")
+        boolean wait;
+
+        @Option(names = "--timeout", required = true,
+                description = "Seconds to wait for readiness (required with --wait).")
+        Double timeout;
+    }
 
     @Override
     public Integer call() {
         try {
-            if (wait && timeout == null) {
-                System.err.println("Missing --timeout when using --wait");
-                return 1;
-            }
-
             FeagiPaths paths = FeagiPaths.withDefaults();
             FeagiProcessManager manager = new FeagiProcessManager(paths);
 
@@ -69,9 +71,11 @@ final class StartCommand implements Callable<Integer> {
 
             Path genome = (brainData != null) ? brainData.genome : null;
             Path connectome = (brainData != null) ? brainData.connectome : null;
+            boolean doWait = (waitOptions != null);
+            Double waitTimeout = (waitOptions != null) ? waitOptions.timeout : null;
 
             OptionalLong pid = CliHelpers.launchFeagiEngine(
-                    manager, configPath, genome, connectome, wait, timeout);
+                    manager, configPath, genome, connectome, doWait, waitTimeout);
             System.out.println("FEAGI started successfully (PID: "
                     + (pid.isPresent() ? pid.getAsLong() : "unknown") + ")");
             return 0;
@@ -80,7 +84,7 @@ final class StartCommand implements Callable<Integer> {
             System.err.println("Interrupted during FEAGI startup");
             return 130;
         } catch (Exception e) {
-            System.err.println("Failed to start FEAGI: " + e.toString());
+            System.err.println("Failed to start FEAGI: " + CliHelpers.errorMessage(e));
             return 1;
         }
     }

@@ -39,7 +39,7 @@ final class StopCommand implements Callable<Integer> {
                     bvManager.stop(Duration.ofMillis(bvTimeoutMs));
                     System.out.println("Brain Visualizer stopped");
                 } catch (Exception e) {
-                    System.err.println("Warning: Failed to stop Brain Visualizer: " + e.toString());
+                    System.err.println("Warning: Failed to stop Brain Visualizer: " + CliHelpers.errorMessage(e));
                 }
             }
 
@@ -53,7 +53,7 @@ final class StopCommand implements Callable<Integer> {
             }
             return 0;
         } catch (Exception e) {
-            System.err.println("Failed to stop FEAGI: " + e.toString());
+            System.err.println("Failed to stop FEAGI: " + CliHelpers.errorMessage(e));
             return 1;
         }
     }

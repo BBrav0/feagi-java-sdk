@@ -27,6 +27,12 @@ final class CliHelpers {
         return (long) (seconds * 1000);
     }
 
+    /** Return the exception message, falling back to {@code toString()} when null. */
+    static String errorMessage(Exception e) {
+        String msg = e.getMessage();
+        return (msg != null) ? msg : e.toString();
+    }
+
     /**
      * Read the {@code timeouts.service_startup} value from a FEAGI config file.
      *
@@ -49,7 +55,7 @@ final class CliHelpers {
             }
         } catch (Exception e) {
             System.err.println("Warning: Could not read service_startup timeout from config: "
-                    + e.toString() + ". Using default 3.0s.");
+                    + errorMessage(e) + ". Using default 3.0s.");
         }
         return 3.0;
     }

@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Shared helpers for Brain Visualizer CLI subcommands.
@@ -27,17 +28,17 @@ final class BvHelpers {
     private static final String HEALTH_CHECK_PATH = "/v1/system/health_check";
 
     // HttpClient is not AutoCloseable in Java 17; reuse a single instance.
-    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(2))
-            .build();
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().build();
 
     private BvHelpers() {}
 
     static NetworkSettings readNetworkSettings(Path configPath) throws IOException {
         TomlParseResult toml = Toml.parse(configPath);
         if (toml.hasErrors()) {
-            throw new IOException("Failed to parse config " + configPath + ": "
-                    + toml.errors().get(0).toString());
+            String errors = toml.errors().stream()
+                    .map(Object::toString)
+                    .collect(Collectors.joining("; "));
+            throw new IOException("Failed to parse config " + configPath + ": " + errors);
         }
 
         String apiHost = toml.getString("api.host");
