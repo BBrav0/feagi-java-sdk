@@ -174,7 +174,7 @@ class BvHelpersTest {
     void testBuildBvEnvInheritsParentEnv() {
         var env = BvHelpers.buildBvEnv("http://127.0.0.1:8000", "127.0.0.1", 8080);
         // PATH should be inherited from parent environment
-        assertNotNull(env.get("PATH") != null ? env.get("PATH") : env.get("Path"),
+        assertTrue(env.containsKey("PATH") || env.containsKey("Path"),
                 "Should inherit PATH from parent environment");
     }
 }

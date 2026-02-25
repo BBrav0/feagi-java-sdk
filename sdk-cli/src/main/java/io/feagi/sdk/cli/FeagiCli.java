@@ -34,7 +34,6 @@ public final class FeagiCli implements Runnable {
 
     @Override
     public void run() {
-        FeagiPaths paths = FeagiPaths.withDefaults();
         System.out.println("FEAGI CLI v0.0.1-beta.0");
         System.out.println();
         System.out.println("Available commands:");
@@ -49,13 +48,18 @@ public final class FeagiCli implements Runnable {
         System.out.println("  feagi init           - Initialize FEAGI environment");
         System.out.println("  feagi config show    - Show configuration");
         System.out.println();
-        System.out.println("FEAGI Directories:");
-        System.out.println("  Config:      " + paths.configDir);
-        System.out.println("  Logs:        " + paths.logsDir);
-        System.out.println("  Cache:       " + paths.cacheDir);
-        System.out.println("  Genomes:     " + paths.genomesDir);
-        System.out.println("  Connectomes: " + paths.connectomesDir);
-        System.out.println();
+        try {
+            FeagiPaths paths = FeagiPaths.withDefaults();
+            System.out.println("FEAGI Directories:");
+            System.out.println("  Config:      " + paths.configDir);
+            System.out.println("  Logs:        " + paths.logsDir);
+            System.out.println("  Cache:       " + paths.cacheDir);
+            System.out.println("  Genomes:     " + paths.genomesDir);
+            System.out.println("  Connectomes: " + paths.connectomesDir);
+            System.out.println();
+        } catch (Exception e) {
+            // Don't let path resolution failure crash the help display
+        }
         System.out.println("For more information: https://github.com/feagi/feagi/tree/main/docs");
     }
 

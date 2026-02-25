@@ -237,6 +237,7 @@ final class BvHelpers {
 
     static boolean checkFeagiRunning(String apiUrl) {
         try {
+            // HttpClient is not AutoCloseable in Java 17; no close() available.
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(2))
                     .build();

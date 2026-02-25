@@ -128,26 +128,27 @@ class BvProcessManagerTest {
     }
 
     // ------------------------------------------------------------------
-    // cleanupPidFile
+    // PID file cleanup (via stop)
     // ------------------------------------------------------------------
 
     @Test
-    void testCleanupPidFileRemovesFile(@TempDir Path home) throws IOException {
+    void testStopCleansUpPidFileForDeadProcess(@TempDir Path home) throws IOException {
         FeagiPaths paths = new FeagiPaths(home, "Linux");
         paths.ensureCacheDir();
-        Files.writeString(paths.cacheDir.resolve("bv.pid"), "123\n");
+        Path pidFile = paths.cacheDir.resolve("bv.pid");
+        Files.writeString(pidFile, "123\n");
 
         BvProcessManager manager = new BvProcessManager(paths);
-        manager.cleanupPidFile();
+        manager.stop(java.time.Duration.ofSeconds(1));
 
-        assertFalse(Files.exists(paths.cacheDir.resolve("bv.pid")));
+        assertFalse(Files.exists(pidFile));
     }
 
     @Test
-    void testCleanupPidFileNoOpWhenMissing(@TempDir Path home) {
+    void testStopNoOpWhenNoPidFile(@TempDir Path home) throws IOException {
         FeagiPaths paths = new FeagiPaths(home, "Linux");
         BvProcessManager manager = new BvProcessManager(paths);
-        assertDoesNotThrow(manager::cleanupPidFile);
+        assertDoesNotThrow(() -> manager.stop(java.time.Duration.ofSeconds(1)));
     }
 
     // ------------------------------------------------------------------

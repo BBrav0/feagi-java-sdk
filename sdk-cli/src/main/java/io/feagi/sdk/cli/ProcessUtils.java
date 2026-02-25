@@ -75,7 +75,7 @@ final class ProcessUtils {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while killing PID " + pid, e);
         } finally {
-            if (proc != null) {
+            if (proc != null && proc.isAlive()) {
                 proc.destroyForcibly();
             }
         }

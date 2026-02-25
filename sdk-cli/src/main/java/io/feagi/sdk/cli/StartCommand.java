@@ -134,8 +134,9 @@ final class StartCommand implements Callable<Integer> {
                     return value;
                 }
             }
-        } catch (Exception ignored) {
-            // Fall through to default
+        } catch (Exception e) {
+            System.err.println("Warning: Could not read service_startup timeout from config: "
+                    + e.getMessage() + ". Using default 3.0s.");
         }
         return 3.0;
     }

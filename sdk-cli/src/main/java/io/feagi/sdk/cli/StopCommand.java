@@ -26,13 +26,16 @@ final class StopCommand implements Callable<Integer> {
     public Integer call() {
         try {
             FeagiPaths paths = FeagiPaths.withDefaults();
+            long totalMs = (long) (timeout * 1000);
+            long bvTimeoutMs = Math.max(2000, totalMs * 3 / 10);
+            long feagiTimeoutMs = totalMs - bvTimeoutMs;
 
             // Stop BV first (depends on FEAGI)
             BvProcessManager bvManager = new BvProcessManager(paths);
             if (bvManager.isRunning()) {
                 System.out.println("Stopping Brain Visualizer...");
                 try {
-                    bvManager.stop(Duration.ofMillis((long) (timeout * 1000)));
+                    bvManager.stop(Duration.ofMillis(bvTimeoutMs));
                     System.out.println("Brain Visualizer stopped");
                 } catch (Exception e) {
                     System.err.println("Warning: Failed to stop Brain Visualizer: " + e.getMessage());
@@ -41,7 +44,7 @@ final class StopCommand implements Callable<Integer> {
 
             // Stop FEAGI
             FeagiProcessManager manager = new FeagiProcessManager(paths);
-            boolean stopped = manager.stop(Duration.ofMillis((long) (timeout * 1000)));
+            boolean stopped = manager.stop(Duration.ofMillis(feagiTimeoutMs));
             if (stopped) {
                 System.out.println("FEAGI stopped successfully");
             } else {

@@ -109,7 +109,10 @@ public final class FeagiConfig {
         Path target;
         if (outputPath != null) {
             target = outputPath;
-            Files.createDirectories(target.getParent());
+            Path parent = target.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
         } else {
             paths.ensureConfigDir();
             target = paths.getDefaultConfig();

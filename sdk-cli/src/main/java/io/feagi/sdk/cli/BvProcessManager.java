@@ -28,8 +28,6 @@ import java.util.concurrent.TimeoutException;
 public final class BvProcessManager {
 
     private static final int LOG_RETENTION = 10;
-    private static final boolean IS_WINDOWS =
-            System.getProperty("os.name", "").toLowerCase().contains("win");
 
     private final FeagiPaths paths;
     private final Path pidFile;
@@ -191,7 +189,7 @@ public final class BvProcessManager {
         Files.writeString(pidFile, pid + "\n");
     }
 
-    void cleanupPidFile() {
+    private void cleanupPidFile() {
         try {
             Files.deleteIfExists(pidFile);
         } catch (IOException ignored) {
