@@ -51,8 +51,9 @@ final class ProcessUtils {
     }
 
     private static void forceKillWindows(long pid) throws IOException {
+        Process proc = null;
         try {
-            Process proc = new ProcessBuilder("taskkill", "/F", "/PID", String.valueOf(pid))
+            proc = new ProcessBuilder("taskkill", "/F", "/PID", String.valueOf(pid))
                     .redirectErrorStream(true)
                     .start();
             boolean finished = proc.waitFor(10, TimeUnit.SECONDS);
@@ -73,6 +74,10 @@ final class ProcessUtils {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while killing PID " + pid, e);
+        } finally {
+            if (proc != null) {
+                proc.destroyForcibly();
+            }
         }
     }
 

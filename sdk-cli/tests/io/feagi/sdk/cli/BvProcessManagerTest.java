@@ -12,7 +12,6 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
 import java.util.OptionalLong;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -83,11 +82,11 @@ class BvProcessManagerTest {
     void testGetStatusWhenNotRunning(@TempDir Path home) {
         FeagiPaths paths = new FeagiPaths(home, "Linux");
         BvProcessManager manager = new BvProcessManager(paths);
-        Map<String, Object> status = manager.getStatus();
+        ProcessStatus status = manager.getStatus();
 
-        assertFalse((Boolean) status.get("running"));
-        assertNull(status.get("pid"));
-        assertNotNull(status.get("pid_file"));
+        assertFalse(status.running());
+        assertTrue(status.pid().isEmpty());
+        assertNotNull(status.pidFile());
     }
 
     @Test
@@ -97,9 +96,10 @@ class BvProcessManagerTest {
         Files.writeString(paths.cacheDir.resolve("bv.pid"), "999999999\n");
 
         BvProcessManager manager = new BvProcessManager(paths);
-        Map<String, Object> status = manager.getStatus();
-        assertFalse((Boolean) status.get("running"));
-        assertEquals(999999999L, status.get("pid"));
+        ProcessStatus status = manager.getStatus();
+        assertFalse(status.running());
+        assertTrue(status.pid().isPresent());
+        assertEquals(999999999L, status.pid().getAsLong());
     }
 
     // ------------------------------------------------------------------

@@ -8,7 +8,6 @@ package io.feagi.sdk.cli;
 import io.feagi.sdk.engine.FeagiPaths;
 import picocli.CommandLine.Command;
 
-import java.util.Map;
 import java.util.concurrent.Callable;
 
 /**
@@ -22,14 +21,15 @@ final class StatusCommand implements Callable<Integer> {
         try {
             FeagiPaths paths = FeagiPaths.withDefaults();
             FeagiProcessManager manager = new FeagiProcessManager(paths);
-            Map<String, Object> status = manager.getStatus();
+            ProcessStatus status = manager.getStatus();
 
-            if ((Boolean) status.get("running")) {
-                System.out.println("FEAGI is running (PID: " + status.get("pid") + ")");
+            if (status.running()) {
+                long pid = status.pid().orElse(-1);
+                System.out.println("FEAGI is running (PID: " + pid + ")");
             } else {
                 System.out.println("FEAGI is not running");
             }
-            System.out.println("PID file: " + status.get("pid_file"));
+            System.out.println("PID file: " + status.pidFile());
             return 0;
         } catch (Exception e) {
             System.err.println("Failed to get status: " + e.getMessage());

@@ -11,10 +11,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalLong;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Manages the FEAGI process lifecycle via PID files.
@@ -99,29 +100,31 @@ public final class FeagiProcessManager {
         }
         handle.destroy();
 
-        // Wait for graceful shutdown
-        long deadlineNanos = System.nanoTime() + timeout.toNanos();
-        while (System.nanoTime() < deadlineNanos) {
-            if (!ProcessUtils.isProcessRunning(pid)) {
-                cleanupPidFile();
-                return true;
-            }
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
+        // Wait for graceful shutdown via OS-signalled future
+        try {
+            handle.onExit().get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            cleanupPidFile();
+            return true;
+        } catch (TimeoutException e) {
+            // Graceful shutdown timed out — force kill
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            // Process already exited
+            cleanupPidFile();
+            return true;
         }
 
         // Force kill
         try {
             ProcessUtils.forceKillProcess(pid);
-            Thread.sleep(500);
+            handle.onExit().get(5, TimeUnit.SECONDS);
         } catch (ProcessUtils.ProcessNotFoundException e) {
             // Already gone — success
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        } catch (ExecutionException | TimeoutException e) {
+            // Ignore
         }
 
         cleanupPidFile();
@@ -135,17 +138,12 @@ public final class FeagiProcessManager {
     /**
      * Get detailed process status.
      *
-     * @return map with "running" (Boolean), "pid" (Long or null), "pid_file" (String)
+     * @return typed status with running flag, PID, and PID file path
      */
-    public Map<String, Object> getStatus() {
+    public ProcessStatus getStatus() {
         OptionalLong pid = getPid();
         boolean running = pid.isPresent() && ProcessUtils.isProcessRunning(pid.getAsLong());
-
-        Map<String, Object> status = new LinkedHashMap<>();
-        status.put("running", running);
-        status.put("pid", pid.isPresent() ? pid.getAsLong() : null);
-        status.put("pid_file", pidFile.toString());
-        return status;
+        return new ProcessStatus(running, pid, pidFile);
     }
 
     /** Remove the PID file. */

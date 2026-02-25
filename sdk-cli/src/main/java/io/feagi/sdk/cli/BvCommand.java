@@ -49,7 +49,7 @@ final class BvCommand implements Runnable {
 // ------------------------------------------------------------------
 
 @Command(name = "start", description = "Launch Brain Visualizer using FEAGI configuration.")
-class BvStartCommand implements Callable<Integer> {
+final class BvStartCommand implements Callable<Integer> {
 
     @Option(names = "--config", description = "Path to FEAGI configuration TOML file.")
     private Path config;
@@ -95,7 +95,7 @@ class BvStartCommand implements Callable<Integer> {
 }
 
 @Command(name = "stop", description = "Stop running Brain Visualizer process.")
-class BvStopCommand implements Callable<Integer> {
+final class BvStopCommand implements Callable<Integer> {
 
     @Option(names = "--timeout", description = "Seconds to wait before force kill (default: 10).",
             defaultValue = "10.0")
@@ -121,21 +121,22 @@ class BvStopCommand implements Callable<Integer> {
 }
 
 @Command(name = "status", description = "Check Brain Visualizer process status.")
-class BvStatusCommand implements Callable<Integer> {
+final class BvStatusCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
         try {
             FeagiPaths paths = FeagiPaths.withDefaults();
             BvProcessManager manager = new BvProcessManager(paths);
-            Map<String, Object> status = manager.getStatus();
+            ProcessStatus status = manager.getStatus();
 
-            if ((Boolean) status.get("running")) {
-                System.out.println("Brain Visualizer is running (PID: " + status.get("pid") + ")");
+            if (status.running()) {
+                long pid = status.pid().orElse(-1);
+                System.out.println("Brain Visualizer is running (PID: " + pid + ")");
             } else {
                 System.out.println("Brain Visualizer is not running");
             }
-            System.out.println("PID file: " + status.get("pid_file"));
+            System.out.println("PID file: " + status.pidFile());
             return 0;
         } catch (Exception e) {
             System.err.println("Failed to get status: " + e.getMessage());
@@ -145,7 +146,7 @@ class BvStatusCommand implements Callable<Integer> {
 }
 
 @Command(name = "restart", description = "Restart Brain Visualizer process.")
-class BvRestartCommand implements Callable<Integer> {
+final class BvRestartCommand implements Callable<Integer> {
 
     @Option(names = "--config", description = "Path to FEAGI configuration TOML file.")
     private Path config;
@@ -194,6 +195,8 @@ record NetworkSettings(String apiHost, int apiPort, String wsHost, int wsPort) {
 
 final class BvHelpers {
 
+    private static final String HEALTH_CHECK_PATH = "/v1/system/health_check";
+
     private BvHelpers() {}
 
     static NetworkSettings readNetworkSettings(Path configPath) throws Exception {
@@ -211,11 +214,19 @@ final class BvHelpers {
             throw new IllegalStateException(
                     "Config must define api.port and websocket.visualization_port.");
         }
+        if (apiPort < 1 || apiPort > 65535) {
+            throw new IllegalStateException("api.port must be 1-65535, got: " + apiPort);
+        }
+        if (wsPort < 1 || wsPort > 65535) {
+            throw new IllegalStateException(
+                    "websocket.visualization_port must be 1-65535, got: " + wsPort);
+        }
 
         return new NetworkSettings(apiHost, apiPort.intValue(), wsHost, wsPort.intValue());
     }
 
     static Map<String, String> buildBvEnv(String apiUrl, String wsHost, int wsPort) {
+        // Inherit parent env to propagate PATH, DISPLAY, WAYLAND_DISPLAY, etc.
         Map<String, String> env = new HashMap<>(System.getenv());
         env.put("FEAGI_MODE", "remote");
         env.put("FEAGI_API_URL", apiUrl);
@@ -230,7 +241,7 @@ final class BvHelpers {
                     .connectTimeout(Duration.ofSeconds(2))
                     .build();
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(apiUrl + "/v1/system/health_check"))
+                    .uri(URI.create(apiUrl + HEALTH_CHECK_PATH))
                     .timeout(Duration.ofSeconds(2))
                     .GET()
                     .build();

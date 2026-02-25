@@ -8,6 +8,11 @@ package io.feagi.sdk.cli;
 import io.feagi.sdk.engine.FeagiConfig;
 import io.feagi.sdk.engine.FeagiPaths;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.Callable;
 
 /**
  * {@code feagi config} — FEAGI configuration utilities.
@@ -29,29 +34,29 @@ final class ConfigCommand implements Runnable {
  * {@code feagi config show} — Show the active FEAGI configuration file.
  */
 @Command(name = "show", description = "Show the active FEAGI configuration file.")
-class ConfigShowCommand implements java.util.concurrent.Callable<Integer> {
+final class ConfigShowCommand implements Callable<Integer> {
 
-    @picocli.CommandLine.Option(names = "--config", description = "Path to FEAGI configuration TOML file.")
-    private java.nio.file.Path configPath;
+    @Option(names = "--config", description = "Path to FEAGI configuration TOML file.")
+    private Path configPath;
 
     @Override
     public Integer call() {
         try {
             FeagiPaths paths = FeagiPaths.withDefaults();
 
-            java.nio.file.Path target;
+            Path target;
             if (configPath != null) {
                 target = configPath;
             } else {
                 target = FeagiConfig.ensureDefaultConfig(paths);
             }
 
-            if (!java.nio.file.Files.exists(target)) {
+            if (!Files.exists(target)) {
                 System.err.println("Config file not found: " + target);
                 return 1;
             }
 
-            String contents = java.nio.file.Files.readString(target);
+            String contents = Files.readString(target);
             System.out.println("Config file: " + target);
             System.out.println(contents);
             return 0;
