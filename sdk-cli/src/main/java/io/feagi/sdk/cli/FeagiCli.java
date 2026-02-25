@@ -43,26 +43,37 @@ public final class FeagiCli implements Callable<Integer> {
     public Integer call() {
         spec.commandLine().usage(System.out);
         System.out.println();
-        try {
-            FeagiPaths paths = FeagiPaths.withDefaults();
-            System.out.println("FEAGI Directories:");
-            System.out.println("  Config:      " + paths.configDir);
-            System.out.println("  Logs:        " + paths.logsDir);
-            System.out.println("  Cache:       " + paths.cacheDir);
-            System.out.println("  Genomes:     " + paths.genomesDir);
-            System.out.println("  Connectomes: " + paths.connectomesDir);
-            System.out.println();
-        } catch (Exception e) {
-            System.err.println("Warning: Could not resolve FEAGI directories: "
-                    + CliHelpers.errorMessage(e));
-            return 1;
-        }
         System.out.println("For more information: https://github.com/feagi/feagi/tree/main/docs");
         return 0;
     }
 
+    /**
+     * Set the usage footer to display FEAGI directory paths.
+     *
+     * <p>Mirrors the Python SDK's argparse {@code epilog}. Non-fatal on failure —
+     * directories simply won't appear in help output.
+     */
+    static void applyDirectoryFooter(CommandLine cmd) {
+        try {
+            FeagiPaths paths = FeagiPaths.withDefaults();
+            cmd.getCommandSpec().usageMessage().footer(
+                    "",
+                    "FEAGI Directories:",
+                    "  Config:      " + paths.configDir,
+                    "  Logs:        " + paths.logsDir,
+                    "  Cache:       " + paths.cacheDir,
+                    "  Genomes:     " + paths.genomesDir,
+                    "  Connectomes: " + paths.connectomesDir
+            );
+        } catch (Exception ignored) {
+            // Non-fatal — directories just won't appear in help
+        }
+    }
+
     public static void main(String[] args) {
-        int exitCode = new CommandLine(new FeagiCli()).execute(args);
+        CommandLine cmd = new CommandLine(new FeagiCli());
+        applyDirectoryFooter(cmd);
+        int exitCode = cmd.execute(args);
         System.exit(exitCode);
     }
 }

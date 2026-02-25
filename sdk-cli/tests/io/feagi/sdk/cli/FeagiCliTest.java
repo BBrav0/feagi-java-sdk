@@ -16,7 +16,9 @@ import static org.junit.jupiter.api.Assertions.*;
 class FeagiCliTest {
 
     private CommandLine newCli() {
-        return new CommandLine(new FeagiCli());
+        CommandLine cli = new CommandLine(new FeagiCli());
+        FeagiCli.applyDirectoryFooter(cli);
+        return cli;
     }
 
     // ------------------------------------------------------------------
@@ -53,6 +55,14 @@ class FeagiCliTest {
         assertTrue(output.contains("init"), "Should list init subcommand");
         assertTrue(output.contains("config"), "Should list config subcommand");
         assertTrue(output.contains("bv"), "Should list bv subcommand");
+
+        // Directory epilog (mirrors Python SDK's argparse epilog)
+        assertTrue(output.contains("FEAGI Directories:"), "Should show directories header");
+        assertTrue(output.contains("Config:"), "Should show Config directory");
+        assertTrue(output.contains("Logs:"), "Should show Logs directory");
+        assertTrue(output.contains("Cache:"), "Should show Cache directory");
+        assertTrue(output.contains("Genomes:"), "Should show Genomes directory");
+        assertTrue(output.contains("Connectomes:"), "Should show Connectomes directory");
     }
 
     // ------------------------------------------------------------------
