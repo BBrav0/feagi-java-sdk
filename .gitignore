@@ -37,6 +37,7 @@ hs_err_pid*
 
 # AI context file — per-developer, not tracked
 /CLAUDE.md
+.claude/
 
 # Python SDK reference — local only
 /python-sdk-reference/

@@ -16,7 +16,9 @@ import static org.junit.jupiter.api.Assertions.*;
 class FeagiCliTest {
 
     private CommandLine newCli() {
-        return new CommandLine(new FeagiCli());
+        CommandLine cli = new CommandLine(new FeagiCli());
+        FeagiCli.applyDirectoryFooter(cli);
+        return cli;
     }
 
     // ------------------------------------------------------------------
@@ -53,6 +55,14 @@ class FeagiCliTest {
         assertTrue(output.contains("init"), "Should list init subcommand");
         assertTrue(output.contains("config"), "Should list config subcommand");
         assertTrue(output.contains("bv"), "Should list bv subcommand");
+
+        // Directory epilog (mirrors Python SDK's argparse epilog)
+        assertTrue(output.contains("FEAGI Directories:"), "Should show directories header");
+        assertTrue(output.contains("  Config:      "), "Should show Config directory");
+        assertTrue(output.contains("  Logs:        "), "Should show Logs directory");
+        assertTrue(output.contains("  Cache:       "), "Should show Cache directory");
+        assertTrue(output.contains("  Genomes:     "), "Should show Genomes directory");
+        assertTrue(output.contains("  Connectomes: "), "Should show Connectomes directory");
     }
 
     // ------------------------------------------------------------------
@@ -166,5 +176,41 @@ class FeagiCliTest {
         CommandLine cli = newCli();
         String usage = cli.getSubcommands().get("stop").getUsageMessage();
         assertTrue(usage.contains("--timeout"), "Should show --timeout option");
+    }
+
+    // ------------------------------------------------------------------
+    // No-args invocation (exercises call() code path)
+    // ------------------------------------------------------------------
+
+    @Test
+    void testNoArgsShowsUsageWithFooter() {
+        CommandLine cli = newCli();
+        StringWriter out = new StringWriter();
+        cli.setOut(new PrintWriter(out));
+
+        int exitCode = cli.execute();
+
+        assertEquals(0, exitCode);
+        assertTrue(out.toString().contains("FEAGI Directories:"),
+                "No-args should show footer via call()");
+    }
+
+    // ------------------------------------------------------------------
+    // Footer failure path
+    // ------------------------------------------------------------------
+
+    @Test
+    void testHelpFlagWithoutDirectoryFooter() {
+        CommandLine cli = new CommandLine(new FeagiCli());
+        StringWriter out = new StringWriter();
+        cli.setOut(new PrintWriter(out));
+
+        int exitCode = cli.execute("--help");
+
+        assertEquals(0, exitCode);
+        String output = out.toString();
+        assertTrue(output.contains("feagi"), "Should contain command name");
+        assertFalse(output.contains("FEAGI Directories:"),
+                "Should not show directories when footer not applied");
     }
 }
