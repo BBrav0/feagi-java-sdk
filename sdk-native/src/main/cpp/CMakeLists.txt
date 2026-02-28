@@ -12,6 +12,21 @@ target_include_directories(feagi_java_ffi_jni PRIVATE ${JNI_INCLUDE_DIRS})
 # Passed from Gradle via -DFEAGI_FFI_INCLUDE_DIR and -DFEAGI_FFI_LIB_DIR
 target_include_directories(feagi_java_ffi_jni PRIVATE ${FEAGI_FFI_INCLUDE_DIR})
 
+message(STATUS "FEAGI_FFI_INCLUDE_DIR='${FEAGI_FFI_INCLUDE_DIR}'")
+message(STATUS "FEAGI_FFI_LIB_DIR='${FEAGI_FFI_LIB_DIR}'")
+
+if(NOT DEFINED FEAGI_FFI_INCLUDE_DIR OR "${FEAGI_FFI_INCLUDE_DIR}" STREQUAL "")
+    message(FATAL_ERROR "FEAGI_FFI_INCLUDE_DIR is not set. Gradle must pass -DFEAGI_FFI_INCLUDE_DIR=...")
+endif()
+
+# Normalize path for Windows + verify header exists
+file(TO_CMAKE_PATH "${FEAGI_FFI_INCLUDE_DIR}" _feagi_inc_dir)
+if(NOT EXISTS "${_feagi_inc_dir}/feagi_java_ffi.h")
+    message(FATAL_ERROR
+        "feagi_java_ffi.h not found in FEAGI_FFI_INCLUDE_DIR='${_feagi_inc_dir}'. "
+        "Point FEAGI_FFI_INCLUDE_DIR to the folder containing feagi_java_ffi.h")
+endif()
+
 # ---------------------------------------------------------------------------
 # Conditional linking against feagi_java_ffi
 #
