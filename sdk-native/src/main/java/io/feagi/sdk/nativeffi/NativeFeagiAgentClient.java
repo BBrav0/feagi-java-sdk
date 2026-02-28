@@ -11,10 +11,7 @@ import io.feagi.sdk.core.FeagiAgentClient;
 import io.feagi.sdk.core.FeagiResolution;
 import io.feagi.sdk.core.FeagiSdkException;
 import io.feagi.sdk.core.MotorCapability;
-<<<<<<< HEAD
 import io.feagi.sdk.core.MotorUnit;
-=======
->>>>>>> 4d6cc51dc977984ccdef8671e77f8e249d1f91d0
 import io.feagi.sdk.core.MotorUnitSpec;
 import io.feagi.sdk.core.SensoryCapability;
 import io.feagi.sdk.core.SensorySocketConfig;
@@ -96,23 +93,23 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      */
     @Override
     public void connect() {
-<<<<<<< HEAD
         synchronized (this) {
             if (connected) {
-                throw new IllegalStateException("Already connected...");
+                throw new IllegalStateException("Already connected. Call close() first.");
             }
+            // prevent re-entry while we do native work
             connected = true;
-=======
-        if (connected) {
-            throw new IllegalStateException("Already connected. Call close() first.");
->>>>>>> 4d6cc51dc977984ccdef8671e77f8e249d1f91d0
         }
+
+        boolean ok = false;
 
         // ── 1. Allocate native config handle ──────────────────────────────────
         long cfgHandle = FeagiNativeBindings.feagiConfigNew(
                 config.agentId(),
                 config.agentType().ordinal());
         if (cfgHandle == NULL_HANDLE) {
+            // allow retry
+            synchronized (this) { connected = false; }
             throw new FeagiSdkException(
                     "feagiConfigNew failed for agent '" + config.agentId() + "': "
                     + nativeError());
@@ -157,21 +154,20 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         if (connectStatus != FeagiNativeBindings.FeagiStatus.OK.code()) {
             long h = clientHandle.getAndSet(NULL_HANDLE);
             FeagiNativeBindings.feagiClientFree(h);
+            synchronized (this) { connected = false; } // allow retry
             throw new FeagiSdkException(
                     "feagiClientConnect failed (status=" + connectStatus + "): " + nativeError());
         }
 
-<<<<<<< HEAD
-        synchronized (this) {
-            if (!connected) return;
-            connected = false;
-        }
-=======
-        connected = true;
->>>>>>> 4d6cc51dc977984ccdef8671e77f8e249d1f91d0
+        ok = true;
+
+        // if we got here, connected must remain true
         LOG.info("NativeFeagiAgentClient connected: agentId=" + config.agentId()
                 + " type=" + config.agentType()
                 + " registration=" + config.endpoints().registrationEndpoint());
+
+        // optional: keep compiler from warning if you later extend this method
+        if (!ok) { synchronized (this) { connected = false; } }
     }
 
     /**
@@ -502,8 +498,4 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         String msg = FeagiNativeBindings.feagiLastErrorMessage();
         return msg != null ? msg : "(no native error message)";
     }
-<<<<<<< HEAD
-}
-=======
-}
->>>>>>> 4d6cc51dc977984ccdef8671e77f8e249d1f91d0
+}    

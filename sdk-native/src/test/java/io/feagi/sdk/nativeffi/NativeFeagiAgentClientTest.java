@@ -221,9 +221,5 @@ class NativeFeagiAgentClientTest {
 
         assertDoesNotThrow(() -> new NativeFeagiAgentClient(config));
     }
-<<<<<<< HEAD
 }
 
-=======
-}
->>>>>>> 4d6cc51dc977984ccdef8671e77f8e249d1f91d0
