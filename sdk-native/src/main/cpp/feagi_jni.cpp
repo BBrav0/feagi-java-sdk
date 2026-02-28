@@ -29,7 +29,7 @@ extern "C" {
 #endif
 
 // Force the compiler to see the types/functions (will error with a clearer message)
-static void __feagi_header_sanity_check() {
+static void feagi_header_sanity_check() {
     (void)&feagi_library_version_alloc;
     (void)&feagi_last_error_message_alloc;
     FeagiAgentConfigHandle* a = nullptr;

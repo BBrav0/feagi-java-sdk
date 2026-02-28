@@ -147,6 +147,10 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         } finally {
             // Config handle is only needed during client creation — free it now.
             FeagiNativeBindings.feagiConfigFree(cfgHandle);
+            // Roll back connected flag if client handle was never established
+            if (clientHandle.get() == NULL_HANDLE) {
+                synchronized (this) { connected = false; }
+            }
         }
 
         // ── 8. Connect and register ───────────────────────────────────────────
@@ -159,15 +163,10 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                     "feagiClientConnect failed (status=" + connectStatus + "): " + nativeError());
         }
 
-        ok = true;
-
         // if we got here, connected must remain true
         LOG.info("NativeFeagiAgentClient connected: agentId=" + config.agentId()
                 + " type=" + config.agentType()
                 + " registration=" + config.endpoints().registrationEndpoint());
-
-        // optional: keep compiler from warning if you later extend this method
-        if (!ok) { synchronized (this) { connected = false; } }
     }
 
     /**
@@ -445,6 +444,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * No external JSON library required — cortical area IDs are safe ASCII identifiers.
      */
     private static String toJsonStringArray(List<String> items) {
+        if (items == null) {
+            throw new IllegalArgumentException("Items must not be null");
+        };
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < items.size(); i++) {
             sb.append('"')
