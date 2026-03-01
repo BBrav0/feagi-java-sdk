@@ -50,7 +50,8 @@ import java.util.logging.Logger;
  * any thread after {@link #connect()} returns. A read-write lock guards the handle:
  * the read lock is held during send/poll native calls; the write lock is held during
  * {@link #connect()} and {@link #close()} to prevent concurrent double-connect or
- * use-after-free races.
+ * use-after-free races. Logging in {@link #connect()} is deferred until after the write
+ * lock is released to minimize lock hold time.
  */
 public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
@@ -72,9 +73,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      *   <li>Read lock: held by {@link #sendSensoryBytes} and {@link #pollMotorBytes}
      *       for the duration of the native call.</li>
      *   <li>Write lock: held for the entire body of {@link #connect()} and
-     *       {@link #close()} so that two threads cannot both see
-     *       {@code connected == false} and race into connect(), and so that
-     *       close() cannot free the handle while a send/poll is in flight.</li>
+     *       {@link #close()} so that two threads cannot both pass the
+     *       {@code connected == false} guard, and so that close() cannot free the
+     *       handle while a send/poll is in flight.</li>
      * </ul>
      */
     private final ReentrantReadWriteLock handleLock = new ReentrantReadWriteLock();
@@ -101,13 +102,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     /**
      * Connect and register the agent with FEAGI.
      *
-     * <p>Holds the write lock for the entire body so that two concurrent callers
-     * cannot both pass the {@code connected == false} guard and race into native
-     * allocation.
-     *
-     * <p>All steps — config allocation, capability registration, client creation, and
-     * connection — are inside a single try/finally block. If any step fails, all
-     * native resources allocated so far are freed before the exception propagates.
+     * <p>Holds the write lock for the entire native portion so that two concurrent callers
+     * cannot both pass the {@code connected == false} guard and race into native allocation.
+     * Logging is deferred until after the lock is released to minimize hold time.
      *
      * @throws FeagiSdkException     if any native step fails
      * @throws IllegalStateException if already connected
@@ -120,7 +117,6 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                 throw new IllegalStateException("Already connected. Call close() first.");
             }
 
-            // ── 1. Allocate native config handle ──────────────────────────────
             // AgentTypeCode provides a stable ABI mapping — never use .ordinal() here.
             long cfgHandle = FeagiNativeBindings.feagiConfigNew(
                     config.agentId(),
@@ -133,23 +129,14 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
             long newClientHandle = NULL_HANDLE;
             try {
-                // ── 2. Endpoints ──────────────────────────────────────────────
                 applyEndpoints(cfgHandle);
-
-                // ── 3. Timing / retry ─────────────────────────────────────────
                 applyTimingConfig(cfgHandle);
-
-                // ── 4. Sensory socket ─────────────────────────────────────────
                 applySensorySocketConfig(cfgHandle);
-
-                // ── 5. Capabilities ───────────────────────────────────────────
                 applyCapabilities(cfgHandle);
 
-                // ── 6. Rust-side validation ───────────────────────────────────
                 checkStatus(FeagiNativeBindings.feagiConfigValidate(cfgHandle),
                         "feagiConfigValidate");
 
-                // ── 7. Create native client ───────────────────────────────────
                 long[] outClient = new long[1];
                 checkStatus(FeagiNativeBindings.feagiClientNew(cfgHandle, outClient),
                         "feagiClientNew");
@@ -160,31 +147,27 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                             "feagiClientNew returned null handle: " + nativeError());
                 }
 
-                // ── 8. Connect and register ───────────────────────────────────
                 checkStatus(FeagiNativeBindings.feagiClientConnect(newClientHandle),
                         "feagiClientConnect");
 
-                // All steps succeeded — publish handle and mark connected.
                 clientHandle.set(newClientHandle);
                 connected = true;
                 newClientHandle = NULL_HANDLE; // ownership transferred; don't free in finally
 
             } finally {
-                // Config handle is always freed — not needed after client creation.
                 FeagiNativeBindings.feagiConfigFree(cfgHandle);
-                // If an exception prevented ownership transfer, free the client too.
                 if (newClientHandle != NULL_HANDLE) {
                     FeagiNativeBindings.feagiClientFree(newClientHandle);
                 }
             }
-
-            LOG.info("NativeFeagiAgentClient connected: agentId=" + config.agentId()
-                    + " type=" + config.agentType()
-                    + " registration=" + config.endpoints().registrationEndpoint());
-
         } finally {
             handleLock.writeLock().unlock();
         }
+
+        // Log after releasing the write lock — no need to hold it while logging.
+        LOG.info("NativeFeagiAgentClient connected: agentId=" + config.agentId()
+                + " type=" + config.agentType()
+                + " registration=" + config.endpoints().registrationEndpoint());
     }
 
     /**
@@ -192,9 +175,6 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      *
      * <p>Uses try-send semantics — frames may be silently dropped under ZMQ backpressure
      * (real-time contract, no implicit buffering).
-     *
-     * <p>The read lock is held during the native call to prevent {@link #close()} from
-     * freeing the handle while the send is in progress.
      */
     @Override
     public void sendSensoryBytes(byte[] payload) {
@@ -229,8 +209,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * Returns an empty {@code byte[]} for a zero-length frame (distinguishable from
      * "no data available").
      *
-     * <p>The read lock is held during the native call to prevent {@link #close()} from
-     * freeing the handle while the poll is in progress.
+     * @throws FeagiSdkException if the native call fails, or if {@code feagiBufferLen}
+     *                           returns a negative value (indicating a native-side error)
+     *                           or a value exceeding {@link Integer#MAX_VALUE}
      */
     @Override
     public byte[] pollMotorBytes() {
@@ -256,10 +237,19 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             long bufHandle = outBufHandle[0];
             try {
                 long len = FeagiNativeBindings.feagiBufferLen(bufHandle);
-                if (len < 0 || len > Integer.MAX_VALUE) {
-                    return null;
+
+                // Negative length is a native-side error — throw rather than swallow.
+                if (len < 0) {
+                    throw new FeagiSdkException(
+                            "feagiBufferLen returned negative length (" + len
+                            + ") — native error: " + nativeError());
                 }
-                // len == 0: copyNativeBuffer returns new byte[0] (not null),
+                if (len > Integer.MAX_VALUE) {
+                    throw new FeagiSdkException(
+                            "feagiBufferLen returned oversized frame (" + len
+                            + " bytes) which exceeds Java array limit");
+                }
+                // len == 0: copyNativeBuffer returns new byte[0], not null,
                 // so callers can distinguish "zero-length frame" from "no frame".
                 return copyNativeBuffer(bufHandle, (int) len);
             } finally {
@@ -391,6 +381,13 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                             vision.targetCorticalArea()),
                     "feagiConfigSetVisionCapability");
         } else {
+            // Explicit null guard: unit() may be null if VisionCapability was constructed
+            // in an invalid state (neither targetCorticalArea nor unit provided).
+            if (vision.unit() == null) {
+                throw new FeagiSdkException(
+                        "VisionCapability has neither targetCorticalArea nor unit set. "
+                        + "Use VisionCapability.fromTargetArea() or VisionCapability.fromUnit().");
+            }
             // SensoryUnitCode: stable ABI mapping — never use .ordinal()
             checkStatus(
                     FeagiNativeBindings.feagiConfigSetVisionUnit(
@@ -427,6 +424,11 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                     "feagiConfigSetMotorUnitsJson");
 
         } else {
+            if (motor.unit() == null) {
+                throw new FeagiSdkException(
+                        "MotorCapability has neither sourceCorticalAreas, sourceUnits, nor unit set. "
+                        + "Use MotorCapability.fromCorticalAreas(), fromUnits(), or fromUnit().");
+            }
             // MotorUnitCode: stable ABI mapping — never use .ordinal()
             checkStatus(
                     FeagiNativeBindings.feagiConfigSetMotorUnit(
@@ -481,8 +483,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * Serialize to minimal JSON string array, e.g. {@code ["v1_motor","v2_drive"]}.
      *
      * <p>Validates that each ID contains only safe ASCII identifier characters
-     * (alphanumeric, underscore, hyphen) to prevent JSON injection. This is
-     * stricter than generic escaping but matches what FEAGI accepts for cortical area IDs.
+     * (alphanumeric, underscore, hyphen) to prevent JSON injection.
      *
      * @throws IllegalArgumentException if items is null, or any ID is null/empty/unsafe
      */

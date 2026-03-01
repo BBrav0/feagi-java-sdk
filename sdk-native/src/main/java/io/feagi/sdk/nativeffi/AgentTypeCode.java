@@ -10,17 +10,21 @@ import io.feagi.sdk.core.AgentType;
 /**
  * Stable C ABI code mapping for {@link AgentType}.
  *
- * <p>These constants are explicitly pinned to match {@code FeagiAgentType} in
- * {@code feagi_java_ffi.h}. They are intentionally decoupled from
- * {@link AgentType#ordinal()} so that reordering the Java enum does not
- * silently break the native ABI.
+ * <p>Constants are explicitly pinned to match {@code FeagiAgentType} in
+ * {@code feagi_java_ffi.h}, decoupled from {@link AgentType#ordinal()} so that
+ * reordering the Java enum does not silently break the native ABI.
  *
- * <p>Keep in sync with {@code FeagiAgentType} in the Rust/C header.
+ * <p>Unlike {@link SensoryUnitCode} and {@link MotorUnitCode}, there is no
+ * {@code FeagiNativeBindings.FeagiAgentType} enum to delegate to, so the constants
+ * are maintained here. Keep in sync with {@code FeagiAgentType} in the Rust/C header.
  */
 public final class AgentTypeCode {
     private AgentTypeCode() {}
 
     public static int of(AgentType type) {
+        if (type == null) {
+            throw new IllegalArgumentException("AgentType must not be null");
+        }
         switch (type) {
             case SENSORY:        return 0;
             case MOTOR:          return 1;

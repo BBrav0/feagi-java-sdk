@@ -126,7 +126,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetFeagiEndpoints(
         JNIEnv* env, jclass, jlong h, jstring host,
         jint regPort, jint sensPort, jint motorPort, jint vizPort, jint ctrlPort) {
-    // Validate port range before uint16_t cast
+    // Validate port range before uint16_t cast — jint can hold values > 65535.
     auto valid = [](jint p) { return p >= 1 && p <= 65535; };
     if (!valid(regPort) || !valid(sensPort) || !valid(motorPort) ||
         !valid(vizPort) || !valid(ctrlPort)) {
@@ -149,7 +149,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetFeagiEndpoints(
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetHeartbeatIntervalSeconds(
         JNIEnv*, jclass, jlong h, jdouble secs) {
-    // C ABI function is feagi_config_set_heartbeat_interval_s (not _seconds)
+    // C ABI function name is feagi_config_set_heartbeat_interval_s (not _seconds)
     return static_cast<jint>(feagi_config_set_heartbeat_interval_s(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h), static_cast<double>(secs)));
 }
@@ -424,6 +424,11 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientRegistrationRecommend
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientSendSensoryBytes(
         JNIEnv* env, jclass, jlong h, jbyteArray bytes) {
+    // Guard against direct native callers bypassing Java-layer null check.
+    if (bytes == nullptr) {
+        env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "bytes must not be null");
+        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
+    }
     jsize len = env->GetArrayLength(bytes);
     jbyte* buf = env->GetByteArrayElements(bytes, nullptr);
     FeagiStatus r = feagi_client_send_sensory_bytes(
@@ -437,6 +442,11 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientSendSensoryBytes(
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientTrySendSensoryBytes(
         JNIEnv* env, jclass, jlong h, jbyteArray bytes, jbooleanArray outSent) {
+    // Guard against direct native callers bypassing Java-layer null check.
+    if (bytes == nullptr) {
+        env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "bytes must not be null");
+        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
+    }
     jsize len = env->GetArrayLength(bytes);
     jbyte* buf = env->GetByteArrayElements(bytes, nullptr);
     bool sent = false;

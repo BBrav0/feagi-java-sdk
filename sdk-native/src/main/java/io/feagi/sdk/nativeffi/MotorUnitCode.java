@@ -10,30 +10,33 @@ import io.feagi.sdk.core.MotorUnit;
 /**
  * Stable C ABI code mapping for {@link MotorUnit}.
  *
- * <p>These constants are explicitly pinned to match {@code FeagiMotorUnit} in
- * {@code feagi_java_ffi.h}. They are intentionally decoupled from
- * {@link MotorUnit#ordinal()} so that reordering the Java enum does not
- * silently break the native ABI.
+ * <p>Delegates to {@link FeagiNativeBindings.FeagiMotorUnit} which holds the authoritative
+ * pinned integer constants. This eliminates duplication while keeping the mapping decoupled
+ * from {@link MotorUnit#ordinal()} — reordering the Java enum will not silently break the ABI.
  *
- * <p>Keep in sync with {@code FeagiMotorUnit} in the Rust/C header.
+ * <p>If a {@link MotorUnit} value has no matching {@link FeagiNativeBindings.FeagiMotorUnit},
+ * an {@link IllegalArgumentException} is thrown at runtime, making the gap immediately visible.
  */
 public final class MotorUnitCode {
     private MotorUnitCode() {}
 
+    /**
+     * Return the stable C ABI integer code for the given {@link MotorUnit}.
+     *
+     * @throws IllegalArgumentException if the unit has no ABI mapping in
+     *         {@link FeagiNativeBindings.FeagiMotorUnit}
+     */
     public static int of(MotorUnit unit) {
-        switch (unit) {
-            case ROTARY_MOTOR:        return 0;
-            case POSITIONAL_SERVO:    return 1;
-            case GAZE:                return 2;
-            case MISC_DATA:           return 3;
-            case TEXT_ENGLISH_OUTPUT: return 4;
-            case COUNT_OUTPUT:        return 5;
-            case OBJECT_SEGMENTATION: return 6;
-            case SIMPLE_VISION_OUTPUT:return 7;
-            default:
-                throw new IllegalArgumentException(
-                        "Unknown MotorUnit: " + unit
-                        + ". Update MotorUnitCode to match FeagiMotorUnit in feagi_java_ffi.h");
+        if (unit == null) {
+            throw new IllegalArgumentException("MotorUnit must not be null");
+        }
+        try {
+            // Name-based lookup: MotorUnit.ROTARY_MOTOR → FeagiMotorUnit.ROTARY_MOTOR
+            return FeagiNativeBindings.FeagiMotorUnit.valueOf(unit.name()).code();
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "MotorUnit." + unit.name() + " has no corresponding FeagiMotorUnit ABI mapping. "
+                    + "Add it to FeagiNativeBindings.FeagiMotorUnit with its pinned C ABI code.", e);
         }
     }
 }

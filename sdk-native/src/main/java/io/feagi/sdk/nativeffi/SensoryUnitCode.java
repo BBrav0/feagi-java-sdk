@@ -10,36 +10,33 @@ import io.feagi.sdk.core.SensoryUnit;
 /**
  * Stable C ABI code mapping for {@link SensoryUnit}.
  *
- * <p>These constants are explicitly pinned to match {@code FeagiSensoryUnit} in
- * {@code feagi_java_ffi.h}. They are intentionally decoupled from
- * {@link SensoryUnit#ordinal()} so that reordering the Java enum does not
- * silently break the native ABI.
+ * <p>Delegates to {@link FeagiNativeBindings.FeagiSensoryUnit} which holds the authoritative
+ * pinned integer constants. This eliminates duplication while keeping the mapping decoupled
+ * from {@link SensoryUnit#ordinal()} — reordering the Java enum will not silently break the ABI.
  *
- * <p>Keep in sync with {@code FeagiSensoryUnit} in the Rust/C header.
+ * <p>If a {@link SensoryUnit} value has no matching {@link FeagiNativeBindings.FeagiSensoryUnit},
+ * an {@link IllegalArgumentException} is thrown at runtime, making the gap immediately visible.
  */
 public final class SensoryUnitCode {
     private SensoryUnitCode() {}
 
+    /**
+     * Return the stable C ABI integer code for the given {@link SensoryUnit}.
+     *
+     * @throws IllegalArgumentException if the unit has no ABI mapping in
+     *         {@link FeagiNativeBindings.FeagiSensoryUnit}
+     */
     public static int of(SensoryUnit unit) {
-        switch (unit) {
-            case INFRARED:           return 0;
-            case PROXIMITY:          return 1;
-            case SHOCK:              return 2;
-            case BATTERY:            return 3;
-            case SERVO:              return 4;
-            case ANALOG_GPIO:        return 5;
-            case DIGITAL_GPIO:       return 6;
-            case MISC_DATA:          return 7;
-            case TEXT_ENGLISH_INPUT: return 8;
-            case COUNT_INPUT:        return 9;
-            case VISION:             return 10;
-            case SEGMENTED_VISION:   return 11;
-            case ACCELEROMETER:      return 12;
-            case GYROSCOPE:          return 13;
-            default:
-                throw new IllegalArgumentException(
-                        "Unknown SensoryUnit: " + unit
-                        + ". Update SensoryUnitCode to match FeagiSensoryUnit in feagi_java_ffi.h");
+        if (unit == null) {
+            throw new IllegalArgumentException("SensoryUnit must not be null");
+        }
+        try {
+            // Name-based lookup: SensoryUnit.VISION → FeagiSensoryUnit.VISION
+            return FeagiNativeBindings.FeagiSensoryUnit.valueOf(unit.name()).code();
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "SensoryUnit." + unit.name() + " has no corresponding FeagiSensoryUnit ABI mapping. "
+                    + "Add it to FeagiNativeBindings.FeagiSensoryUnit with its pinned C ABI code.", e);
         }
     }
 }
