@@ -181,8 +181,13 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetAgentDescriptor(
         JNIEnv* env, jclass, jlong h,
         jstring manufacturer, jstring agentName, jint agentVersion) {
-    const char* mfr  = jstr_get(env, manufacturer);
+    const char* mfr = jstr_get(env, manufacturer);
     const char* name = jstr_get(env, agentName);
+    if (env->ExceptionCheck()) {
+        // OOM acquiring name — release mfr and propagate exception
+        jstr_release(env, manufacturer, mfr);
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+    }
     FeagiStatus r = feagi_config_set_agent_descriptor(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mfr, name, static_cast<uint32_t>(agentVersion));
@@ -232,6 +237,10 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionCapability(
         jstring targetCorticalArea) {
     const char* mod  = jstr_get(env, modality);
     const char* area = jstr_get(env, targetCorticalArea);
+    if (env->ExceptionCheck()) {
+        jstr_release(env, modality, mod);
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+    }
     FeagiStatus r = feagi_config_set_vision_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mod,
@@ -268,6 +277,10 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorCapability(
         jstring modality, jlong outputCount, jstring areasJson) {
     const char* mod  = jstr_get(env, modality);
     const char* json = jstr_get(env, areasJson);
+    if (env->ExceptionCheck()) {
+        jstr_release(env, modality, mod);
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+    }
     FeagiStatus r = feagi_config_set_motor_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mod, static_cast<size_t>(outputCount), json);
@@ -297,6 +310,10 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnitsJson(
         jstring modality, jlong outputCount, jstring unitsJson) {
     const char* mod  = jstr_get(env, modality);
     const char* json = jstr_get(env, unitsJson);
+    if (env->ExceptionCheck()) {
+        jstr_release(env, modality, mod);
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+    }
     FeagiStatus r = feagi_config_set_motor_units_json(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mod, static_cast<size_t>(outputCount), json);
@@ -331,6 +348,10 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetCustomCapabilityJs
         JNIEnv* env, jclass, jlong h, jstring key, jstring jsonVal) {
     const char* k = jstr_get(env, key);
     const char* v = jstr_get(env, jsonVal);
+    if (env->ExceptionCheck()) {
+        jstr_release(env, key, k);
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+    }
     FeagiStatus r = feagi_config_set_custom_capability_json(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h), k, v);
     jstr_release(env, key, k);

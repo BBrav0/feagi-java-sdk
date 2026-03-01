@@ -188,6 +188,16 @@ class NativeFeagiAgentClientTest {
                 () -> NativeFeagiAgentClient.validateCorticalAreaId("bad{id}"));
     }
 
+    @Test
+    void validateCorticalAreaId_rejectsUnicodeLetters() {
+        // é is a letter per Character.isLetterOrDigit() but must be rejected
+        // by our strict ASCII-only check.
+        assertThrows(IllegalArgumentException.class,
+                () -> NativeFeagiAgentClient.validateCorticalAreaId("caf\u00e9"));
+        assertThrows(IllegalArgumentException.class,
+                () -> NativeFeagiAgentClient.validateCorticalAreaId("\u4e2d\u6587")); // CJK
+    }
+
     // ── toJsonStringArray ──────────────────────────────────────────────────────
 
     @Test

@@ -16,7 +16,12 @@ import io.feagi.sdk.core.AgentType;
  *
  * <p>Unlike {@link SensoryUnitCode} and {@link MotorUnitCode}, there is no
  * {@code FeagiNativeBindings.FeagiAgentType} enum to delegate to, so the constants
- * are maintained here. Keep in sync with {@code FeagiAgentType} in the Rust/C header.
+ * are maintained here directly.
+ *
+ * <p>TODO: When {@code FeagiNativeBindings.FeagiAgentType} is added, replace this
+ * switch with name-based delegation:
+ * {@code FeagiNativeBindings.FeagiAgentType.valueOf(type.name()).code()}
+ * and remove the hand-written constants to restore single-source-of-truth.
  */
 public final class AgentTypeCode {
     private AgentTypeCode() {}

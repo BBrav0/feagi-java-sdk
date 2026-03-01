@@ -63,6 +63,14 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     /**
      * Opaque pointer to the native {@code FeagiAgentClientHandle}.
      * Set by {@link #connect()}, cleared by {@link #close()}.
+     *
+     * <p>Note: {@code AtomicLong} is used here for its memory-model guarantees on
+     * individual reads/writes, but all accesses already occur under {@link #handleLock}.
+     * The combination is belt-and-suspenders: the lock provides the critical-section
+     * guarantee; the AtomicLong makes the intent explicit and avoids requiring
+     * readers to reason about lock scopes when they see {@code clientHandle.get()}.
+     * Similarly, {@code connected} is {@code volatile} even though reads/writes happen
+     * under the lock — this keeps the visibility guarantee self-documenting.
      */
     private final AtomicLong clientHandle = new AtomicLong(NULL_HANDLE);
 
@@ -514,11 +522,17 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         }
         for (int i = 0; i < id.length(); i++) {
             char c = id.charAt(i);
-            if (!Character.isLetterOrDigit(c) && c != '_' && c != '-') {
+            // Strict ASCII check — intentionally not using Character.isLetterOrDigit()
+            // which accepts Unicode letters (e-acute, CJK, etc.) and would allow
+            // non-ASCII characters that could cause issues in JSON or cross-language contexts.
+            boolean isAsciiAlphanumeric = (c >= 'a' && c <= 'z')
+                    || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9');
+            if (!isAsciiAlphanumeric && c != '_' && c != '-') {
                 throw new IllegalArgumentException(
                         "Cortical area ID '" + id + "' contains invalid character '"
-                        + c + "' at index " + i
-                        + ". Only alphanumeric, underscore, and hyphen are allowed.");
+                        + c + "' (0x" + Integer.toHexString(c) + ") at index " + i
+                        + ". Only ASCII alphanumeric, underscore, and hyphen are allowed.");
             }
         }
     }
