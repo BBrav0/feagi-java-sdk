@@ -157,6 +157,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetHeartbeatIntervalS
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetConnectionTimeoutMs(
         JNIEnv*, jclass, jlong h, jlong ms) {
+    if (ms < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     return static_cast<jint>(feagi_config_set_connection_timeout_ms(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h), static_cast<uint64_t>(ms)));
 }
@@ -164,6 +165,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetConnectionTimeoutM
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetRegistrationRetries(
         JNIEnv*, jclass, jlong h, jint retries) {
+    if (retries < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     return static_cast<jint>(feagi_config_set_registration_retries(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h), static_cast<uint32_t>(retries)));
 }
@@ -171,6 +173,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetRegistrationRetrie
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetRetryBackoffMs(
         JNIEnv*, jclass, jlong h, jlong ms) {
+    if (ms < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     return static_cast<jint>(feagi_config_set_retry_backoff_ms(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h), static_cast<uint64_t>(ms)));
 }
@@ -452,6 +455,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientSendSensoryBytes(
     }
     jsize len = env->GetArrayLength(bytes);
     jbyte* buf = env->GetByteArrayElements(bytes, nullptr);
+    if (!buf) return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);  // OOM pending
     FeagiStatus r = feagi_client_send_sensory_bytes(
             JLONG_TO_PTR(FeagiAgentClientHandle, h),
             reinterpret_cast<const uint8_t*>(buf),
@@ -470,6 +474,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientTrySendSensoryBytes(
     }
     jsize len = env->GetArrayLength(bytes);
     jbyte* buf = env->GetByteArrayElements(bytes, nullptr);
+    if (!buf) return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);  // OOM pending
     bool sent = false;
     FeagiStatus r = feagi_client_try_send_sensory_bytes(
             JLONG_TO_PTR(FeagiAgentClientHandle, h),

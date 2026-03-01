@@ -194,6 +194,10 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         try {
             requireConnected("sendSensoryBytes");
 
+            // Note: boolean[] outSent is allocated per-call. In a high-frequency
+            // sensory loop this produces GC pressure. If profiling shows this is
+            // a bottleneck, consider preallocating as a final field (guarded by
+            // the existing read lock) or using ThreadLocal holders.
             boolean[] outSent = new boolean[1];
             int status = FeagiNativeBindings.feagiClientTrySendSensoryBytes(
                     clientHandle.get(), payload, outSent);
@@ -238,11 +242,19 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                         "pollMotorBytes failed (status=" + status + "): " + nativeError());
             }
 
-            if (!outHasData[0] || outBufHandle[0] == NULL_HANDLE) {
+            long bufHandle = outBufHandle[0];
+
+            // Defensive free: if the native layer ever returns hasData=false with a
+            // non-null buffer handle (inconsistent state), free it rather than leak.
+            if (!outHasData[0]) {
+                if (bufHandle != NULL_HANDLE) {
+                    FeagiNativeBindings.feagiBufferFree(bufHandle);
+                }
                 return null;  // no frame available
             }
-
-            long bufHandle = outBufHandle[0];
+            if (bufHandle == NULL_HANDLE) {
+                return null;  // no frame available
+            }
             try {
                 long len = FeagiNativeBindings.feagiBufferLen(bufHandle);
 
