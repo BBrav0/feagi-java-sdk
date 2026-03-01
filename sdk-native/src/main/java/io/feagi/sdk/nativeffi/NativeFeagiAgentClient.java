@@ -47,8 +47,10 @@ import java.util.logging.Logger;
  *
  * <h2>Thread safety</h2>
  * {@link #sendSensoryBytes} and {@link #pollMotorBytes} are safe to call concurrently from
- * any thread after {@link #connect()} returns. A read-write lock guards the handle so that
- * {@link #close()} cannot free the handle while a send or poll is in progress.
+ * any thread after {@link #connect()} returns. A read-write lock guards the handle:
+ * the read lock is held during send/poll native calls; the write lock is held during
+ * {@link #connect()} and {@link #close()} to prevent concurrent double-connect or
+ * use-after-free races.
  */
 public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
@@ -64,9 +66,16 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     private final AtomicLong clientHandle = new AtomicLong(NULL_HANDLE);
 
     /**
-     * Guards the handle against concurrent close() + send/poll.
-     * Read lock: held by sendSensoryBytes / pollMotorBytes during the native call.
-     * Write lock: held by close() while freeing the handle.
+     * Guards the handle against races between connect/close and concurrent send/poll.
+     *
+     * <ul>
+     *   <li>Read lock: held by {@link #sendSensoryBytes} and {@link #pollMotorBytes}
+     *       for the duration of the native call.</li>
+     *   <li>Write lock: held for the entire body of {@link #connect()} and
+     *       {@link #close()} so that two threads cannot both see
+     *       {@code connected == false} and race into connect(), and so that
+     *       close() cannot free the handle while a send/poll is in flight.</li>
+     * </ul>
      */
     private final ReentrantReadWriteLock handleLock = new ReentrantReadWriteLock();
 
@@ -92,8 +101,12 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     /**
      * Connect and register the agent with FEAGI.
      *
+     * <p>Holds the write lock for the entire body so that two concurrent callers
+     * cannot both pass the {@code connected == false} guard and race into native
+     * allocation.
+     *
      * <p>All steps — config allocation, capability registration, client creation, and
-     * connection — are performed inside a single guarded block. If any step fails, all
+     * connection — are inside a single try/finally block. If any step fails, all
      * native resources allocated so far are freed before the exception propagates.
      *
      * @throws FeagiSdkException     if any native step fails
@@ -101,70 +114,77 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      */
     @Override
     public void connect() {
-        if (connected) {
-            throw new IllegalStateException("Already connected. Call close() first.");
-        }
-
-        // ── 1. Allocate native config handle ──────────────────────────────────
-        long cfgHandle = FeagiNativeBindings.feagiConfigNew(
-                config.agentId(),
-                config.agentType().ordinal());
-        if (cfgHandle == NULL_HANDLE) {
-            throw new FeagiSdkException(
-                    "feagiConfigNew failed for agent '" + config.agentId() + "': "
-                    + nativeError());
-        }
-
-        long newClientHandle = NULL_HANDLE;
+        handleLock.writeLock().lock();
         try {
-            // ── 2. Endpoints ──────────────────────────────────────────────────
-            applyEndpoints(cfgHandle);
-
-            // ── 3. Timing / retry ─────────────────────────────────────────────
-            applyTimingConfig(cfgHandle);
-
-            // ── 4. Sensory socket ─────────────────────────────────────────────
-            applySensorySocketConfig(cfgHandle);
-
-            // ── 5. Capabilities ───────────────────────────────────────────────
-            applyCapabilities(cfgHandle);
-
-            // ── 6. Rust-side validation ───────────────────────────────────────
-            checkStatus(FeagiNativeBindings.feagiConfigValidate(cfgHandle),
-                    "feagiConfigValidate");
-
-            // ── 7. Create native client ───────────────────────────────────────
-            long[] outClient = new long[1];
-            checkStatus(FeagiNativeBindings.feagiClientNew(cfgHandle, outClient),
-                    "feagiClientNew");
-
-            newClientHandle = outClient[0];
-            if (newClientHandle == NULL_HANDLE) {
-                throw new FeagiSdkException(
-                        "feagiClientNew returned null handle: " + nativeError());
+            if (connected) {
+                throw new IllegalStateException("Already connected. Call close() first.");
             }
 
-            // ── 8. Connect and register ───────────────────────────────────────
-            checkStatus(FeagiNativeBindings.feagiClientConnect(newClientHandle),
-                    "feagiClientConnect");
+            // ── 1. Allocate native config handle ──────────────────────────────
+            // AgentTypeCode provides a stable ABI mapping — never use .ordinal() here.
+            long cfgHandle = FeagiNativeBindings.feagiConfigNew(
+                    config.agentId(),
+                    AgentTypeCode.of(config.agentType()));
+            if (cfgHandle == NULL_HANDLE) {
+                throw new FeagiSdkException(
+                        "feagiConfigNew failed for agent '" + config.agentId() + "': "
+                        + nativeError());
+            }
 
-            // All native steps succeeded — publish the handle and mark connected.
-            clientHandle.set(newClientHandle);
-            connected = true;
-            newClientHandle = NULL_HANDLE; // ownership transferred, don't free in finally
+            long newClientHandle = NULL_HANDLE;
+            try {
+                // ── 2. Endpoints ──────────────────────────────────────────────
+                applyEndpoints(cfgHandle);
+
+                // ── 3. Timing / retry ─────────────────────────────────────────
+                applyTimingConfig(cfgHandle);
+
+                // ── 4. Sensory socket ─────────────────────────────────────────
+                applySensorySocketConfig(cfgHandle);
+
+                // ── 5. Capabilities ───────────────────────────────────────────
+                applyCapabilities(cfgHandle);
+
+                // ── 6. Rust-side validation ───────────────────────────────────
+                checkStatus(FeagiNativeBindings.feagiConfigValidate(cfgHandle),
+                        "feagiConfigValidate");
+
+                // ── 7. Create native client ───────────────────────────────────
+                long[] outClient = new long[1];
+                checkStatus(FeagiNativeBindings.feagiClientNew(cfgHandle, outClient),
+                        "feagiClientNew");
+
+                newClientHandle = outClient[0];
+                if (newClientHandle == NULL_HANDLE) {
+                    throw new FeagiSdkException(
+                            "feagiClientNew returned null handle: " + nativeError());
+                }
+
+                // ── 8. Connect and register ───────────────────────────────────
+                checkStatus(FeagiNativeBindings.feagiClientConnect(newClientHandle),
+                        "feagiClientConnect");
+
+                // All steps succeeded — publish handle and mark connected.
+                clientHandle.set(newClientHandle);
+                connected = true;
+                newClientHandle = NULL_HANDLE; // ownership transferred; don't free in finally
+
+            } finally {
+                // Config handle is always freed — not needed after client creation.
+                FeagiNativeBindings.feagiConfigFree(cfgHandle);
+                // If an exception prevented ownership transfer, free the client too.
+                if (newClientHandle != NULL_HANDLE) {
+                    FeagiNativeBindings.feagiClientFree(newClientHandle);
+                }
+            }
+
+            LOG.info("NativeFeagiAgentClient connected: agentId=" + config.agentId()
+                    + " type=" + config.agentType()
+                    + " registration=" + config.endpoints().registrationEndpoint());
 
         } finally {
-            // Config handle is always freed here — it is not needed after client creation.
-            FeagiNativeBindings.feagiConfigFree(cfgHandle);
-            // If we never transferred ownership (due to an exception), free the client too.
-            if (newClientHandle != NULL_HANDLE) {
-                FeagiNativeBindings.feagiClientFree(newClientHandle);
-            }
+            handleLock.writeLock().unlock();
         }
-
-        LOG.info("NativeFeagiAgentClient connected: agentId=" + config.agentId()
-                + " type=" + config.agentType()
-                + " registration=" + config.endpoints().registrationEndpoint());
     }
 
     /**
@@ -173,7 +193,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * <p>Uses try-send semantics — frames may be silently dropped under ZMQ backpressure
      * (real-time contract, no implicit buffering).
      *
-     * <p>A read lock is held during the native call to prevent {@link #close()} from
+     * <p>The read lock is held during the native call to prevent {@link #close()} from
      * freeing the handle while the send is in progress.
      */
     @Override
@@ -206,10 +226,10 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * {@inheritDoc}
      *
      * <p>Non-blocking. Returns {@code null} if no motor frame is currently available.
-     * Returns an empty {@code byte[]} if a zero-length frame was received (distinguishable
-     * from "no data").
+     * Returns an empty {@code byte[]} for a zero-length frame (distinguishable from
+     * "no data available").
      *
-     * <p>A read lock is held during the native call to prevent {@link #close()} from
+     * <p>The read lock is held during the native call to prevent {@link #close()} from
      * freeing the handle while the poll is in progress.
      */
     @Override
@@ -239,8 +259,8 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                 if (len < 0 || len > Integer.MAX_VALUE) {
                     return null;
                 }
-                // Zero-length frame: return empty array (not null) so caller can distinguish
-                // "frame received but empty" from "no frame available".
+                // len == 0: copyNativeBuffer returns new byte[0] (not null),
+                // so callers can distinguish "zero-length frame" from "no frame".
                 return copyNativeBuffer(bufHandle, (int) len);
             } finally {
                 FeagiNativeBindings.feagiBufferFree(bufHandle);
@@ -253,7 +273,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     /**
      * {@inheritDoc}
      *
-     * <p>Idempotent — safe to call multiple times. Acquires the write lock so it cannot
+     * <p>Idempotent — safe to call multiple times. Holds the write lock so it cannot
      * run concurrently with an in-progress send or poll.
      */
     @Override
@@ -371,7 +391,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                             vision.targetCorticalArea()),
                     "feagiConfigSetVisionCapability");
         } else {
-            // Use SensoryUnitCode for stable ABI mapping — not ordinal()
+            // SensoryUnitCode: stable ABI mapping — never use .ordinal()
             checkStatus(
                     FeagiNativeBindings.feagiConfigSetVisionUnit(
                             cfgHandle,
@@ -407,7 +427,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                     "feagiConfigSetMotorUnitsJson");
 
         } else {
-            // Use MotorUnitCode for stable ABI mapping — not ordinal()
+            // MotorUnitCode: stable ABI mapping — never use .ordinal()
             checkStatus(
                     FeagiNativeBindings.feagiConfigSetMotorUnit(
                             cfgHandle,
@@ -460,53 +480,70 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     /**
      * Serialize to minimal JSON string array, e.g. {@code ["v1_motor","v2_drive"]}.
      *
-     * <p>Validates that IDs contain only safe ASCII identifier characters to prevent
-     * JSON injection. Cortical area IDs are expected to be alphanumeric + underscore/hyphen.
+     * <p>Validates that each ID contains only safe ASCII identifier characters
+     * (alphanumeric, underscore, hyphen) to prevent JSON injection. This is
+     * stricter than generic escaping but matches what FEAGI accepts for cortical area IDs.
+     *
+     * @throws IllegalArgumentException if items is null, or any ID is null/empty/unsafe
      */
-    private static String toJsonStringArray(List<String> items) {
-        if (items == null) throw new IllegalArgumentException("items must not be null");
+    static String toJsonStringArray(List<String> items) {
+        if (items == null) {
+            throw new IllegalArgumentException("items must not be null");
+        }
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < items.size(); i++) {
-            String id = items.get(i);
-            validateCorticalAreaId(id);
-            sb.append('"').append(id).append('"');
-            if (i < items.size() - 1) sb.append(',');
+            validateCorticalAreaId(items.get(i));
+            sb.append('"').append(items.get(i)).append('"');
+            if (i < items.size() - 1) {
+                sb.append(',');
+            }
         }
         return sb.append(']').toString();
     }
 
     /**
-     * Validate that a cortical area ID is safe ASCII (alphanumeric, underscore, hyphen).
-     * This is stricter than full JSON escaping but matches what FEAGI accepts.
+     * Validate that a cortical area ID contains only safe ASCII characters.
+     *
+     * @throws IllegalArgumentException if the ID is null, empty, or contains unsafe characters
      */
-    private static void validateCorticalAreaId(String id) {
+    static void validateCorticalAreaId(String id) {
         if (id == null || id.isEmpty()) {
-            throw new IllegalArgumentException("Cortical area ID must not be null or empty");
+            throw new IllegalArgumentException(
+                    "Cortical area ID must not be null or empty");
         }
         for (int i = 0; i < id.length(); i++) {
             char c = id.charAt(i);
             if (!Character.isLetterOrDigit(c) && c != '_' && c != '-') {
                 throw new IllegalArgumentException(
-                        "Cortical area ID '" + id + "' contains invalid character '" + c
-                        + "' at index " + i + ". Only alphanumeric, underscore, and hyphen are allowed.");
+                        "Cortical area ID '" + id + "' contains invalid character '"
+                        + c + "' at index " + i
+                        + ". Only alphanumeric, underscore, and hyphen are allowed.");
             }
         }
     }
 
     /**
-     * Serialize to JSON array of unit/group objects, e.g.
-     * {@code [{"unit":0,"group":1},{"unit":2,"group":0}]}.
-     * Uses {@link MotorUnitCode} for stable ABI integer mapping.
+     * Serialize a list of {@link MotorUnitSpec} to a JSON array of unit/group objects.
+     *
+     * <p>Example output: {@code [{"unit":0,"group":1},{"unit":2,"group":0}]}
+     *
+     * <p>Uses {@link MotorUnitCode} for stable ABI integer mapping — never {@code .ordinal()}.
+     *
+     * @throws IllegalArgumentException if specs is null
      */
-    private static String motorUnitSpecsToJson(List<MotorUnitSpec> specs) {
-        if (specs == null) throw new IllegalArgumentException("specs must not be null");
+    static String motorUnitSpecsToJson(List<MotorUnitSpec> specs) {
+        if (specs == null) {
+            throw new IllegalArgumentException("specs must not be null");
+        }
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < specs.size(); i++) {
             MotorUnitSpec s = specs.get(i);
             sb.append("{\"unit\":").append(MotorUnitCode.of(s.unit()))
               .append(",\"group\":").append(s.group())
               .append('}');
-            if (i < specs.size() - 1) sb.append(',');
+            if (i < specs.size() - 1) {
+                sb.append(',');
+            }
         }
         return sb.append(']').toString();
     }
@@ -514,9 +551,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     // ── Native helpers ─────────────────────────────────────────────────────────
 
     /**
-     * Copy bytes out of a native {@code FeagiByteBufferHandle} into a Java byte array.
-     * Returns an empty array for zero-length frames.
-     * The buffer handle must remain valid during this call; caller frees it afterward.
+     * Copy bytes from a native {@code FeagiByteBufferHandle} into a Java byte array.
+     * Returns {@code new byte[0]} for zero-length frames (never null for valid handles).
+     * The caller is responsible for freeing the buffer handle after this call.
      */
     private static native byte[] copyNativeBuffer(long bufHandle, int length);
 

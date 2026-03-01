@@ -15,44 +15,20 @@
 #include <jni.h>
 #include <cstdint>
 #include <cstring>
-extern "C" {
-    #include <feagi_java_ffi.h>
+#include "feagi_java_ffi.h"
+
+// ── Pointer helpers ────────────────────────────────────────────────────────────
+#define PTR_TO_JLONG(ptr)      (static_cast<jlong>(reinterpret_cast<intptr_t>(ptr)))
+#define JLONG_TO_PTR(type, jl) (reinterpret_cast<type*>(static_cast<intptr_t>(jl)))
+
+// ── Null-safe jstring → UTF-8 ─────────────────────────────────────────────────
+static const char* jstr_get(JNIEnv* env, jstring s) {
+    if (!s) return nullptr;
+    const char* c = env->GetStringUTFChars(s, nullptr);
+    return (env->ExceptionCheck()) ? nullptr : c;
 }
-
-#ifndef FEAGI_JAVA_FFI_H
-#  pragma message("NOTE: FEAGI_JAVA_FFI_H not defined by header (this is ok if it uses different guard name)")
-#endif
-
-// Hard fail if the expected API isn't visible
-#ifndef feagi_library_version_alloc
-// This check doesn't work for functions (they aren't macros), so use a symbol reference instead.
-#endif
-
-// Force the compiler to see the types/functions (will error with a clearer message)
-static void feagi_header_sanity_check() {
-    (void)&feagi_library_version_alloc;
-    (void)&feagi_last_error_message_alloc;
-    FeagiAgentConfigHandle* a = nullptr;
-    FeagiAgentClientHandle* b = nullptr;
-    (void)a; (void)b;
-}
-
-// ── Pointer encoding helpers ───────────────────────────────────────────────────
-// Opaque C pointers are passed to Java as jlong (64-bit signed integer).
-#define PTR_TO_JLONG(ptr)          (static_cast<jlong>(reinterpret_cast<intptr_t>(ptr)))
-#define JLONG_TO_PTR(type, jl)     (reinterpret_cast<type*>(static_cast<intptr_t>(jl)))
-
-// ── Null-safe jstring → UTF-8 helper ──────────────────────────────────────────
-// Returns nullptr if jstr is nullptr (maps to C NULL).
-static const char* jstring_to_utf8(JNIEnv* env, jstring jstr) {
-    if (jstr == nullptr) return nullptr;
-    return env->GetStringUTFChars(jstr, nullptr);
-}
-
-static void release_utf8(JNIEnv* env, jstring jstr, const char* chars) {
-    if (jstr != nullptr && chars != nullptr) {
-        env->ReleaseStringUTFChars(jstr, chars);
-    }
+static void jstr_release(JNIEnv* env, jstring s, const char* c) {
+    if (s && c) env->ReleaseStringUTFChars(s, c);
 }
 
 // ── ABI / version ─────────────────────────────────────────────────────────────
@@ -66,9 +42,9 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiLibraryVersion(JNIEnv* env, jclass) {
     char* ver = feagi_library_version_alloc();
     if (!ver) return nullptr;
-    jstring out = env->NewStringUTF(ver);
+    jstring result = env->NewStringUTF(ver);
     feagi_string_free(ver);
-    return out;
+    return result;
 }
 
 // ── Error reporting ───────────────────────────────────────────────────────────
@@ -77,183 +53,161 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiLastErrorMessage(JNIEnv* env, jclass) {
     char* msg = feagi_last_error_message_alloc();
     if (!msg) return nullptr;
-    jstring out = env->NewStringUTF(msg);
+    jstring result = env->NewStringUTF(msg);
     feagi_string_free(msg);
-    return out;
+    return result;
 }
 
 // ── Config lifecycle ──────────────────────────────────────────────────────────
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigNew(
-        JNIEnv* env, jclass,
-        jstring agentId, jint agentType) {
-
-    const char* id = jstring_to_utf8(env, agentId);
-    FeagiAgentConfigHandle* handle = feagi_config_new(id, static_cast<FeagiAgentType>(agentType));
-    release_utf8(env, agentId, id);
-    return PTR_TO_JLONG(handle);
+        JNIEnv* env, jclass, jstring agentId, jint agentType) {
+    const char* id = jstr_get(env, agentId);
+    FeagiAgentConfigHandle* h = feagi_config_new(id, static_cast<FeagiAgentType>(agentType));
+    jstr_release(env, agentId, id);
+    return PTR_TO_JLONG(h);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigFree(
-        JNIEnv*, jclass, jlong cfgHandle) {
-
-    feagi_config_free(JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle));
+        JNIEnv*, jclass, jlong h) {
+    feagi_config_free(JLONG_TO_PTR(FeagiAgentConfigHandle, h));
 }
 
 // ── Endpoint setters ──────────────────────────────────────────────────────────
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetRegistrationEndpoint(
-        JNIEnv* env, jclass, jlong cfgHandle, jstring endpoint) {
-
-    const char* ep = jstring_to_utf8(env, endpoint);
-    FeagiStatus status = feagi_config_set_registration_endpoint(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), ep);
-    release_utf8(env, endpoint, ep);
-    return static_cast<jint>(status);
+        JNIEnv* env, jclass, jlong h, jstring ep) {
+    const char* s = jstr_get(env, ep);
+    FeagiStatus r = feagi_config_set_registration_endpoint(JLONG_TO_PTR(FeagiAgentConfigHandle, h), s);
+    jstr_release(env, ep, s);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetSensoryEndpoint(
-        JNIEnv* env, jclass, jlong cfgHandle, jstring endpoint) {
-
-    const char* ep = jstring_to_utf8(env, endpoint);
-    FeagiStatus status = feagi_config_set_sensory_endpoint(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), ep);
-    release_utf8(env, endpoint, ep);
-    return static_cast<jint>(status);
+        JNIEnv* env, jclass, jlong h, jstring ep) {
+    const char* s = jstr_get(env, ep);
+    FeagiStatus r = feagi_config_set_sensory_endpoint(JLONG_TO_PTR(FeagiAgentConfigHandle, h), s);
+    jstr_release(env, ep, s);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorEndpoint(
-        JNIEnv* env, jclass, jlong cfgHandle, jstring endpoint) {
-
-    const char* ep = jstring_to_utf8(env, endpoint);
-    FeagiStatus status = feagi_config_set_motor_endpoint(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), ep);
-    release_utf8(env, endpoint, ep);
-    return static_cast<jint>(status);
+        JNIEnv* env, jclass, jlong h, jstring ep) {
+    const char* s = jstr_get(env, ep);
+    FeagiStatus r = feagi_config_set_motor_endpoint(JLONG_TO_PTR(FeagiAgentConfigHandle, h), s);
+    jstr_release(env, ep, s);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisualizationEndpoint(
-        JNIEnv* env, jclass, jlong cfgHandle, jstring endpoint) {
-
-    const char* ep = jstring_to_utf8(env, endpoint);
-    FeagiStatus status = feagi_config_set_visualization_endpoint(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), ep);
-    release_utf8(env, endpoint, ep);
-    return static_cast<jint>(status);
+        JNIEnv* env, jclass, jlong h, jstring ep) {
+    const char* s = jstr_get(env, ep);
+    FeagiStatus r = feagi_config_set_visualization_endpoint(JLONG_TO_PTR(FeagiAgentConfigHandle, h), s);
+    jstr_release(env, ep, s);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetControlEndpoint(
-        JNIEnv* env, jclass, jlong cfgHandle, jstring endpoint) {
-
-    const char* ep = jstring_to_utf8(env, endpoint);
-    FeagiStatus status = feagi_config_set_control_endpoint(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), ep);
-    release_utf8(env, endpoint, ep);
-    return static_cast<jint>(status);
+        JNIEnv* env, jclass, jlong h, jstring ep) {
+    const char* s = jstr_get(env, ep);
+    FeagiStatus r = feagi_config_set_control_endpoint(JLONG_TO_PTR(FeagiAgentConfigHandle, h), s);
+    jstr_release(env, ep, s);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetFeagiEndpoints(
-        JNIEnv* env, jclass, jlong cfgHandle,
-        jstring host,
-        jint registrationPort, jint sensoryPort, jint motorPort,
-        jint visualizationPort, jint controlPort) {
-
-    const char* h = jstring_to_utf8(env, host);
-    FeagiStatus status = feagi_config_set_feagi_endpoints(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
-            h,
-            static_cast<uint16_t>(registrationPort),
-            static_cast<uint16_t>(sensoryPort),
+        JNIEnv* env, jclass, jlong h, jstring host,
+        jint regPort, jint sensPort, jint motorPort, jint vizPort, jint ctrlPort) {
+    // Validate port range before uint16_t cast
+    auto valid = [](jint p) { return p >= 1 && p <= 65535; };
+    if (!valid(regPort) || !valid(sensPort) || !valid(motorPort) ||
+        !valid(vizPort) || !valid(ctrlPort)) {
+        return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
+    }
+    const char* hs = jstr_get(env, host);
+    FeagiStatus r = feagi_config_set_feagi_endpoints(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h), hs,
+            static_cast<uint16_t>(regPort),
+            static_cast<uint16_t>(sensPort),
             static_cast<uint16_t>(motorPort),
-            static_cast<uint16_t>(visualizationPort),
-            static_cast<uint16_t>(controlPort));
-    release_utf8(env, host, h);
-    return static_cast<jint>(status);
+            static_cast<uint16_t>(vizPort),
+            static_cast<uint16_t>(ctrlPort));
+    jstr_release(env, host, hs);
+    return static_cast<jint>(r);
 }
 
 // ── Timing / retry ────────────────────────────────────────────────────────────
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetHeartbeatIntervalSeconds(
-        JNIEnv*, jclass, jlong cfgHandle, jdouble heartbeatIntervalSeconds) {
-
+        JNIEnv*, jclass, jlong h, jdouble secs) {
+    // C ABI function is feagi_config_set_heartbeat_interval_s (not _seconds)
     return static_cast<jint>(feagi_config_set_heartbeat_interval_s(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
-            static_cast<double>(heartbeatIntervalSeconds)));
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h), static_cast<double>(secs)));
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetConnectionTimeoutMs(
-        JNIEnv*, jclass, jlong cfgHandle, jlong connectionTimeoutMs) {
-
+        JNIEnv*, jclass, jlong h, jlong ms) {
     return static_cast<jint>(feagi_config_set_connection_timeout_ms(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
-            static_cast<uint64_t>(connectionTimeoutMs)));
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h), static_cast<uint64_t>(ms)));
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetRegistrationRetries(
-        JNIEnv*, jclass, jlong cfgHandle, jint registrationRetries) {
-
+        JNIEnv*, jclass, jlong h, jint retries) {
     return static_cast<jint>(feagi_config_set_registration_retries(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
-            static_cast<uint32_t>(registrationRetries)));
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h), static_cast<uint32_t>(retries)));
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetRetryBackoffMs(
-        JNIEnv*, jclass, jlong cfgHandle, jlong retryBackoffMs) {
-
+        JNIEnv*, jclass, jlong h, jlong ms) {
     return static_cast<jint>(feagi_config_set_retry_backoff_ms(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
-            static_cast<uint64_t>(retryBackoffMs)));
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h), static_cast<uint64_t>(ms)));
 }
 
 // ── Agent descriptor / auth ───────────────────────────────────────────────────
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetAgentDescriptor(
-        JNIEnv* env, jclass, jlong cfgHandle,
+        JNIEnv* env, jclass, jlong h,
         jstring manufacturer, jstring agentName, jint agentVersion) {
-
-    const char* mfr  = jstring_to_utf8(env, manufacturer);
-    const char* name = jstring_to_utf8(env, agentName);
-    FeagiStatus status = feagi_config_set_agent_descriptor(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
+    const char* mfr  = jstr_get(env, manufacturer);
+    const char* name = jstr_get(env, agentName);
+    FeagiStatus r = feagi_config_set_agent_descriptor(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mfr, name, static_cast<uint32_t>(agentVersion));
-    release_utf8(env, manufacturer, mfr);
-    release_utf8(env, agentName,    name);
-    return static_cast<jint>(status);
+    jstr_release(env, manufacturer, mfr);
+    jstr_release(env, agentName, name);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_nativeConfigSetAuthTokenBase64(
-        JNIEnv* env, jclass, jlong cfgHandle, jstring authTokenBase64) {
-
-    const char* token = jstring_to_utf8(env, authTokenBase64);
-    FeagiStatus status = feagi_config_set_auth_token_base64(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), token);
-    release_utf8(env, authTokenBase64, token);
-    return static_cast<jint>(status);
+        JNIEnv* env, jclass, jlong h, jstring token) {
+    const char* t = jstr_get(env, token);
+    FeagiStatus r = feagi_config_set_auth_token_base64(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h), t);
+    jstr_release(env, token, t);
+    return static_cast<jint>(r);
 }
 
-// ── Sensory socket config ─────────────────────────────────────────────────────
+// ── Sensory socket ────────────────────────────────────────────────────────────
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetSensorySocketConfig(
-        JNIEnv*, jclass, jlong cfgHandle,
-        jint sendHwm, jint lingerMs, jboolean immediate) {
-
+        JNIEnv*, jclass, jlong h, jint sendHwm, jint lingerMs, jboolean immediate) {
     return static_cast<jint>(feagi_config_set_sensory_socket_config(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             static_cast<int32_t>(sendHwm),
             static_cast<int32_t>(lingerMs),
             static_cast<bool>(immediate)));
@@ -263,335 +217,302 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetSensorySocketConfi
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetSensoryCapability(
-        JNIEnv* env, jclass, jlong cfgHandle,
-        jdouble rateHz, jstring shmPathOrNull) {
-
-    const char* shm = jstring_to_utf8(env, shmPathOrNull);  // null-safe
-    FeagiStatus status = feagi_config_set_sensory_capability(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
-            static_cast<double>(rateHz), shm);
-    release_utf8(env, shmPathOrNull, shm);
-    return static_cast<jint>(status);
+        JNIEnv* env, jclass, jlong h, jdouble rateHz, jstring shmPath) {
+    const char* shm = jstr_get(env, shmPath);
+    FeagiStatus r = feagi_config_set_sensory_capability(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h), static_cast<double>(rateHz), shm);
+    jstr_release(env, shmPath, shm);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionCapability(
-        JNIEnv* env, jclass, jlong cfgHandle,
+        JNIEnv* env, jclass, jlong h,
         jstring modality, jlong width, jlong height, jlong channels,
         jstring targetCorticalArea) {
-
-    const char* mod  = jstring_to_utf8(env, modality);
-    const char* area = jstring_to_utf8(env, targetCorticalArea);
-    FeagiStatus status = feagi_config_set_vision_capability(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
+    const char* mod  = jstr_get(env, modality);
+    const char* area = jstr_get(env, targetCorticalArea);
+    FeagiStatus r = feagi_config_set_vision_capability(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mod,
-            static_cast<uint32_t>(width),
-            static_cast<uint32_t>(height),
-            static_cast<uint32_t>(channels),
+            static_cast<size_t>(width),
+            static_cast<size_t>(height),
+            static_cast<size_t>(channels),
             area);
-    release_utf8(env, modality,          mod);
-    release_utf8(env, targetCorticalArea, area);
-    return static_cast<jint>(status);
+    jstr_release(env, modality, mod);
+    jstr_release(env, targetCorticalArea, area);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionUnit(
-        JNIEnv* env, jclass, jlong cfgHandle,
+        JNIEnv* env, jclass, jlong h,
         jstring modality, jlong width, jlong height, jlong channels,
         jint unit, jint group) {
-
-    const char* mod = jstring_to_utf8(env, modality);
-    FeagiStatus status = feagi_config_set_vision_unit(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
+    const char* mod = jstr_get(env, modality);
+    FeagiStatus r = feagi_config_set_vision_unit(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mod,
-            static_cast<uint32_t>(width),
-            static_cast<uint32_t>(height),
-            static_cast<uint32_t>(channels),
+            static_cast<size_t>(width),
+            static_cast<size_t>(height),
+            static_cast<size_t>(channels),
             static_cast<FeagiSensoryUnit>(unit),
             static_cast<uint8_t>(group));
-    release_utf8(env, modality, mod);
-    return static_cast<jint>(status);
+    jstr_release(env, modality, mod);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorCapability(
-        JNIEnv* env, jclass, jlong cfgHandle,
-        jstring modality, jlong outputCount, jstring sourceCorticalAreasJson) {
-
-    const char* mod  = jstring_to_utf8(env, modality);
-    const char* json = jstring_to_utf8(env, sourceCorticalAreasJson);
-    FeagiStatus status = feagi_config_set_motor_capability(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
-            mod, static_cast<uint32_t>(outputCount), json);
-    release_utf8(env, modality,               mod);
-    release_utf8(env, sourceCorticalAreasJson, json);
-    return static_cast<jint>(status);
+        JNIEnv* env, jclass, jlong h,
+        jstring modality, jlong outputCount, jstring areasJson) {
+    const char* mod  = jstr_get(env, modality);
+    const char* json = jstr_get(env, areasJson);
+    FeagiStatus r = feagi_config_set_motor_capability(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h),
+            mod, static_cast<size_t>(outputCount), json);
+    jstr_release(env, modality, mod);
+    jstr_release(env, areasJson, json);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnit(
-        JNIEnv* env, jclass, jlong cfgHandle,
+        JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jint unit, jint group) {
-
-    const char* mod = jstring_to_utf8(env, modality);
-    FeagiStatus status = feagi_config_set_motor_unit(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
+    const char* mod = jstr_get(env, modality);
+    FeagiStatus r = feagi_config_set_motor_unit(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mod,
-            static_cast<uint32_t>(outputCount),
+            static_cast<size_t>(outputCount),
             static_cast<FeagiMotorUnit>(unit),
             static_cast<uint8_t>(group));
-    release_utf8(env, modality, mod);
-    return static_cast<jint>(status);
+    jstr_release(env, modality, mod);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnitsJson(
-        JNIEnv* env, jclass, jlong cfgHandle,
-        jstring modality, jlong outputCount, jstring motorUnitsJson) {
-
-    const char* mod  = jstring_to_utf8(env, modality);
-    const char* json = jstring_to_utf8(env, motorUnitsJson);
-    FeagiStatus status = feagi_config_set_motor_units_json(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
-            mod, static_cast<uint32_t>(outputCount), json);
-    release_utf8(env, modality,     mod);
-    release_utf8(env, motorUnitsJson, json);
-    return static_cast<jint>(status);
+        JNIEnv* env, jclass, jlong h,
+        jstring modality, jlong outputCount, jstring unitsJson) {
+    const char* mod  = jstr_get(env, modality);
+    const char* json = jstr_get(env, unitsJson);
+    FeagiStatus r = feagi_config_set_motor_units_json(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h),
+            mod, static_cast<size_t>(outputCount), json);
+    jstr_release(env, modality, mod);
+    jstr_release(env, unitsJson, json);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisualizationCapability(
-        JNIEnv* env, jclass, jlong cfgHandle,
-        jstring visualizationType,
-        jboolean hasResolution, jlong resolutionWidth, jlong resolutionHeight,
-        jboolean hasRefreshRate, jdouble refreshRateHz,
+        JNIEnv* env, jclass, jlong h,
+        jstring vizType,
+        jboolean hasRes, jlong resW, jlong resH,
+        jboolean hasHz, jdouble hz,
         jboolean bridgeProxy) {
-
-    const char* vizType = jstring_to_utf8(env, visualizationType);
-    FeagiStatus status = feagi_config_set_visualization_capability(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle),
-            vizType,
-            static_cast<bool>(hasResolution),
-            static_cast<uint32_t>(resolutionWidth),
-            static_cast<uint32_t>(resolutionHeight),
-            static_cast<bool>(hasRefreshRate),
-            static_cast<double>(refreshRateHz),
+    const char* t = jstr_get(env, vizType);
+    FeagiStatus r = feagi_config_set_visualization_capability(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h),
+            t,
+            static_cast<bool>(hasRes),
+            static_cast<size_t>(resW),
+            static_cast<size_t>(resH),
+            static_cast<bool>(hasHz),
+            static_cast<double>(hz),
             static_cast<bool>(bridgeProxy));
-    release_utf8(env, visualizationType, vizType);
-    return static_cast<jint>(status);
+    jstr_release(env, vizType, t);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetCustomCapabilityJson(
-        JNIEnv* env, jclass, jlong cfgHandle,
-        jstring key, jstring jsonValue) {
-
-    const char* k = jstring_to_utf8(env, key);
-    const char* v = jstring_to_utf8(env, jsonValue);
-    FeagiStatus status = feagi_config_set_custom_capability_json(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), k, v);
-    release_utf8(env, key,       k);
-    release_utf8(env, jsonValue, v);
-    return static_cast<jint>(status);
+        JNIEnv* env, jclass, jlong h, jstring key, jstring jsonVal) {
+    const char* k = jstr_get(env, key);
+    const char* v = jstr_get(env, jsonVal);
+    FeagiStatus r = feagi_config_set_custom_capability_json(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h), k, v);
+    jstr_release(env, key, k);
+    jstr_release(env, jsonVal, v);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigValidate(
-        JNIEnv*, jclass, jlong cfgHandle) {
-
-    FeagiStatus status = feagi_config_validate(
-        const_cast<const FeagiAgentConfigHandle*>(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle)
-        )
-    );
-    return static_cast<jint>(status);
+        JNIEnv*, jclass, jlong h) {
+    return static_cast<jint>(feagi_config_validate(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, h)));
 }
 
 // ── Client lifecycle ──────────────────────────────────────────────────────────
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientNew(
-        JNIEnv* env, jclass,
-        jlong cfgHandle, jlongArray outClientHandle) {
-
+        JNIEnv* env, jclass, jlong cfgHandle, jlongArray outClientHandle) {
     FeagiAgentClientHandle* client = nullptr;
-    FeagiStatus status = feagi_client_new(
+    FeagiStatus r = feagi_client_new(
             JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), &client);
-
-    jlong clientJlong = PTR_TO_JLONG(client);
-    env->SetLongArrayRegion(outClientHandle, 0, 1, &clientJlong);
-    return static_cast<jint>(status);
+    jlong jl = PTR_TO_JLONG(client);
+    env->SetLongArrayRegion(outClientHandle, 0, 1, &jl);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientFree(
-        JNIEnv*, jclass, jlong clientHandle) {
-
-    feagi_client_free(JLONG_TO_PTR(FeagiAgentClientHandle, clientHandle));
+        JNIEnv*, jclass, jlong h) {
+    feagi_client_free(JLONG_TO_PTR(FeagiAgentClientHandle, h));
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientConnect(
-        JNIEnv*, jclass, jlong clientHandle) {
-
+        JNIEnv*, jclass, jlong h) {
     return static_cast<jint>(feagi_client_connect(
-            JLONG_TO_PTR(FeagiAgentClientHandle, clientHandle)));
+            JLONG_TO_PTR(FeagiAgentClientHandle, h)));
 }
 
 // ── Registration response accessors ──────────────────────────────────────────
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientRegistrationResponseJson(
-        JNIEnv* env, jclass, jlong clientHandle) {
-
-    const char* json = feagi_client_registration_response_json_alloc(
-            JLONG_TO_PTR(FeagiAgentClientHandle, clientHandle));
+        JNIEnv* env, jclass, jlong h) {
+    char* json = feagi_client_registration_response_json_alloc(
+            JLONG_TO_PTR(FeagiAgentClientHandle, h));
     if (!json) return nullptr;
-    jstring result = env->NewStringUTF(json);
-    feagi_string_free(const_cast<char*>(json));
-    return result;
+    jstring r = env->NewStringUTF(json);
+    feagi_string_free(json);
+    return r;
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientRegistrationZmqPortsJson(
-        JNIEnv* env, jclass, jlong clientHandle) {
-
-    const char* json = feagi_client_registration_zmq_ports_json_alloc(
-            JLONG_TO_PTR(FeagiAgentClientHandle, clientHandle));
+        JNIEnv* env, jclass, jlong h) {
+    char* json = feagi_client_registration_zmq_ports_json_alloc(
+            JLONG_TO_PTR(FeagiAgentClientHandle, h));
     if (!json) return nullptr;
-    jstring result = env->NewStringUTF(json);
-    feagi_string_free(const_cast<char*>(json));
-    return result;
+    jstring r = env->NewStringUTF(json);
+    feagi_string_free(json);
+    return r;
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientRegistrationChosenTransportJson(
-        JNIEnv* env, jclass, jlong clientHandle, jstring preferenceOrNull) {
-
-    const char* pref = jstring_to_utf8(env, preferenceOrNull);
+        JNIEnv* env, jclass, jlong h, jstring pref) {
+    const char* p = jstr_get(env, pref);
     char* json = feagi_client_registration_chosen_transport_json_alloc(
-            JLONG_TO_PTR(FeagiAgentClientHandle, clientHandle), pref);
-    release_utf8(env, preferenceOrNull, pref);
+            JLONG_TO_PTR(FeagiAgentClientHandle, h), p);
+    jstr_release(env, pref, p);
     if (!json) return nullptr;
-    jstring result = env->NewStringUTF(json);
-    feagi_string_free(const_cast<char*>(json));
-    return result;
+    jstring r = env->NewStringUTF(json);
+    feagi_string_free(json);
+    return r;
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientRegistrationRecommendedTransport(
-        JNIEnv* env, jclass, jlong clientHandle) {
-
-    const char* transport = feagi_client_registration_recommended_transport_alloc(
-            JLONG_TO_PTR(FeagiAgentClientHandle, clientHandle));
-    if (!transport) return nullptr;
-    jstring result = env->NewStringUTF(transport);
-    feagi_string_free(const_cast<char*>(transport));
-    return result;
+        JNIEnv* env, jclass, jlong h) {
+    char* t = feagi_client_registration_recommended_transport_alloc(
+            JLONG_TO_PTR(FeagiAgentClientHandle, h));
+    if (!t) return nullptr;
+    jstring r = env->NewStringUTF(t);
+    feagi_string_free(t);
+    return r;
 }
 
 // ── Sensory send ──────────────────────────────────────────────────────────────
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientSendSensoryBytes(
-        JNIEnv* env, jclass, jlong clientHandle, jbyteArray bytes) {
-
+        JNIEnv* env, jclass, jlong h, jbyteArray bytes) {
     jsize len = env->GetArrayLength(bytes);
     jbyte* buf = env->GetByteArrayElements(bytes, nullptr);
-    FeagiStatus status = feagi_client_send_sensory_bytes(
-            JLONG_TO_PTR(FeagiAgentClientHandle, clientHandle),
+    FeagiStatus r = feagi_client_send_sensory_bytes(
+            JLONG_TO_PTR(FeagiAgentClientHandle, h),
             reinterpret_cast<const uint8_t*>(buf),
-            static_cast<uintptr_t>(len));
+            static_cast<size_t>(len));
     env->ReleaseByteArrayElements(bytes, buf, JNI_ABORT);
-    return static_cast<jint>(status);
+    return static_cast<jint>(r);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientTrySendSensoryBytes(
-        JNIEnv* env, jclass,
-        jlong clientHandle, jbyteArray bytes, jbooleanArray outSent) {
-
+        JNIEnv* env, jclass, jlong h, jbyteArray bytes, jbooleanArray outSent) {
     jsize len = env->GetArrayLength(bytes);
     jbyte* buf = env->GetByteArrayElements(bytes, nullptr);
     bool sent = false;
-    FeagiStatus status = feagi_client_try_send_sensory_bytes(
-            JLONG_TO_PTR(FeagiAgentClientHandle, clientHandle),
+    FeagiStatus r = feagi_client_try_send_sensory_bytes(
+            JLONG_TO_PTR(FeagiAgentClientHandle, h),
             reinterpret_cast<const uint8_t*>(buf),
-            static_cast<uintptr_t>(len),
+            static_cast<size_t>(len),
             &sent);
     env->ReleaseByteArrayElements(bytes, buf, JNI_ABORT);
-    jboolean jSent = static_cast<jboolean>(sent);
-    env->SetBooleanArrayRegion(outSent, 0, 1, &jSent);
-    return static_cast<jint>(status);
+    jboolean js = static_cast<jboolean>(sent);
+    env->SetBooleanArrayRegion(outSent, 0, 1, &js);
+    return static_cast<jint>(r);
 }
 
 // ── Motor receive ─────────────────────────────────────────────────────────────
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
-        JNIEnv* env, jclass,
-        jlong clientHandle, jlongArray outBufferHandle, jbooleanArray outHasData) {
-
+        JNIEnv* env, jclass, jlong h,
+        jlongArray outBufHandle, jbooleanArray outHasData) {
     FeagiByteBufferHandle* buf = nullptr;
     bool hasData = false;
-    FeagiStatus status = feagi_client_receive_motor_buffer(
-            JLONG_TO_PTR(FeagiAgentClientHandle, clientHandle), &buf, &hasData);
-
-    jlong bufJlong = PTR_TO_JLONG(buf);
-    env->SetLongArrayRegion(outBufferHandle, 0, 1, &bufJlong);
-    jboolean jHasData = static_cast<jboolean>(hasData);
-    env->SetBooleanArrayRegion(outHasData, 0, 1, &jHasData);
-    return static_cast<jint>(status);
+    FeagiStatus r = feagi_client_receive_motor_buffer(
+            JLONG_TO_PTR(FeagiAgentClientHandle, h), &buf, &hasData);
+    jlong jl = PTR_TO_JLONG(buf);
+    env->SetLongArrayRegion(outBufHandle, 0, 1, &jl);
+    jboolean jd = static_cast<jboolean>(hasData);
+    env->SetBooleanArrayRegion(outHasData, 0, 1, &jd);
+    return static_cast<jint>(r);
 }
 
 // ── Buffer helpers ────────────────────────────────────────────────────────────
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiBufferPtr(
-        JNIEnv*, jclass, jlong bufferHandle) {
-
+        JNIEnv*, jclass, jlong h) {
     const uint8_t* ptr = feagi_buffer_ptr(
-            const_cast<const FeagiByteBufferHandle*>(JLONG_TO_PTR(FeagiByteBufferHandle, bufferHandle)));
+            const_cast<const FeagiByteBufferHandle*>(JLONG_TO_PTR(FeagiByteBufferHandle, h)));
     return PTR_TO_JLONG(ptr);
 }
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiBufferLen(
-        JNIEnv*, jclass, jlong bufferHandle) {
-
+        JNIEnv*, jclass, jlong h) {
     return static_cast<jlong>(feagi_buffer_len(
-            const_cast<const FeagiByteBufferHandle*>(JLONG_TO_PTR(FeagiByteBufferHandle, bufferHandle))));
+            const_cast<const FeagiByteBufferHandle*>(JLONG_TO_PTR(FeagiByteBufferHandle, h))));
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiBufferFree(
-        JNIEnv*, jclass, jlong bufferHandle) {
-
-    feagi_buffer_free(JLONG_TO_PTR(FeagiByteBufferHandle, bufferHandle));
+        JNIEnv*, jclass, jlong h) {
+    feagi_buffer_free(JLONG_TO_PTR(FeagiByteBufferHandle, h));
 }
 
-// ── NativeFeagiAgentClient: buffer copy ──────────────────────────────────────
-// Copies native buffer bytes directly into a new Java byte array.
-// Called by NativeFeagiAgentClient.pollMotorBytes().
+// ── NativeFeagiAgentClient.copyNativeBuffer ───────────────────────────────────
+// Copies bytes from a native FeagiByteBufferHandle into a new Java byte array.
+// Returns new byte[0] for zero-length frames (not null) so Java callers can
+// distinguish "zero-length frame received" from "no frame available" (null).
 
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_io_feagi_sdk_nativeffi_NativeFeagiAgentClient_copyNativeBuffer(
-        JNIEnv* env, jclass,
-        jlong bufHandle, jint length) {
-
+        JNIEnv* env, jclass, jlong bufHandle, jint length) {
     const FeagiByteBufferHandle* buf =
-            const_cast<const FeagiByteBufferHandle*>(
-                    JLONG_TO_PTR(FeagiByteBufferHandle, bufHandle));
-    if (buf == nullptr || length <= 0) return nullptr;
+            const_cast<const FeagiByteBufferHandle*>(JLONG_TO_PTR(FeagiByteBufferHandle, bufHandle));
+    if (!buf) return nullptr;
+
+    if (length == 0) {
+        return env->NewByteArray(0);
+    }
 
     const uint8_t* ptr = feagi_buffer_ptr(buf);
-    if (ptr == nullptr) return nullptr;
+    if (!ptr) return nullptr;
 
     jbyteArray result = env->NewByteArray(length);
-    if (result == nullptr) return nullptr;  // OOM already thrown
+    if (!result) return nullptr;  // OOM already thrown by JVM
 
-    env->SetByteArrayRegion(result, 0, length,
-            reinterpret_cast<const jbyte*>(ptr));
+    env->SetByteArrayRegion(result, 0, length, reinterpret_cast<const jbyte*>(ptr));
     return result;
 }
-
