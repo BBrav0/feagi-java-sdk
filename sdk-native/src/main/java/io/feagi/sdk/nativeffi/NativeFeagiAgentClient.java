@@ -288,6 +288,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      */
     @Override
     public void close() {
+        String closedAgentId = null;
         handleLock.writeLock().lock();
         try {
             connected = false;
@@ -298,10 +299,14 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                 } catch (Exception e) {
                     LOG.log(Level.WARNING, "Error freeing native client handle", e);
                 }
-                LOG.info("NativeFeagiAgentClient closed: agentId=" + config.agentId());
+                closedAgentId = config.agentId();
             }
         } finally {
             handleLock.writeLock().unlock();
+        }
+        // Log after releasing the write lock — consistent with connect() deferral.
+        if (closedAgentId != null) {
+            LOG.info("NativeFeagiAgentClient closed: agentId=" + closedAgentId);
         }
     }
 
@@ -565,6 +570,10 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < specs.size(); i++) {
             MotorUnitSpec s = specs.get(i);
+            if (s == null) {
+                throw new IllegalArgumentException(
+                        "specs must not contain null elements (null at index " + i + ")");
+            }
             sb.append("{\"unit\":").append(MotorUnitCode.of(s.unit()))
               .append(",\"group\":").append(s.group())
               .append('}');

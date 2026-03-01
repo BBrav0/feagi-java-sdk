@@ -127,6 +127,9 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetFeagiEndpoints(
         JNIEnv* env, jclass, jlong h, jstring host,
         jint regPort, jint sensPort, jint motorPort, jint vizPort, jint ctrlPort) {
     // Validate port range before uint16_t cast — jint can hold values > 65535.
+    // Port 0 is intentionally rejected here: the FEAGI registration protocol requires
+    // explicit port numbers; dynamic port assignment (port 0) is not a supported use case.
+    // If the C ABI ever supports port 0, remove this guard and let native code decide.
     auto valid = [](jint p) { return p >= 1 && p <= 65535; };
     if (!valid(regPort) || !valid(sensPort) || !valid(motorPort) ||
         !valid(vizPort) || !valid(ctrlPort)) {
@@ -185,9 +188,11 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetAgentDescriptor(
         JNIEnv* env, jclass, jlong h,
         jstring manufacturer, jstring agentName, jint agentVersion) {
     const char* mfr = jstr_get(env, manufacturer);
+    if (env->ExceptionCheck()) {
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+    }
     const char* name = jstr_get(env, agentName);
     if (env->ExceptionCheck()) {
-        // OOM acquiring name — release mfr and propagate exception
         jstr_release(env, manufacturer, mfr);
         return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
     }
@@ -377,6 +382,12 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientNew(
     FeagiAgentClientHandle* client = nullptr;
     FeagiStatus r = feagi_client_new(
             JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), &client);
+    if (!outClientHandle) {
+        env->ThrowNew(env->FindClass("java/lang/NullPointerException"),
+                "outClientHandle must not be null");
+        feagi_client_free(client);
+        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
+    }
     jlong jl = PTR_TO_JLONG(client);
     env->SetLongArrayRegion(outClientHandle, 0, 1, &jl);
     return static_cast<jint>(r);
@@ -483,6 +494,11 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientTrySendSensoryBytes(
             &sent);
     env->ReleaseByteArrayElements(bytes, buf, JNI_ABORT);
     jboolean js = static_cast<jboolean>(sent);
+    if (!outSent) {
+        env->ThrowNew(env->FindClass("java/lang/NullPointerException"),
+                "outSent must not be null");
+        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
+    }
     env->SetBooleanArrayRegion(outSent, 0, 1, &js);
     return static_cast<jint>(r);
 }
@@ -497,6 +513,12 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
     bool hasData = false;
     FeagiStatus r = feagi_client_receive_motor_buffer(
             JLONG_TO_PTR(FeagiAgentClientHandle, h), &buf, &hasData);
+    if (!outBufHandle || !outHasData) {
+        env->ThrowNew(env->FindClass("java/lang/NullPointerException"),
+                "outBufHandle and outHasData must not be null");
+        feagi_buffer_free(buf);
+        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
+    }
     jlong jl = PTR_TO_JLONG(buf);
     env->SetLongArrayRegion(outBufHandle, 0, 1, &jl);
     jboolean jd = static_cast<jboolean>(hasData);
@@ -551,4 +573,4 @@ Java_io_feagi_sdk_nativeffi_NativeFeagiAgentClient_copyNativeBuffer(
 
     env->SetByteArrayRegion(result, 0, length, reinterpret_cast<const jbyte*>(ptr));
     return result;
-}
+} 

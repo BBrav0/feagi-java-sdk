@@ -262,6 +262,15 @@ class NativeFeagiAgentClientTest {
                 () -> NativeFeagiAgentClient.motorUnitSpecsToJson(null));
     }
 
+    @Test
+    void motorUnitSpecsToJson_rejectsNullElement() {
+        List<MotorUnitSpec> specs = new java.util.ArrayList<>();
+        specs.add(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0));
+        specs.add(null);
+        assertThrows(IllegalArgumentException.class,
+                () -> NativeFeagiAgentClient.motorUnitSpecsToJson(specs));
+    }
+
     // ── ABI code mapping coverage (#8) ────────────────────────────────────────
     // Parameterized tests that iterate all enum values and assert of() does not throw.
     // These will catch regressions when new enum values are added without updating
