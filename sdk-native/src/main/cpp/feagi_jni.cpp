@@ -243,7 +243,10 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionCapability(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong width, jlong height, jlong channels,
         jstring targetCorticalArea) {
-    const char* mod  = jstr_get(env, modality);
+    const char* mod = jstr_get(env, modality);
+    if (env->ExceptionCheck()) {
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+    }
     const char* area = jstr_get(env, targetCorticalArea);
     if (env->ExceptionCheck()) {
         jstr_release(env, modality, mod);
@@ -266,6 +269,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionUnit(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong width, jlong height, jlong channels,
         jint unit, jint group) {
+    if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     const char* mod = jstr_get(env, modality);
     FeagiStatus r = feagi_config_set_vision_unit(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -283,7 +287,10 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorCapability(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jstring areasJson) {
-    const char* mod  = jstr_get(env, modality);
+    const char* mod = jstr_get(env, modality);
+    if (env->ExceptionCheck()) {
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+    }
     const char* json = jstr_get(env, areasJson);
     if (env->ExceptionCheck()) {
         jstr_release(env, modality, mod);
@@ -301,6 +308,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnit(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jint unit, jint group) {
+    if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     const char* mod = jstr_get(env, modality);
     FeagiStatus r = feagi_config_set_motor_unit(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -316,7 +324,10 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnitsJson(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jstring unitsJson) {
-    const char* mod  = jstr_get(env, modality);
+    const char* mod = jstr_get(env, modality);
+    if (env->ExceptionCheck()) {
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+    }
     const char* json = jstr_get(env, unitsJson);
     if (env->ExceptionCheck()) {
         jstr_release(env, modality, mod);
@@ -355,6 +366,9 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetCustomCapabilityJson(
         JNIEnv* env, jclass, jlong h, jstring key, jstring jsonVal) {
     const char* k = jstr_get(env, key);
+    if (env->ExceptionCheck()) {
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+    }
     const char* v = jstr_get(env, jsonVal);
     if (env->ExceptionCheck()) {
         jstr_release(env, key, k);
@@ -379,15 +393,14 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigValidate(
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientNew(
         JNIEnv* env, jclass, jlong cfgHandle, jlongArray outClientHandle) {
-    FeagiAgentClientHandle* client = nullptr;
-    FeagiStatus r = feagi_client_new(
-            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), &client);
     if (!outClientHandle) {
         env->ThrowNew(env->FindClass("java/lang/NullPointerException"),
                 "outClientHandle must not be null");
-        feagi_client_free(client);
         return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
     }
+    FeagiAgentClientHandle* client = nullptr;
+    FeagiStatus r = feagi_client_new(
+            JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), &client);
     jlong jl = PTR_TO_JLONG(client);
     env->SetLongArrayRegion(outClientHandle, 0, 1, &jl);
     return static_cast<jint>(r);
@@ -483,6 +496,11 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientTrySendSensoryBytes(
         env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "bytes must not be null");
         return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
     }
+    if (!outSent) {
+        env->ThrowNew(env->FindClass("java/lang/NullPointerException"),
+                "outSent must not be null");
+        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
+    }
     jsize len = env->GetArrayLength(bytes);
     jbyte* buf = env->GetByteArrayElements(bytes, nullptr);
     if (!buf) return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);  // OOM pending
@@ -494,11 +512,6 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientTrySendSensoryBytes(
             &sent);
     env->ReleaseByteArrayElements(bytes, buf, JNI_ABORT);
     jboolean js = static_cast<jboolean>(sent);
-    if (!outSent) {
-        env->ThrowNew(env->FindClass("java/lang/NullPointerException"),
-                "outSent must not be null");
-        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
-    }
     env->SetBooleanArrayRegion(outSent, 0, 1, &js);
     return static_cast<jint>(r);
 }
@@ -509,16 +522,15 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
         JNIEnv* env, jclass, jlong h,
         jlongArray outBufHandle, jbooleanArray outHasData) {
+    if (!outBufHandle || !outHasData) {
+        env->ThrowNew(env->FindClass("java/lang/NullPointerException"),
+                "outBufHandle and outHasData must not be null");
+        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
+    }
     FeagiByteBufferHandle* buf = nullptr;
     bool hasData = false;
     FeagiStatus r = feagi_client_receive_motor_buffer(
             JLONG_TO_PTR(FeagiAgentClientHandle, h), &buf, &hasData);
-    if (!outBufHandle || !outHasData) {
-        env->ThrowNew(env->FindClass("java/lang/NullPointerException"),
-                "outBufHandle and outHasData must not be null");
-        feagi_buffer_free(buf);
-        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
-    }
     jlong jl = PTR_TO_JLONG(buf);
     env->SetLongArrayRegion(outBufHandle, 0, 1, &jl);
     jboolean jd = static_cast<jboolean>(hasData);
@@ -573,4 +585,4 @@ Java_io_feagi_sdk_nativeffi_NativeFeagiAgentClient_copyNativeBuffer(
 
     env->SetByteArrayRegion(result, 0, length, reinterpret_cast<const jbyte*>(ptr));
     return result;
-} 
+}
