@@ -460,6 +460,7 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientRegistrationChosenTransportJson(
         JNIEnv* env, jclass, jlong h, jstring pref) {
     const char* p = jstr_get(env, pref);
+    if (pref != nullptr && p == nullptr) { return nullptr; }  // OOM (exception already pending}
     char* json = feagi_client_registration_chosen_transport_json_alloc(
             JLONG_TO_PTR(FeagiAgentClientHandle, h), p);
     jstr_release(env, pref, p);
