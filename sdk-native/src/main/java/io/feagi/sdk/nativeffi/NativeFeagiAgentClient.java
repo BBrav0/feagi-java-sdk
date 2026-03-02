@@ -90,6 +90,15 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
     private volatile boolean connected = false;
 
+    /**
+     * Reusable out-parameter carrier for {@link #sendSensoryBytes}.
+     * Guarded by the read lock held during the native call — the lock already
+     * serialises concurrent callers, so this single instance is safe to reuse
+     * without further synchronisation. Eliminates the per-call boolean[] allocation
+     * in the high-frequency sensory hot path.
+     */
+    private final boolean[] outSent = new boolean[1];
+
     // ── Construction ───────────────────────────────────────────────────────────
 
     /**
@@ -141,6 +150,10 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                 applyTimingConfig(cfgHandle);
                 applySensorySocketConfig(cfgHandle);
                 applyCapabilities(cfgHandle);
+                // TODO: wire feagiConfigSetAgentDescriptor and feagiConfigSetAuthTokenBase64
+                // once AgentConfig exposes manufacturer/agentName/agentVersion/authToken fields.
+                // If feagiConfigValidate requires the agent descriptor, connect() will fail
+                // at the validate step with an opaque status until this is wired.
 
                 checkStatus(FeagiNativeBindings.feagiConfigValidate(cfgHandle),
                         "feagiConfigValidate");
@@ -194,11 +207,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         try {
             requireConnected("sendSensoryBytes");
 
-            // Note: boolean[] outSent is allocated per-call. In a high-frequency
-            // sensory loop this produces GC pressure. If profiling shows this is
-            // a bottleneck, consider preallocating as a final field (guarded by
-            // the existing read lock) or using ThreadLocal holders.
-            boolean[] outSent = new boolean[1];
+            outSent[0] = false;
             int status = FeagiNativeBindings.feagiClientTrySendSensoryBytes(
                     clientHandle.get(), payload, outSent);
 
@@ -248,6 +257,8 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             // non-null buffer handle (inconsistent state), free it rather than leak.
             if (!outHasData[0]) {
                 if (bufHandle != NULL_HANDLE) {
+                    LOG.warning("pollMotorBytes: native returned hasData=false with non-null "
+                            + "bufHandle — possible native-side inconsistency; freeing buffer.");
                     FeagiNativeBindings.feagiBufferFree(bufHandle);
                 }
                 return null;  // no frame available

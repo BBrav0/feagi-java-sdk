@@ -26,14 +26,12 @@ import io.feagi.sdk.core.AgentType;
 public final class AgentTypeCode {
     private AgentTypeCode() {}
 
-    // Fail fast if AgentType grows without a corresponding entry being added here.
-    // This mirrors the compile-time safety of SensoryUnitCode/MotorUnitCode's
-    // name-based valueOf delegation. Remove when FeagiNativeBindings.FeagiAgentType
-    // is added and this class delegates to it instead.
     static {
-        assert AgentType.values().length == 5
-                : "AgentType has " + AgentType.values().length + " values but AgentTypeCode "
-                + "only maps 5. Add the new value to AgentTypeCode.of() and update this count.";
+        if (AgentType.values().length != 5) {
+            throw new ExceptionInInitializerError(
+                    "AgentType has " + AgentType.values().length + " values but AgentTypeCode "
+                    + "only maps 5. Add the new value to AgentTypeCode.of() and update this count.");
+        }
     }
 
     public static int of(AgentType type) {

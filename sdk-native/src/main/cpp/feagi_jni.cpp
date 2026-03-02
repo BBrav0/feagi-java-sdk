@@ -53,6 +53,19 @@ static void jstr_release(JNIEnv* env, jstring s, const char* c) {
         return 0L;                                                       \
     }
 
+// Acquire two jstrings sequentially. Checks after each acquisition so that a
+// pending OOM exception from the first call is not masked by a second JNI call
+// (which would be undefined behaviour per the JNI spec). Releases var1 if
+// acquiring var2 fails. Both must be released by the caller on the success path.
+// Only for jint-returning functions.
+#define JSTR_ACQUIRE2(env, jstr1, var1, jstr2, var2)                    \
+    JSTR_ACQUIRE(env, jstr1, var1)                                      \
+    const char* var2 = jstr_get(env, jstr2);                            \
+    if ((jstr2) != nullptr && (var2) == nullptr) {                      \
+        jstr_release(env, jstr1, var1);                                 \
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);       \
+    }
+
 // ── ABI / version ─────────────────────────────────────────────────────────────
 
 extern "C" JNIEXPORT jint JNICALL
@@ -149,9 +162,9 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetFeagiEndpoints(
         JNIEnv* env, jclass, jlong h, jstring host,
         jint regPort, jint sensPort, jint motorPort, jint vizPort, jint ctrlPort) {
     // Validate port range before uint16_t cast — jint can hold values > 65535.
-    // Port 0 is intentionally rejected here: the FEAGI registration protocol requires
-    // explicit port numbers; dynamic port assignment (port 0) is not a supported use case.
-    // If the C ABI ever supports port 0, remove this guard and let native code decide.
+    // Port 0 is intentionally rejected: FEAGI requires explicit port numbers;
+    // port 0 has no defined meaning in the FEAGI registration protocol.
+    // If the C ABI ever assigns semantics to port 0, remove this guard.
     auto valid = [](jint p) { return p >= 1 && p <= 65535; };
     if (!valid(regPort) || !valid(sensPort) || !valid(motorPort) ||
         !valid(vizPort) || !valid(ctrlPort)) {
@@ -209,15 +222,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetAgentDescriptor(
         JNIEnv* env, jclass, jlong h,
         jstring manufacturer, jstring agentName, jint agentVersion) {
-    const char* mfr = jstr_get(env, manufacturer);
-    if (env->ExceptionCheck()) {
-        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
-    }
-    const char* name = jstr_get(env, agentName);
-    if (env->ExceptionCheck()) {
-        jstr_release(env, manufacturer, mfr);
-        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
-    }
+    JSTR_ACQUIRE2(env, manufacturer, mfr, agentName, name)
     FeagiStatus r = feagi_config_set_agent_descriptor(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mfr, name, static_cast<uint32_t>(agentVersion));
@@ -265,15 +270,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionCapability(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong width, jlong height, jlong channels,
         jstring targetCorticalArea) {
-    const char* mod = jstr_get(env, modality);
-    if (env->ExceptionCheck()) {
-        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
-    }
-    const char* area = jstr_get(env, targetCorticalArea);
-    if (env->ExceptionCheck()) {
-        jstr_release(env, modality, mod);
-        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
-    }
+    JSTR_ACQUIRE2(env, modality, mod, targetCorticalArea, area)
     FeagiStatus r = feagi_config_set_vision_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mod,
@@ -309,15 +306,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorCapability(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jstring areasJson) {
-    const char* mod = jstr_get(env, modality);
-    if (env->ExceptionCheck()) {
-        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
-    }
-    const char* json = jstr_get(env, areasJson);
-    if (env->ExceptionCheck()) {
-        jstr_release(env, modality, mod);
-        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
-    }
+    JSTR_ACQUIRE2(env, modality, mod, areasJson, json)
     FeagiStatus r = feagi_config_set_motor_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mod, static_cast<size_t>(outputCount), json);
@@ -346,15 +335,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnitsJson(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jstring unitsJson) {
-    const char* mod = jstr_get(env, modality);
-    if (env->ExceptionCheck()) {
-        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
-    }
-    const char* json = jstr_get(env, unitsJson);
-    if (env->ExceptionCheck()) {
-        jstr_release(env, modality, mod);
-        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
-    }
+    JSTR_ACQUIRE2(env, modality, mod, unitsJson, json)
     FeagiStatus r = feagi_config_set_motor_units_json(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mod, static_cast<size_t>(outputCount), json);
@@ -387,15 +368,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisualizationCapab
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetCustomCapabilityJson(
         JNIEnv* env, jclass, jlong h, jstring key, jstring jsonVal) {
-    const char* k = jstr_get(env, key);
-    if (env->ExceptionCheck()) {
-        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
-    }
-    const char* v = jstr_get(env, jsonVal);
-    if (env->ExceptionCheck()) {
-        jstr_release(env, key, k);
-        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
-    }
+    JSTR_ACQUIRE2(env, key, k, jsonVal, v)
     FeagiStatus r = feagi_config_set_custom_capability_json(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h), k, v);
     jstr_release(env, key, k);
@@ -471,7 +444,9 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientRegistrationChosenTransportJson(
         JNIEnv* env, jclass, jlong h, jstring pref) {
     const char* p = jstr_get(env, pref);
-    if (pref != nullptr && p == nullptr) { return nullptr; }  // OOM (exception already pending)
+    if (pref != nullptr && p == nullptr) {  // OOM during GetStringUTFChars
+        return nullptr;  // JVM has already set a pending OOM exception
+    }
     char* json = feagi_client_registration_chosen_transport_json_alloc(
             JLONG_TO_PTR(FeagiAgentClientHandle, h), p);
     jstr_release(env, pref, p);
