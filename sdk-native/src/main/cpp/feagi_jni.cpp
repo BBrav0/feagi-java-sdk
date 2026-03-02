@@ -35,12 +35,23 @@ static void jstr_release(JNIEnv* env, jstring s, const char* c) {
 
 // Acquire a single jstring into `var`. If GetStringUTFChars fails (OOM), the JVM
 // has already set a pending exception — return immediately without calling native code.
+//
+// IMPORTANT: This macro emits `return static_cast<jint>(...)`. It must only be used
+// in functions whose return type is jint. For jlong-returning functions, use
+// JSTR_ACQUIRE_LONG instead.
 #define JSTR_ACQUIRE(env, jstr, var)                                    \
     const char* var = jstr_get(env, jstr);                              \
     if ((jstr) != nullptr && (var) == nullptr) {                        \
         return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);       \
     }
 
+// Variant for jlong-returning functions (e.g. feagiConfigNew).
+// Returns 0L (null handle) on OOM rather than a jint cast.
+#define JSTR_ACQUIRE_LONG(env, jstr, var)                               \
+    const char* var = jstr_get(env, jstr);                              \
+    if ((jstr) != nullptr && (var) == nullptr) {                        \
+        return 0L;                                                       \
+    }
 
 // ── ABI / version ─────────────────────────────────────────────────────────────
 
@@ -74,7 +85,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiLastErrorMessage(JNIEnv* en
 extern "C" JNIEXPORT jlong JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigNew(
         JNIEnv* env, jclass, jstring agentId, jint agentType) {
-    JSTR_ACQUIRE(env, agentId, id)
+    JSTR_ACQUIRE_LONG(env, agentId, id)
     FeagiAgentConfigHandle* h = feagi_config_new(id, static_cast<FeagiAgentType>(agentType));
     jstr_release(env, agentId, id);
     return PTR_TO_JLONG(h);
@@ -460,7 +471,7 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientRegistrationChosenTransportJson(
         JNIEnv* env, jclass, jlong h, jstring pref) {
     const char* p = jstr_get(env, pref);
-    if (pref != nullptr && p == nullptr) { return nullptr; }  // OOM (exception already pending}
+    if (pref != nullptr && p == nullptr) { return nullptr; }  // OOM (exception already pending)
     char* json = feagi_client_registration_chosen_transport_json_alloc(
             JLONG_TO_PTR(FeagiAgentClientHandle, h), p);
     jstr_release(env, pref, p);
