@@ -347,7 +347,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     }
 
     private void applyTimingConfig(long cfgHandle) {
-        double heartbeatSecs = config.heartbeatInterval().toMillis() / 1000.0;
+        // Use toNanos() / 1e9 rather than toMillis() / 1000.0 to preserve
+        // sub-millisecond precision (e.g. Duration.ofNanos(500_000) = 0.0005 s).
+        double heartbeatSecs = config.heartbeatInterval().toNanos() / 1_000_000_000.0;
         checkStatus(
                 FeagiNativeBindings.feagiConfigSetHeartbeatIntervalSeconds(
                         cfgHandle, heartbeatSecs),
@@ -573,6 +575,12 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             if (s == null) {
                 throw new IllegalArgumentException(
                         "specs must not contain null elements (null at index " + i + ")");
+            }
+            int group = s.group();
+            if (group < 0 || group > 255) {
+                throw new IllegalArgumentException(
+                        "specs[" + i + "].group() = " + group
+                        + " is out of range [0, 255]. Must fit in uint8_t for the native ABI.");
             }
             sb.append("{\"unit\":").append(MotorUnitCode.of(s.unit()))
               .append(",\"group\":").append(s.group())

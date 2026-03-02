@@ -21,15 +21,26 @@
 #define PTR_TO_JLONG(ptr)      (static_cast<jlong>(reinterpret_cast<intptr_t>(ptr)))
 #define JLONG_TO_PTR(type, jl) (reinterpret_cast<type*>(static_cast<intptr_t>(jl)))
 
-// ── Null-safe jstring → UTF-8 ─────────────────────────────────────────────────
+// Null-safe jstring → UTF-8, with OOM guard.
+// Returns null if s is null or if GetStringUTFChars fails (OOM exception already pending).
+// Callers must not call this while a JNI exception is already pending.
 static const char* jstr_get(JNIEnv* env, jstring s) {
     if (!s) return nullptr;
     const char* c = env->GetStringUTFChars(s, nullptr);
-    return (env->ExceptionCheck()) ? nullptr : c;
+    return c;  // nullptr on OOM (exception already set by JVM); no leak path
 }
 static void jstr_release(JNIEnv* env, jstring s, const char* c) {
     if (s && c) env->ReleaseStringUTFChars(s, c);
 }
+
+// Acquire a single jstring into `var`. If GetStringUTFChars fails (OOM), the JVM
+// has already set a pending exception — return immediately without calling native code.
+#define JSTR_ACQUIRE(env, jstr, var)                                    \
+    const char* var = jstr_get(env, jstr);                              \
+    if ((jstr) != nullptr && (var) == nullptr) {                        \
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);       \
+    }
+
 
 // ── ABI / version ─────────────────────────────────────────────────────────────
 
@@ -63,7 +74,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiLastErrorMessage(JNIEnv* en
 extern "C" JNIEXPORT jlong JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigNew(
         JNIEnv* env, jclass, jstring agentId, jint agentType) {
-    const char* id = jstr_get(env, agentId);
+    JSTR_ACQUIRE(env, agentId, id)
     FeagiAgentConfigHandle* h = feagi_config_new(id, static_cast<FeagiAgentType>(agentType));
     jstr_release(env, agentId, id);
     return PTR_TO_JLONG(h);
@@ -80,7 +91,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigFree(
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetRegistrationEndpoint(
         JNIEnv* env, jclass, jlong h, jstring ep) {
-    const char* s = jstr_get(env, ep);
+    JSTR_ACQUIRE(env, ep, s)
     FeagiStatus r = feagi_config_set_registration_endpoint(JLONG_TO_PTR(FeagiAgentConfigHandle, h), s);
     jstr_release(env, ep, s);
     return static_cast<jint>(r);
@@ -89,7 +100,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetRegistrationEndpoi
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetSensoryEndpoint(
         JNIEnv* env, jclass, jlong h, jstring ep) {
-    const char* s = jstr_get(env, ep);
+    JSTR_ACQUIRE(env, ep, s)
     FeagiStatus r = feagi_config_set_sensory_endpoint(JLONG_TO_PTR(FeagiAgentConfigHandle, h), s);
     jstr_release(env, ep, s);
     return static_cast<jint>(r);
@@ -98,7 +109,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetSensoryEndpoint(
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorEndpoint(
         JNIEnv* env, jclass, jlong h, jstring ep) {
-    const char* s = jstr_get(env, ep);
+    JSTR_ACQUIRE(env, ep, s)
     FeagiStatus r = feagi_config_set_motor_endpoint(JLONG_TO_PTR(FeagiAgentConfigHandle, h), s);
     jstr_release(env, ep, s);
     return static_cast<jint>(r);
@@ -107,7 +118,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorEndpoint(
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisualizationEndpoint(
         JNIEnv* env, jclass, jlong h, jstring ep) {
-    const char* s = jstr_get(env, ep);
+    JSTR_ACQUIRE(env, ep, s)
     FeagiStatus r = feagi_config_set_visualization_endpoint(JLONG_TO_PTR(FeagiAgentConfigHandle, h), s);
     jstr_release(env, ep, s);
     return static_cast<jint>(r);
@@ -116,7 +127,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisualizationEndpo
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetControlEndpoint(
         JNIEnv* env, jclass, jlong h, jstring ep) {
-    const char* s = jstr_get(env, ep);
+    JSTR_ACQUIRE(env, ep, s)
     FeagiStatus r = feagi_config_set_control_endpoint(JLONG_TO_PTR(FeagiAgentConfigHandle, h), s);
     jstr_release(env, ep, s);
     return static_cast<jint>(r);
@@ -135,7 +146,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetFeagiEndpoints(
         !valid(vizPort) || !valid(ctrlPort)) {
         return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     }
-    const char* hs = jstr_get(env, host);
+    JSTR_ACQUIRE(env, host, hs)
     FeagiStatus r = feagi_config_set_feagi_endpoints(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h), hs,
             static_cast<uint16_t>(regPort),
@@ -207,7 +218,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetAgentDescriptor(
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_nativeConfigSetAuthTokenBase64(
         JNIEnv* env, jclass, jlong h, jstring token) {
-    const char* t = jstr_get(env, token);
+    JSTR_ACQUIRE(env, token, t)
     FeagiStatus r = feagi_config_set_auth_token_base64(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h), t);
     jstr_release(env, token, t);
@@ -231,7 +242,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetSensorySocketConfi
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetSensoryCapability(
         JNIEnv* env, jclass, jlong h, jdouble rateHz, jstring shmPath) {
-    const char* shm = jstr_get(env, shmPath);
+    JSTR_ACQUIRE(env, shmPath, shm)
     FeagiStatus r = feagi_config_set_sensory_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h), static_cast<double>(rateHz), shm);
     jstr_release(env, shmPath, shm);
@@ -270,7 +281,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionUnit(
         jstring modality, jlong width, jlong height, jlong channels,
         jint unit, jint group) {
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
-    const char* mod = jstr_get(env, modality);
+    JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_vision_unit(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mod,
@@ -309,7 +320,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnit(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jint unit, jint group) {
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
-    const char* mod = jstr_get(env, modality);
+    JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_motor_unit(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             mod,
@@ -348,7 +359,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisualizationCapab
         jboolean hasRes, jlong resW, jlong resH,
         jboolean hasHz, jdouble hz,
         jboolean bridgeProxy) {
-    const char* t = jstr_get(env, vizType);
+    JSTR_ACQUIRE(env, vizType, t)
     FeagiStatus r = feagi_config_set_visualization_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             t,
@@ -401,7 +412,9 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientNew(
     FeagiAgentClientHandle* client = nullptr;
     FeagiStatus r = feagi_client_new(
             JLONG_TO_PTR(FeagiAgentConfigHandle, cfgHandle), &client);
-    jlong jl = PTR_TO_JLONG(client);
+    // Only write back a valid handle on success. On failure, client is null; writing
+    // NULL_HANDLE back explicitly makes the contract visible to future callers.
+    jlong jl = (r == FEAGI_STATUS_OK) ? PTR_TO_JLONG(client) : 0L;
     env->SetLongArrayRegion(outClientHandle, 0, 1, &jl);
     return static_cast<jint>(r);
 }
