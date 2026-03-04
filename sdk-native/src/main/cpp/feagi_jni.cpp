@@ -250,6 +250,8 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetAgentDescriptor(
         JNIEnv* env, jclass, jlong h,
         jstring manufacturer, jstring agentName, jint agentVersion) {
+    // Guard before uint32_t cast — jint is signed; -1 would silently wrap to 4294967295.
+    if (agentVersion < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE2(env, manufacturer, mfr, agentName, name)
     FeagiStatus r = feagi_config_set_agent_descriptor(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -327,6 +329,10 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionUnit(
     if (width < 0 || height < 0 || channels < 0)
         return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
+    // Bounds-check the unit value before casting to FeagiSensoryUnit. The Java layer
+    // (SensoryUnitCode) normally validates this, but a direct JNI or reflection-based
+    // caller could bypass it. FEAGI_SENSORY_UNIT_GYROSCOPE = 13 is the current max.
+    if (unit < 0 || unit > 13) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_vision_unit(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -360,6 +366,10 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnit(
         jstring modality, jlong outputCount, jint unit, jint group) {
     if (outputCount < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
+    // Bounds-check the unit value before casting to FeagiMotorUnit. The Java layer
+    // (MotorUnitCode) normally validates this, but a direct JNI or reflection-based
+    // caller could bypass it. FEAGI_MOTOR_UNIT_SIMPLE_VISION_OUTPUT = 7 is the current max.
+    if (unit < 0 || unit > 7) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_motor_unit(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -596,6 +606,11 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
 
 // ── Buffer helpers ────────────────────────────────────────────────────────────
 
+// feagiBufferPtr: returns the raw data pointer of a FeagiByteBufferHandle as a jlong.
+// Intended for internal use by NativeFeagiAgentClient.copyNativeBuffer only.
+// Do NOT pass this value to feagiBufferFree — it is a data pointer, not a handle.
+// Passing it to feagiBufferFree is undefined behavior. The handle (from
+// feagiClientReceiveMotorBuffer) is what must be freed, not the data pointer.
 extern "C" JNIEXPORT jlong JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiBufferPtr(
         JNIEnv*, jclass, jlong h) {
@@ -643,6 +658,17 @@ Java_io_feagi_sdk_nativeffi_NativeFeagiAgentClient_copyNativeBuffer(
     const FeagiByteBufferHandle* buf =
             const_cast<const FeagiByteBufferHandle*>(JLONG_TO_PTR(FeagiByteBufferHandle, bufHandle));
     if (!buf) return nullptr;
+
+    // Cross-validate: a caller-supplied length larger than the actual buffer size
+    // would cause SetByteArrayRegion to read past the buffer end (undefined behavior).
+    // feagi_buffer_len returns size_t; cast to jint is safe here because pollMotorBytes
+    // already verified len <= Integer.MAX_VALUE before calling this method.
+    size_t actualLen = feagi_buffer_len(buf);
+    if (static_cast<size_t>(length) > actualLen) {
+        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                "copyNativeBuffer: length exceeds actual buffer size");
+        return nullptr;
+    }
 
     if (length == 0) {
         return env->NewByteArray(0);
