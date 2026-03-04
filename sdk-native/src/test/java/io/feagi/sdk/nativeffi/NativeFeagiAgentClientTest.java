@@ -443,13 +443,8 @@ class NativeFeagiAgentClientTest {
     // For now, assert that the guard constants are sane (len < 0 and len > MAX_VALUE
     // are mutually exclusive boundary conditions) to at least document the contract.
 
-    @Test
-    void pollMotorBytes_negativeLenGuard_documentedBoundary() {
-        // The guard `if (len < 0)` in pollMotorBytes must fire before
-        // `if (len > Integer.MAX_VALUE)` since a negative long can never be > MAX_VALUE.
-        // This test documents the invariant; live coverage requires a native stub.
-        assertTrue(-1L < 0, "negative len triggers native-error branch");
-        assertTrue((long) Integer.MAX_VALUE + 1 > Integer.MAX_VALUE,
-                "oversized len triggers oversized-frame branch");
-    }
+    // pollMotorBytes len-guard branches (len < 0 and len > Integer.MAX_VALUE) are reached
+    // only after a live native feagiClientReceiveMotorBuffer call returns a buffer handle.
+    // They cannot be unit-tested without a native stub or a mock. The branches are visible
+    // in the source; integration/smoke test coverage is required for live verification.
 }

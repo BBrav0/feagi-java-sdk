@@ -118,6 +118,9 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigNew(
         JNIEnv* env, jclass, jstring agentId, jint agentType) {
     // agentId is required — a null agentId would produce an opaque native error.
+    // Note: JSTR_ACQUIRE_REQUIRED is not used here because it emits
+    // `return static_cast<jint>(...)`, which is the wrong return type for a jlong
+    // function. The null check and JSTR_ACQUIRE_LONG are kept separate instead.
     if (!agentId) {
         env->ThrowNew(env->FindClass("java/lang/NullPointerException"),
                 "agentId must not be null");
@@ -275,6 +278,8 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_nativeConfigSetAuthTokenBase64(
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetSensorySocketConfig(
         JNIEnv*, jclass, jlong h, jint sendHwm, jint lingerMs, jboolean immediate) {
+    // Guard before int32_t cast — the C ABI rejects negative HWM and linger values.
+    if (sendHwm < 0 || lingerMs < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     return static_cast<jint>(feagi_config_set_sensory_socket_config(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
             static_cast<int32_t>(sendHwm),
@@ -299,6 +304,8 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionCapability(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong width, jlong height, jlong channels,
         jstring targetCorticalArea) {
+    if (width < 0 || height < 0 || channels < 0)
+        return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE2(env, modality, mod, targetCorticalArea, area)
     FeagiStatus r = feagi_config_set_vision_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -317,6 +324,8 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionUnit(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong width, jlong height, jlong channels,
         jint unit, jint group) {
+    if (width < 0 || height < 0 || channels < 0)
+        return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_vision_unit(
@@ -335,6 +344,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorCapability(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jstring areasJson) {
+    if (outputCount < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE2(env, modality, mod, areasJson, json)
     FeagiStatus r = feagi_config_set_motor_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -348,6 +358,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnit(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jint unit, jint group) {
+    if (outputCount < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_motor_unit(
@@ -364,6 +375,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnitsJson(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jstring unitsJson) {
+    if (outputCount < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE2(env, modality, mod, unitsJson, json)
     FeagiStatus r = feagi_config_set_motor_units_json(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -610,10 +622,14 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiBufferFree(
 // Returns new byte[0] for zero-length frames (not null) so Java callers can
 // distinguish "zero-length frame received" from "no frame available" (null).
 //
-// The Java caller (pollMotorBytes) validates length >= 0 before calling here,
-// but since this is a native method, a direct native caller could pass -1.
-// env->NewByteArray(-1) would throw NegativeArraySizeException rather than crash,
-// but we guard explicitly to give a cleaner early return.
+// Length contract: `length` must equal feagi_buffer_len(bufHandle). The Java
+// caller (pollMotorBytes) always derives length from feagiBufferLen() for the
+// same handle, so this invariant holds at that call site. Direct native callers
+// must not pass a length larger than the actual buffer — SetByteArrayRegion would
+// read past the buffer boundary, causing undefined behaviour.
+//
+// The negative-length guard below prevents direct native callers from triggering
+// NewByteArray(-1); the Java caller validates length >= 0 before calling here.
 
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_io_feagi_sdk_nativeffi_NativeFeagiAgentClient_copyNativeBuffer(
