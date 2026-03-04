@@ -54,35 +54,33 @@ if(NOT DEFINED FEAGI_FFI_LIB_DIR OR "${FEAGI_FFI_LIB_DIR}" STREQUAL "")
         "Gradle sets this automatically via the feagiNativeLibDir property.")
 endif()
 
+# Normalize backslashes — required for EXISTS/IS_DIRECTORY on Windows.
+file(TO_CMAKE_PATH "${FEAGI_FFI_LIB_DIR}" _feagi_lib_dir)
+
+if(NOT IS_DIRECTORY "${_feagi_lib_dir}")
+    message(FATAL_ERROR
+        "FEAGI_FFI_LIB_DIR='${_feagi_lib_dir}' is not a directory. "
+        "Run 'cargo build --release' in feagi-java-ffi first.")
+endif()
+
 if(WIN32)
-    # Normalize backslashes so cmake EXISTS works correctly on Windows.
-    file(TO_CMAKE_PATH "${FEAGI_FFI_LIB_DIR}" _feagi_lib_dir)
-
-    if(NOT IS_DIRECTORY "${_feagi_lib_dir}")
-        message(FATAL_ERROR
-            "FEAGI_FFI_LIB_DIR='${_feagi_lib_dir}' is not a directory. "
-            "Run 'cargo build --release' in feagi-java-ffi first.")
-    endif()
-
-    # Rust on Windows can produce any of these import lib names depending on
-    # the toolchain version and crate configuration:
-    #   feagi_java_ffi.dll.lib   <- actual output observed (dot-separated)
-    #   feagi_java_ffi_dll.lib   <- underscore variant
-    #   feagi_java_ffi.lib       <- plain name
-    set(_lib_dot_dll  "${_feagi_lib_dir}/feagi_java_ffi.dll.lib")
-    set(_lib_cdylib   "${_feagi_lib_dir}/feagi_java_ffi_dll.lib")
-    set(_lib_plain    "${_feagi_lib_dir}/feagi_java_ffi.lib")
+    # Pass the FULL ABSOLUTE PATH — never a bare name, never target_link_directories
+    # on Windows. A bare name makes MSVC search its default lib path and pick the
+    # wrong file (LNK1181 "cannot open input file 'feagi_java_ffi.lib'").
+    set(_lib_dot_dll "${_feagi_lib_dir}/feagi_java_ffi.dll.lib")
+    set(_lib_cdylib  "${_feagi_lib_dir}/feagi_java_ffi_dll.lib")
+    set(_lib_plain   "${_feagi_lib_dir}/feagi_java_ffi.lib")
 
     message(STATUS "feagi_java_ffi: searching in ${_feagi_lib_dir}")
 
     if(EXISTS "${_lib_dot_dll}")
-        message(STATUS "feagi_java_ffi: found ${_lib_dot_dll} -- linking")
+        message(STATUS "feagi_java_ffi: linking ${_lib_dot_dll}")
         target_link_libraries(feagi_java_ffi_jni PRIVATE "${_lib_dot_dll}")
     elseif(EXISTS "${_lib_cdylib}")
-        message(STATUS "feagi_java_ffi: found ${_lib_cdylib} -- linking")
+        message(STATUS "feagi_java_ffi: linking ${_lib_cdylib}")
         target_link_libraries(feagi_java_ffi_jni PRIVATE "${_lib_cdylib}")
     elseif(EXISTS "${_lib_plain}")
-        message(STATUS "feagi_java_ffi: found ${_lib_plain} -- linking")
+        message(STATUS "feagi_java_ffi: linking ${_lib_plain}")
         target_link_libraries(feagi_java_ffi_jni PRIVATE "${_lib_plain}")
     else()
         message(FATAL_ERROR
@@ -93,7 +91,7 @@ if(WIN32)
 
 else()
     # Linux / macOS
-    target_link_directories(feagi_java_ffi_jni PRIVATE "${FEAGI_FFI_LIB_DIR}")
+    target_link_directories(feagi_java_ffi_jni PRIVATE "${_feagi_lib_dir}")
     target_link_libraries(feagi_java_ffi_jni PRIVATE feagi_java_ffi)
 endif()
 

@@ -90,15 +90,6 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
     private volatile boolean connected = false;
 
-    /**
-     * Reusable out-parameter carrier for {@link #sendSensoryBytes}.
-     * Guarded by the read lock held during the native call — the lock already
-     * serialises concurrent callers, so this single instance is safe to reuse
-     * without further synchronisation. Eliminates the per-call boolean[] allocation
-     * in the high-frequency sensory hot path.
-     */
-    private final boolean[] outSent = new boolean[1];
-
     // ── Construction ───────────────────────────────────────────────────────────
 
     /**
@@ -207,7 +198,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         try {
             requireConnected("sendSensoryBytes");
 
-            outSent[0] = false;
+            boolean[] outSent = new boolean[1];
             int status = FeagiNativeBindings.feagiClientTrySendSensoryBytes(
                     clientHandle.get(), payload, outSent);
 
@@ -247,6 +238,10 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                     clientHandle.get(), outBufHandle, outHasData);
 
             if (status != FeagiNativeBindings.FeagiStatus.OK.code()) {
+                long leaked = outBufHandle[0];
+                if (leaked != NULL_HANDLE) {
+                    FeagiNativeBindings.feagiBufferFree(leaked);
+                }
                 throw new FeagiSdkException(
                         "pollMotorBytes failed (status=" + status + "): " + nativeError());
             }
@@ -264,6 +259,8 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                 return null;  // no frame available
             }
             if (bufHandle == NULL_HANDLE) {
+                LOG.warning("pollMotorBytes: native returned hasData=true with null bufHandle — "
+                        + "possible native-side inconsistency; returning null.");
                 return null;  // no frame available
             }
             try {
@@ -307,8 +304,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             if (handle != NULL_HANDLE) {
                 try {
                     FeagiNativeBindings.feagiClientFree(handle);
-                } catch (Exception e) {
-                    LOG.log(Level.WARNING, "Error freeing native client handle", e);
+                } catch (Throwable t) {
+                    // Log but swallow exceptions during free to avoid throwing from close().
+                    LOG.log(Level.WARNING, "Error freeing native client handle", t);
                 }
                 closedAgentId = config.agentId();
             }

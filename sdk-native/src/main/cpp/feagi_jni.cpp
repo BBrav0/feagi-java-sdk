@@ -270,6 +270,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionCapability(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong width, jlong height, jlong channels,
         jstring targetCorticalArea) {
+    if (width < 0 || height < 0 || channels < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE2(env, modality, mod, targetCorticalArea, area)
     FeagiStatus r = feagi_config_set_vision_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -288,6 +289,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionUnit(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong width, jlong height, jlong channels,
         jint unit, jint group) {
+    if (width < 0 || height < 0 || channels < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);    
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_vision_unit(
@@ -306,6 +308,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorCapability(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jstring areasJson) {
+    if (outputCount < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE2(env, modality, mod, areasJson, json)
     FeagiStatus r = feagi_config_set_motor_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -319,6 +322,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnit(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jint unit, jint group) {
+    if (outputCount < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_motor_unit(
@@ -335,6 +339,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnitsJson(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jstring unitsJson) {
+    if (outputCount < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE2(env, modality, mod, unitsJson, json)
     FeagiStatus r = feagi_config_set_motor_units_json(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
