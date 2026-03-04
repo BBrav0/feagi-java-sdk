@@ -32,6 +32,10 @@ public final class AgentTypeCode {
     // failures for code that has nothing to do with the missing mapping.
     private static final int EXPECTED_AGENT_TYPE_COUNT = 5;
 
+    // Cached length of AgentType.values() — values() allocates a new array on every call,
+    // so we capture it once at class-load time to avoid a per-connect() allocation.
+    private static final int ACTUAL_AGENT_TYPE_COUNT = AgentType.values().length;
+
     public static int of(AgentType type) {
         if (type == null) {
             throw new IllegalArgumentException("AgentType must not be null");
@@ -39,9 +43,9 @@ public final class AgentTypeCode {
         // Checked here rather than in a static initializer: if AgentType grows, this
         // fails with a clear IllegalStateException at the first actual mapping call,
         // not with a cryptic NoClassDefFoundError at class-load time.
-        if (AgentType.values().length != EXPECTED_AGENT_TYPE_COUNT) {
+        if (ACTUAL_AGENT_TYPE_COUNT != EXPECTED_AGENT_TYPE_COUNT) {
             throw new IllegalStateException(
-                    "AgentType has " + AgentType.values().length + " values but AgentTypeCode "
+                    "AgentType has " + ACTUAL_AGENT_TYPE_COUNT + " values but AgentTypeCode "
                     + "only maps " + EXPECTED_AGENT_TYPE_COUNT + ". "
                     + "Add the new value to AgentTypeCode.of() and update EXPECTED_AGENT_TYPE_COUNT.");
         }

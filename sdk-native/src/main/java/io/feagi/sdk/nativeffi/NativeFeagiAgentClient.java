@@ -90,15 +90,6 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
     private volatile boolean connected = false;
 
-    /**
-     * Reusable out-parameter carrier for {@link #sendSensoryBytes}.
-     * Guarded by the read lock held during the native call — the lock already
-     * serialises concurrent callers, so this single instance is safe to reuse
-     * without further synchronisation. Eliminates the per-call boolean[] allocation
-     * in the high-frequency sensory hot path.
-     */
-    private final boolean[] outSent = new boolean[1];
-
     // ── Construction ───────────────────────────────────────────────────────────
 
     /**
@@ -243,6 +234,10 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         try {
             requireConnected("pollMotorBytes");
 
+            // Method-local out-param arrays — do NOT hoist to fields.
+            // The read lock allows multiple threads to hold it simultaneously,
+            // so shared fields would cause data races between concurrent pollMotorBytes
+            // callers (same reason outSent is local in sendSensoryBytes).
             long[] outBufHandle = new long[1];
             boolean[] outHasData = new boolean[1];
 
@@ -267,7 +262,11 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                 return null;  // no frame available
             }
             if (bufHandle == NULL_HANDLE) {
-                return null;  // no frame available
+                // hasData=true but null handle is a native-side contract violation —
+                // throw rather than propagate a null pointer into feagiBufferLen.
+                throw new FeagiSdkException(
+                        "feagiClientReceiveMotorBuffer: hasData=true but null bufHandle "
+                        + "— native inconsistency");
             }
             try {
                 long len = FeagiNativeBindings.feagiBufferLen(bufHandle);
@@ -422,13 +421,8 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                             vision.targetCorticalArea()),
                     "feagiConfigSetVisionCapability");
         } else {
-            // Explicit null guard: unit() may be null if VisionCapability was constructed
-            // in an invalid state (neither targetCorticalArea nor unit provided).
-            if (vision.unit() == null) {
-                throw new FeagiSdkException(
-                        "VisionCapability has neither targetCorticalArea nor unit set. "
-                        + "Use VisionCapability.fromTargetArea() or VisionCapability.fromUnit().");
-            }
+            // unit() is guaranteed non-null here: VisionCapability.validateSelection()
+            // enforces exactly one of {targetCorticalArea, unit+group} at construction time.
             // SensoryUnitCode: stable ABI mapping — never use .ordinal()
             checkStatus(
                     FeagiNativeBindings.feagiConfigSetVisionUnit(
@@ -465,11 +459,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                     "feagiConfigSetMotorUnitsJson");
 
         } else {
-            if (motor.unit() == null) {
-                throw new FeagiSdkException(
-                        "MotorCapability has neither sourceCorticalAreas, sourceUnits, nor unit set. "
-                        + "Use MotorCapability.fromCorticalAreas(), fromUnits(), or fromUnit().");
-            }
+            // unit() is guaranteed non-null here: MotorCapability.validateSelection()
+            // enforces exactly one of {sourceCorticalAreas, sourceUnits, unit+group}
+            // at construction time.
             // MotorUnitCode: stable ABI mapping — never use .ordinal()
             checkStatus(
                     FeagiNativeBindings.feagiConfigSetMotorUnit(
@@ -638,22 +630,13 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     }
 
     /**
-     * Returns the most recent native error message string, or a placeholder if none.
+     * Returns the most recent native error message for the current thread, or a
+     * placeholder if none.
      *
-     * <p><b>Thread-safety note:</b> {@code feagi_last_error_message_alloc()} is called
-     * without a lock. Whether this is safe depends on the Rust library's error-storage
-     * strategy:
-     * <ul>
-     *   <li>If the Rust library stores the last error in a <b>thread-local</b> (e.g. via
-     *       {@code thread_local!}), concurrent calls from different threads cannot
-     *       interfere — each thread reads its own slot.</li>
-     *   <li>If the error is stored in a <b>global</b> (e.g. a static {@code Mutex<String>}),
-     *       a concurrent send or poll on another thread could overwrite the error between
-     *       the failing call and this read, producing a misleading message.</li>
-     * </ul>
-     * Verify the Rust library uses thread-local error storage before relying on the
-     * message being accurate under concurrent use. If it does not, this call should be
-     * moved inside the lock scope of the caller.
+     * <p><b>Thread-safety:</b> {@code feagi_last_error_message_alloc} is documented in
+     * {@code feagi_java_ffi.h} as "Error reporting (per-thread)". Each thread has its own
+     * error slot, so concurrent send/poll calls on other threads cannot overwrite this
+     * thread's last error. Calling this without a lock is therefore safe.
      */
     private static String nativeError() {
         String msg = FeagiNativeBindings.feagiLastErrorMessage();

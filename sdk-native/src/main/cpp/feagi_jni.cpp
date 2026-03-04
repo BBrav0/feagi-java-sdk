@@ -39,9 +39,28 @@ static void jstr_release(JNIEnv* env, jstring s, const char* c) {
 // IMPORTANT: This macro emits `return static_cast<jint>(...)`. It must only be used
 // in functions whose return type is jint. For jlong-returning functions, use
 // JSTR_ACQUIRE_LONG instead.
+//
+// NOTE: This macro passes nullptr to native code when the jstring itself is null.
+// For optional string parameters this is acceptable (the C ABI documents null-string
+// acceptance). For REQUIRED parameters use JSTR_ACQUIRE_REQUIRED, which throws
+// NullPointerException immediately if the jstring is null.
 #define JSTR_ACQUIRE(env, jstr, var)                                    \
     const char* var = jstr_get(env, jstr);                              \
     if ((jstr) != nullptr && (var) == nullptr) {                        \
+        return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);       \
+    }
+
+// Variant for REQUIRED jstring parameters. Throws NullPointerException if the jstring
+// is null, rather than silently passing nullptr to the C ABI (which would produce an
+// opaque native-side error).
+#define JSTR_ACQUIRE_REQUIRED(env, jstr, var, param_name)               \
+    if (!(jstr)) {                                                       \
+        env->ThrowNew(env->FindClass("java/lang/NullPointerException"),  \
+                param_name " must not be null");                         \
+        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);            \
+    }                                                                    \
+    const char* var = jstr_get(env, jstr);                              \
+    if ((var) == nullptr) {                                              \
         return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);       \
     }
 
@@ -98,6 +117,12 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiLastErrorMessage(JNIEnv* en
 extern "C" JNIEXPORT jlong JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigNew(
         JNIEnv* env, jclass, jstring agentId, jint agentType) {
+    // agentId is required — a null agentId would produce an opaque native error.
+    if (!agentId) {
+        env->ThrowNew(env->FindClass("java/lang/NullPointerException"),
+                "agentId must not be null");
+        return 0L;
+    }
     JSTR_ACQUIRE_LONG(env, agentId, id)
     FeagiAgentConfigHandle* h = feagi_config_new(id, static_cast<FeagiAgentType>(agentType));
     jstr_release(env, agentId, id);
@@ -231,6 +256,10 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetAgentDescriptor(
     return static_cast<jint>(r);
 }
 
+// Note: this function is named nativeConfigSetAuthTokenBase64 (not feagiConfig...) because
+// the Java-side public API method is feagiConfigSetAuthTokenBase64, which delegates to a
+// package-private native stub named nativeConfigSetAuthTokenBase64. The prefix difference is
+// intentional — the public method can perform Java-side validation before the native call.
 extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_nativeConfigSetAuthTokenBase64(
         JNIEnv* env, jclass, jlong h, jstring token) {
@@ -533,10 +562,23 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
     bool hasData = false;
     FeagiStatus r = feagi_client_receive_motor_buffer(
             JLONG_TO_PTR(FeagiAgentClientHandle, h), &buf, &hasData);
-    jlong jl = PTR_TO_JLONG(buf);
-    env->SetLongArrayRegion(outBufHandle, 0, 1, &jl);
-    jboolean jd = static_cast<jboolean>(hasData);
-    env->SetBooleanArrayRegion(outHasData, 0, 1, &jd);
+    if (r == FEAGI_STATUS_OK) {
+        // Write back the handle and flag only on success — on failure, buf may be
+        // non-null depending on the ABI's error contract and should not be surfaced
+        // to Java as a valid handle (it may be dangling or partially initialised).
+        jlong jl = PTR_TO_JLONG(buf);
+        env->SetLongArrayRegion(outBufHandle, 0, 1, &jl);
+        jboolean jd = static_cast<jboolean>(hasData);
+        env->SetBooleanArrayRegion(outHasData, 0, 1, &jd);
+    } else {
+        // Defensively free any handle the native side may have allocated before failing.
+        if (buf) feagi_buffer_free(buf);
+        // Zero out the output arrays so Java callers never see a stale or dangling value.
+        jlong zero = 0L;
+        jboolean jfalse = JNI_FALSE;
+        env->SetLongArrayRegion(outBufHandle, 0, 1, &zero);
+        env->SetBooleanArrayRegion(outHasData, 0, 1, &jfalse);
+    }
     return static_cast<jint>(r);
 }
 
