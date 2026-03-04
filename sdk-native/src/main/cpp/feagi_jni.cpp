@@ -270,7 +270,6 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionCapability(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong width, jlong height, jlong channels,
         jstring targetCorticalArea) {
-    if (width < 0 || height < 0 || channels < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE2(env, modality, mod, targetCorticalArea, area)
     FeagiStatus r = feagi_config_set_vision_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -289,7 +288,6 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionUnit(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong width, jlong height, jlong channels,
         jint unit, jint group) {
-    if (width < 0 || height < 0 || channels < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);    
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_vision_unit(
@@ -308,7 +306,6 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorCapability(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jstring areasJson) {
-    if (outputCount < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE2(env, modality, mod, areasJson, json)
     FeagiStatus r = feagi_config_set_motor_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -322,7 +319,6 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnit(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jint unit, jint group) {
-    if (outputCount < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_motor_unit(
@@ -339,7 +335,6 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnitsJson(
         JNIEnv* env, jclass, jlong h,
         jstring modality, jlong outputCount, jstring unitsJson) {
-    if (outputCount < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE2(env, modality, mod, unitsJson, json)
     FeagiStatus r = feagi_config_set_motor_units_json(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -356,6 +351,8 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisualizationCapab
         jboolean hasRes, jlong resW, jlong resH,
         jboolean hasHz, jdouble hz,
         jboolean bridgeProxy) {
+    // Guard before size_t cast — a negative jlong wraps silently to a huge uint.
+    if (resW < 0 || resH < 0) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE(env, vizType, t)
     FeagiStatus r = feagi_config_set_visualization_capability(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -570,10 +567,21 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiBufferFree(
 // Copies bytes from a native FeagiByteBufferHandle into a new Java byte array.
 // Returns new byte[0] for zero-length frames (not null) so Java callers can
 // distinguish "zero-length frame received" from "no frame available" (null).
+//
+// The Java caller (pollMotorBytes) validates length >= 0 before calling here,
+// but since this is a native method, a direct native caller could pass -1.
+// env->NewByteArray(-1) would throw NegativeArraySizeException rather than crash,
+// but we guard explicitly to give a cleaner early return.
 
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_io_feagi_sdk_nativeffi_NativeFeagiAgentClient_copyNativeBuffer(
         JNIEnv* env, jclass, jlong bufHandle, jint length) {
+    if (length < 0) {
+        env->ThrowNew(env->FindClass("java/lang/NegativeArraySizeException"),
+                "copyNativeBuffer: length must not be negative");
+        return nullptr;
+    }
+
     const FeagiByteBufferHandle* buf =
             const_cast<const FeagiByteBufferHandle*>(JLONG_TO_PTR(FeagiByteBufferHandle, bufHandle));
     if (!buf) return nullptr;

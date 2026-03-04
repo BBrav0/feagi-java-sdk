@@ -90,6 +90,15 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
     private volatile boolean connected = false;
 
+    /**
+     * Reusable out-parameter carrier for {@link #sendSensoryBytes}.
+     * Guarded by the read lock held during the native call — the lock already
+     * serialises concurrent callers, so this single instance is safe to reuse
+     * without further synchronisation. Eliminates the per-call boolean[] allocation
+     * in the high-frequency sensory hot path.
+     */
+    private final boolean[] outSent = new boolean[1];
+
     // ── Construction ───────────────────────────────────────────────────────────
 
     /**
@@ -198,6 +207,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         try {
             requireConnected("sendSensoryBytes");
 
+            // outSent must be method-local: the read lock allows multiple threads to
+            // hold it simultaneously, so a shared field would cause a data race between
+            // concurrent sendSensoryBytes callers (thread A reads thread B's result).
             boolean[] outSent = new boolean[1];
             int status = FeagiNativeBindings.feagiClientTrySendSensoryBytes(
                     clientHandle.get(), payload, outSent);
@@ -238,10 +250,6 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                     clientHandle.get(), outBufHandle, outHasData);
 
             if (status != FeagiNativeBindings.FeagiStatus.OK.code()) {
-                long leaked = outBufHandle[0];
-                if (leaked != NULL_HANDLE) {
-                    FeagiNativeBindings.feagiBufferFree(leaked);
-                }
                 throw new FeagiSdkException(
                         "pollMotorBytes failed (status=" + status + "): " + nativeError());
             }
@@ -259,8 +267,6 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                 return null;  // no frame available
             }
             if (bufHandle == NULL_HANDLE) {
-                LOG.warning("pollMotorBytes: native returned hasData=true with null bufHandle — "
-                        + "possible native-side inconsistency; returning null.");
                 return null;  // no frame available
             }
             try {
@@ -304,9 +310,8 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             if (handle != NULL_HANDLE) {
                 try {
                     FeagiNativeBindings.feagiClientFree(handle);
-                } catch (Throwable t) {
-                    // Log but swallow exceptions during free to avoid throwing from close().
-                    LOG.log(Level.WARNING, "Error freeing native client handle", t);
+                } catch (Exception e) {
+                    LOG.log(Level.WARNING, "Error freeing native client handle", e);
                 }
                 closedAgentId = config.agentId();
             }
@@ -617,6 +622,14 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         }
     }
 
+    /**
+     * Throws {@link FeagiSdkException} if {@code status} is not OK, including the
+     * native status code in the exception so callers can inspect or log it.
+     *
+     * <p>TODO: expose {@code status} as a field on {@link FeagiSdkException} once
+     * that class is extended with a {@code int nativeStatus()} accessor. This avoids
+     * callers having to parse the status out of the message string for error recovery.
+     */
     private static void checkStatus(int status, String operation) {
         if (status != FeagiNativeBindings.FeagiStatus.OK.code()) {
             throw new FeagiSdkException(
@@ -624,6 +637,24 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         }
     }
 
+    /**
+     * Returns the most recent native error message string, or a placeholder if none.
+     *
+     * <p><b>Thread-safety note:</b> {@code feagi_last_error_message_alloc()} is called
+     * without a lock. Whether this is safe depends on the Rust library's error-storage
+     * strategy:
+     * <ul>
+     *   <li>If the Rust library stores the last error in a <b>thread-local</b> (e.g. via
+     *       {@code thread_local!}), concurrent calls from different threads cannot
+     *       interfere — each thread reads its own slot.</li>
+     *   <li>If the error is stored in a <b>global</b> (e.g. a static {@code Mutex<String>}),
+     *       a concurrent send or poll on another thread could overwrite the error between
+     *       the failing call and this read, producing a misleading message.</li>
+     * </ul>
+     * Verify the Rust library uses thread-local error storage before relying on the
+     * message being accurate under concurrent use. If it does not, this call should be
+     * moved inside the lock scope of the caller.
+     */
     private static String nativeError() {
         String msg = FeagiNativeBindings.feagiLastErrorMessage();
         return msg != null ? msg : "(no native error message)";

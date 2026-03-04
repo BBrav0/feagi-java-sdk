@@ -26,17 +26,24 @@ import io.feagi.sdk.core.AgentType;
 public final class AgentTypeCode {
     private AgentTypeCode() {}
 
-    static {
-        if (AgentType.values().length != 5) {
-            throw new ExceptionInInitializerError(
-                    "AgentType has " + AgentType.values().length + " values but AgentTypeCode "
-                    + "only maps 5. Add the new value to AgentTypeCode.of() and update this count.");
-        }
-    }
+    // Expected number of AgentType values this switch covers. Checked inside of()
+    // rather than a static initializer — that pattern throws ExceptionInInitializerError
+    // which wraps as NoClassDefFoundError in subsequent calls, producing confusing test
+    // failures for code that has nothing to do with the missing mapping.
+    private static final int EXPECTED_AGENT_TYPE_COUNT = 5;
 
     public static int of(AgentType type) {
         if (type == null) {
             throw new IllegalArgumentException("AgentType must not be null");
+        }
+        // Checked here rather than in a static initializer: if AgentType grows, this
+        // fails with a clear IllegalStateException at the first actual mapping call,
+        // not with a cryptic NoClassDefFoundError at class-load time.
+        if (AgentType.values().length != EXPECTED_AGENT_TYPE_COUNT) {
+            throw new IllegalStateException(
+                    "AgentType has " + AgentType.values().length + " values but AgentTypeCode "
+                    + "only maps " + EXPECTED_AGENT_TYPE_COUNT + ". "
+                    + "Add the new value to AgentTypeCode.of() and update EXPECTED_AGENT_TYPE_COUNT.");
         }
         switch (type) {
             case SENSORY:        return 0;
