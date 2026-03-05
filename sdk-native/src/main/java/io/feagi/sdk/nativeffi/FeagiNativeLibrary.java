@@ -19,7 +19,7 @@ import io.feagi.sdk.core.FeagiSdkException;
 public final class FeagiNativeLibrary {
     private FeagiNativeLibrary() {}
 
-    private static final int EXPECTED_ABI_VERSION = 1;
+    private static final int EXPECTED_ABI_VERSION = FeagiNativeBindings.EXPECTED_ABI_VERSION;
 
     private static volatile boolean loaded = false;
 
