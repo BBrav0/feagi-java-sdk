@@ -72,7 +72,7 @@ static void jstr_release(JNIEnv* env, jstring s, const char* c) {
     if (!(jstr)) {                                                       \
         env->ThrowNew(env->FindClass("java/lang/NullPointerException"),  \
                 param_name " must not be null");                         \
-        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER); /* dead */  \
+        return 0; /* dead */  \
     }                                                                    \
     const char* var = jstr_get(env, jstr);                              \
     if ((var) == nullptr) {                                              \
