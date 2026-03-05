@@ -114,6 +114,11 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * cannot both pass the {@code connected == false} guard and race into native allocation.
      * Logging is deferred until after the lock is released to minimize hold time.
      *
+     * <p><b>Latency note:</b> The write lock is held across the {@code feagiClientConnect}
+     * native call, which performs real network I/O and may block for up to
+     * {@code connectionTimeout} milliseconds. Any concurrent {@link #sendSensoryBytes} or
+     * {@link #pollMotorBytes} call will block on the read lock for the same duration.
+     *
      * @throws FeagiSdkException     if any native step fails
      * @throws IllegalStateException if already connected
      */
@@ -525,6 +530,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             throw new IllegalArgumentException("items must not be null");
         }
         StringBuilder sb = new StringBuilder("[");
+        // An empty list produces "[]" — validateCorticalAreaId is never called.
+        // An empty array is intentionally valid: the caller decides whether to omit
+        // the capability entirely or pass an empty list to the native layer.
         for (int i = 0; i < items.size(); i++) {
             validateCorticalAreaId(items.get(i));
             sb.append('"').append(items.get(i)).append('"');
@@ -582,12 +590,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                 throw new IllegalArgumentException(
                         "specs must not contain null elements (null at index " + i + ")");
             }
-            int group = s.group();
-            if (group < 0 || group > 255) {
-                throw new IllegalArgumentException(
-                        "specs[" + i + "].group() = " + group
-                        + " is out of range [0, 255]. Must fit in uint8_t for the native ABI.");
-            }
+            // group is guaranteed in [0, 255] by MotorUnitSpec's constructor.
             sb.append("{\"unit\":").append(MotorUnitCode.of(s.unit()))
               .append(",\"group\":").append(s.group())
               .append('}');

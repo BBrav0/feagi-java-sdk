@@ -26,39 +26,25 @@ import io.feagi.sdk.core.AgentType;
 public final class AgentTypeCode {
     private AgentTypeCode() {}
 
-    // Expected number of AgentType values this switch covers. Checked inside of()
-    // rather than a static initializer — that pattern throws ExceptionInInitializerError
-    // which wraps as NoClassDefFoundError in subsequent calls, producing confusing test
-    // failures for code that has nothing to do with the missing mapping.
-    private static final int EXPECTED_AGENT_TYPE_COUNT = 5;
-
-    // Cached length of AgentType.values() — values() allocates a new array on every call,
-    // so we capture it once at class-load time to avoid a per-connect() allocation.
-    private static final int ACTUAL_AGENT_TYPE_COUNT = AgentType.values().length;
+    // NOTE: The exhaustive switch expression in of() (Java 14+ switch expression) makes
+    // the old runtime count-check unnecessary — the compiler enforces that every AgentType
+    // value is handled. Adding a new enum value without updating the switch is a compile error.
 
     public static int of(AgentType type) {
         if (type == null) {
             throw new IllegalArgumentException("AgentType must not be null");
         }
-        // Checked here rather than in a static initializer: if AgentType grows, this
-        // fails with a clear IllegalStateException at the first actual mapping call,
-        // not with a cryptic NoClassDefFoundError at class-load time.
-        if (ACTUAL_AGENT_TYPE_COUNT != EXPECTED_AGENT_TYPE_COUNT) {
-            throw new IllegalStateException(
-                    "AgentType has " + ACTUAL_AGENT_TYPE_COUNT + " values but AgentTypeCode "
-                    + "only maps " + EXPECTED_AGENT_TYPE_COUNT + ". "
-                    + "Add the new value to AgentTypeCode.of() and update EXPECTED_AGENT_TYPE_COUNT.");
-        }
-        switch (type) {
-            case SENSORY:        return 0;
-            case MOTOR:          return 1;
-            case BOTH:           return 2;
-            case VISUALIZATION:  return 3;
-            case INFRASTRUCTURE: return 4;
-            default:
-                throw new IllegalArgumentException(
-                        "Unknown AgentType: " + type
-                        + ". Update AgentTypeCode to match FeagiAgentType in feagi_java_ffi.h");
-        }
+        // Exhaustive switch expression — the compiler enforces that every AgentType value
+        // is handled. Adding a new enum value without updating this switch is a compile
+        // error, which is stronger than the runtime count-check it replaces.
+        // ACTUAL_AGENT_TYPE_COUNT and EXPECTED_AGENT_TYPE_COUNT are therefore no longer
+        // needed and have been removed.
+        return switch (type) {
+            case SENSORY        -> 0;
+            case MOTOR          -> 1;
+            case BOTH           -> 2;
+            case VISUALIZATION  -> 3;
+            case INFRASTRUCTURE -> 4;
+        };
     }
 }

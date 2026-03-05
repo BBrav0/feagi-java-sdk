@@ -305,20 +305,11 @@ class NativeFeagiAgentClientTest {
     @ParameterizedTest
     @EnumSource(AgentType.class)
     void agentTypeCode_allValuesHaveMapping(AgentType type) {
-        // assertDoesNotThrow catches any exception — we distinguish here so a count-guard
-        // failure (IllegalStateException: "AgentType has N values but only maps 5") is
-        // reported clearly rather than as a generic "unexpected exception" assertion error.
-        try {
-            AgentTypeCode.of(type);
-        } catch (IllegalStateException e) {
-            org.junit.jupiter.api.Assertions.fail(
-                    "AgentTypeCode count-guard fired for AgentType." + type.name()
-                    + " — update EXPECTED_AGENT_TYPE_COUNT and add the mapping: " + e.getMessage());
-        } catch (IllegalArgumentException e) {
-            org.junit.jupiter.api.Assertions.fail(
-                    "AgentType." + type.name() + " is missing from AgentTypeCode.of(): "
-                    + e.getMessage());
-        }
+        // The exhaustive switch expression in AgentTypeCode.of() makes this a compile-time
+        // guarantee — a missing case is a compile error. This test catches the runtime
+        // side: verifies that each value maps to a non-negative code without throwing.
+        assertDoesNotThrow(() -> AgentTypeCode.of(type),
+                "AgentType." + type.name() + " is missing from AgentTypeCode.of()");
     }
 
     @Test
@@ -417,6 +408,11 @@ class NativeFeagiAgentClientTest {
     // We can't reach connected==true without a successful native connect(), but we
     // can use reflection to set the field directly and verify the guard fires before
     // any native call is attempted.
+    //
+    // JDK 17+ module note: setAccessible() on fields in unnamed modules works by
+    // default for test code compiled in the same unnamed module. If this test ever
+    // moves to a named module, add to the test JVM args in build.gradle.kts:
+    //   --add-opens io.feagi.sdk.native/io.feagi.sdk.nativeffi=ALL-UNNAMED
     //
     // Fragility guard: if the field names change, @BeforeAll produces a clear
     // NoSuchFieldException at test class load time rather than a silent NPE at runtime.

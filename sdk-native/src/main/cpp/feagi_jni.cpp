@@ -21,6 +21,16 @@
 #define PTR_TO_JLONG(ptr)      (static_cast<jlong>(reinterpret_cast<intptr_t>(ptr)))
 #define JLONG_TO_PTR(type, jl) (reinterpret_cast<type*>(static_cast<intptr_t>(jl)))
 
+// ── Enum bounds ───────────────────────────────────────────────────────────────
+// These must be kept in sync with feagi_java_ffi.h. Named constants rather than
+// inline magic numbers so a grep for the constant name finds both the guard and
+// the comment explaining which header entry it corresponds to.
+//
+// FEAGI_SENSORY_UNIT_GYROSCOPE      = 13  (last entry in FeagiSensoryUnit)
+// FEAGI_MOTOR_UNIT_SIMPLE_VISION_OUTPUT = 7  (last entry in FeagiMotorUnit)
+static constexpr jint FEAGI_SENSORY_UNIT_MAX_CODE = 13;
+static constexpr jint FEAGI_MOTOR_UNIT_MAX_CODE   = 7;
+
 // Null-safe jstring → UTF-8, with OOM guard.
 // Returns null if s is null or if GetStringUTFChars fails (OOM exception already pending).
 // Callers must not call this while a JNI exception is already pending.
@@ -53,11 +63,16 @@ static void jstr_release(JNIEnv* env, jstring s, const char* c) {
 // Variant for REQUIRED jstring parameters. Throws NullPointerException if the jstring
 // is null, rather than silently passing nullptr to the C ABI (which would produce an
 // opaque native-side error).
+//
+// Note on the return after ThrowNew: returning a value while a JNI exception is pending
+// is valid per the JNI spec, but the return value is dead — the JVM delivers the pending
+// exception to the Java caller and discards the returned status code. The return is kept
+// for control-flow correctness (it exits the function), not because its value is observed.
 #define JSTR_ACQUIRE_REQUIRED(env, jstr, var, param_name)               \
     if (!(jstr)) {                                                       \
         env->ThrowNew(env->FindClass("java/lang/NullPointerException"),  \
                 param_name " must not be null");                         \
-        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);            \
+        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER); /* dead */  \
     }                                                                    \
     const char* var = jstr_get(env, jstr);                              \
     if ((var) == nullptr) {                                              \
@@ -331,8 +346,9 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetVisionUnit(
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     // Bounds-check the unit value before casting to FeagiSensoryUnit. The Java layer
     // (SensoryUnitCode) normally validates this, but a direct JNI or reflection-based
-    // caller could bypass it. FEAGI_SENSORY_UNIT_GYROSCOPE = 13 is the current max.
-    if (unit < 0 || unit > 13) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
+    // caller could bypass it. See FEAGI_SENSORY_UNIT_MAX_CODE at the top of this file.
+    if (unit < 0 || unit > FEAGI_SENSORY_UNIT_MAX_CODE)
+        return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_vision_unit(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -368,8 +384,9 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiConfigSetMotorUnit(
     if (group < 0 || group > 255) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     // Bounds-check the unit value before casting to FeagiMotorUnit. The Java layer
     // (MotorUnitCode) normally validates this, but a direct JNI or reflection-based
-    // caller could bypass it. FEAGI_MOTOR_UNIT_SIMPLE_VISION_OUTPUT = 7 is the current max.
-    if (unit < 0 || unit > 7) return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
+    // caller could bypass it. See FEAGI_MOTOR_UNIT_MAX_CODE at the top of this file.
+    if (unit < 0 || unit > FEAGI_MOTOR_UNIT_MAX_CODE)
+        return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     JSTR_ACQUIRE(env, modality, mod)
     FeagiStatus r = feagi_config_set_motor_unit(
             JLONG_TO_PTR(FeagiAgentConfigHandle, h),
@@ -593,7 +610,17 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
         jboolean jd = static_cast<jboolean>(hasData);
         env->SetBooleanArrayRegion(outHasData, 0, 1, &jd);
     } else {
-        // Defensively free any handle the native side may have allocated before failing.
+        // Defensive free on error path.
+        //
+        // feagi_java_ffi.h does not document whether out_buf is null or a valid
+        // allocated pointer when the function returns a non-OK status. We treat it
+        // defensively: if buf is non-null we free it to avoid a leak, on the assumption
+        // that a non-null pointer from the Rust side is always safe to free.
+        //
+        // If the ABI is ever clarified to guarantee "out_buf is always null on error",
+        // this free can be removed. If it is clarified to "out_buf is always garbage on
+        // error", this free must be removed to avoid UB — update this comment and remove
+        // the free in that case.
         if (buf) feagi_buffer_free(buf);
         // Zero out the output arrays so Java callers never see a stale or dangling value.
         jlong zero = 0L;
