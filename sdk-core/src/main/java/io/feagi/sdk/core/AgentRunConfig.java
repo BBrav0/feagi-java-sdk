@@ -51,7 +51,7 @@ public final class AgentRunConfig {
 
     /**
      * Target duration between loop ticks. The loop sleeps for any remaining time after
-     * {@link BaseAgent#mapSensors()} and {@link BaseAgent#mapMotors(AgentFrame)} complete.
+     * {@link BaseAgent#mapSensors(Object)} and {@link BaseAgent#mapMotors(AgentFrame)} complete.
      * A zero value means the loop runs as fast as possible with no sleep.
      */
     public Duration tickInterval() {
@@ -59,7 +59,7 @@ public final class AgentRunConfig {
     }
 
     /**
-     * Maximum number of consecutive exceptions from {@link BaseAgent#mapSensors()} or
+     * Maximum number of consecutive exceptions from {@link BaseAgent#mapSensors(Object)} or
      * {@link BaseAgent#mapMotors(AgentFrame)} before the run loop aborts.
      * Set to {@link Integer#MAX_VALUE} to never abort on errors.
      */

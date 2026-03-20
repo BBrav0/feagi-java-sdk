@@ -257,12 +257,6 @@ public abstract class BaseAgent implements AutoCloseable {
             throw new IllegalStateException(
                     "Agent '" + agentId + "' is not connected. Call connect() first.");
         }
-
-        if (stopRequested.get()) {
-            LOG.info("BaseAgent[" + agentId + "]: run() called with stop already requested; exiting without starting loop");
-            return;
-        }
-
         LOG.info("BaseAgent[" + agentId + "]: initializing hardware");
         try {
             initializeHardware();
@@ -275,6 +269,7 @@ public abstract class BaseAgent implements AutoCloseable {
                 + " tickInterval=" + runConfig.tickInterval().toMillis() + "ms"
                 + " maxConsecutiveErrors=" + runConfig.maxConsecutiveErrors());
 
+        stopRequested.set(false);
         int consecutiveErrors = 0;
 
         while (!stopRequested.get()) {
@@ -376,7 +371,6 @@ public abstract class BaseAgent implements AutoCloseable {
         }
         LOG.info("BaseAgent[" + agentId + "]: closed");
     }
-
     // ── Serialization hook ────────────────────────────────────────────────────
 
     /**
@@ -388,8 +382,8 @@ public abstract class BaseAgent implements AutoCloseable {
      * @param sensorData channel map from {@link #mapSensors}; non-null, non-empty
      * @return serialized payload bytes, or null to suppress sending
      */
-    protected byte[] serializeSensoryData(Map<String, byte[]> sensorData) {        
-        if (sensorData == null || sensorData.isEmpty()) { return null; }
+    protected byte[] serializeSensoryData(Map<String, byte[]> sensorData) {     
+        if (sensorData == null || sensorData.isEmpty()) { return null; } 
 
         record EncodedEntry(byte[] key, byte[] value) {}
         java.util.List<EncodedEntry> entries = new java.util.ArrayList<>(sensorData.size());
