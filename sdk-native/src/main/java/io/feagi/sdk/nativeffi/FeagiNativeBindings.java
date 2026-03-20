@@ -177,6 +177,51 @@ public final class FeagiNativeBindings {
             int controlPort
     );
 
+    // === WebSocket transport ===
+
+    /**
+     * Set WebSocket endpoints from host + explicit ports (native builds ws:// URIs).
+     */
+    public static native int feagiConfigSetWebSocketEndpoints(
+            long cfgHandle,
+            String host,
+            int registrationPort,
+            int sensoryPort,
+            int motorPort,
+            int visualizationPort,
+            int controlPort
+    );
+
+    /**
+     * Configure WebSocket client (relay-client) mode.
+     */
+    public static native int feagiConfigSetWebSocketClientConfig(
+            long cfgHandle,
+            String host,
+            int port,
+            String embodimentId,
+            long connectionTimeoutMs,
+            long receiveTimeoutMs
+    );
+
+    /**
+     * Configure WebSocket relay (server) mode.
+     */
+    public static native int feagiConfigSetWebSocketRelayConfig(
+            long cfgHandle,
+            String bindHost,
+            int bindPort,
+            String embodimentId,
+            long maxMessageSizeBytes,
+            long pingIntervalMs,
+            long pingTimeoutMs
+    );
+
+    /**
+     * Set transport preference before connection ("zmq" or "websocket").
+     */
+    public static native int feagiConfigSetTransportPreference(long cfgHandle, String preference);
+
     /**
      * Set heartbeat interval in seconds.
      */
