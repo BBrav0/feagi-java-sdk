@@ -64,27 +64,17 @@ public final class WebSocketAgentConfig {
             Duration retryBackoff,
             WebSocketTransportConfig transportConfig
     ) {
-        Objects.requireNonNull(agentId, "agentId must not be null");
-        if (agentId.isEmpty()) {
-            throw new IllegalArgumentException("agentId must not be empty");
-        }
         this.agentId = agentId;
-        this.agentType = Objects.requireNonNull(agentType, "agentType must not be null");
-        this.endpoints = Objects.requireNonNull(endpoints, "endpoints must not be null");
-        this.capabilities = Objects.requireNonNull(capabilities, "capabilities must not be null");
-
-        this.heartbeatInterval = requireNonNegative(heartbeatInterval, "heartbeatInterval");
-        this.connectionTimeout = requirePositive(connectionTimeout, "connectionTimeout");
-
-        if (registrationRetries < 0) {
-            throw new IllegalArgumentException("registrationRetries must be >= 0");
-        }
+        this.agentType = agentType;
+        this.endpoints = endpoints;
+        this.capabilities = capabilities;
+        this.heartbeatInterval = heartbeatInterval;
+        this.connectionTimeout = connectionTimeout;
         this.registrationRetries = registrationRetries;
-        this.retryBackoff = requirePositive(retryBackoff, "retryBackoff");
-        this.transportConfig = Objects.requireNonNull(transportConfig, "transportConfig must not be null");
+        this.retryBackoff = retryBackoff;
+        this.transportConfig = transportConfig;
 
-        this.endpoints.validateForAgentType(agentType);
-        this.capabilities.validateForAgentType(agentType);
+        validate();
     }
 
     private WebSocketAgentConfig(Builder builder) {
@@ -98,9 +88,35 @@ public final class WebSocketAgentConfig {
         this.retryBackoff = builder.retryBackoff;
         this.transportConfig = builder.transportConfig;
 
-        // Validate after construction
-        this.endpoints.validateForAgentType(this.agentType);
-        this.capabilities.validateForAgentType(this.agentType);
+        // No validation here - Builder.build() calls validate() before invoking this constructor
+    }
+
+    /**
+     * Shared validation logic for all construction paths.
+     *
+     * @throws NullPointerException if any required field is null
+     * @throws IllegalArgumentException if any validation constraint is violated
+     */
+    private void validate() {
+        Objects.requireNonNull(agentId, "agentId must not be null");
+        if (agentId.isEmpty()) {
+            throw new IllegalArgumentException("agentId must not be empty");
+        }
+        Objects.requireNonNull(agentType, "agentType must not be null");
+        Objects.requireNonNull(endpoints, "endpoints must not be null");
+        Objects.requireNonNull(capabilities, "capabilities must not be null");
+        Objects.requireNonNull(transportConfig, "transportConfig must not be null");
+
+        requireNonNegative(heartbeatInterval, "heartbeatInterval");
+        requirePositive(connectionTimeout, "connectionTimeout");
+
+        if (registrationRetries < 0) {
+            throw new IllegalArgumentException("registrationRetries must be >= 0");
+        }
+        requirePositive(retryBackoff, "retryBackoff");
+
+        endpoints.validateForAgentType(agentType);
+        capabilities.validateForAgentType(agentType);
     }
 
     private static Duration requirePositive(Duration v, String name) {
@@ -392,26 +408,7 @@ public final class WebSocketAgentConfig {
          * @throws IllegalArgumentException if validation fails
          */
         public WebSocketAgentConfig build() {
-            Objects.requireNonNull(agentId, "agentId must not be null");
-            if (agentId.isEmpty()) {
-                throw new IllegalArgumentException("agentId must not be empty");
-            }
-            Objects.requireNonNull(agentType, "agentType must not be null");
-            Objects.requireNonNull(endpoints, "endpoints must not be null");
-            Objects.requireNonNull(capabilities, "capabilities must not be null");
-            Objects.requireNonNull(connectionTimeout, "connectionTimeout must not be null");
-            Objects.requireNonNull(retryBackoff, "retryBackoff must not be null");
-            Objects.requireNonNull(transportConfig, "transportConfig must not be null");
-
-            // Validate durations
-            heartbeatInterval = requireNonNegative(heartbeatInterval, "heartbeatInterval");
-            connectionTimeout = requirePositive(connectionTimeout, "connectionTimeout");
-            retryBackoff = requirePositive(retryBackoff, "retryBackoff");
-
-            if (registrationRetries < 0) {
-                throw new IllegalArgumentException("registrationRetries must be >= 0");
-            }
-
+            // Validation happens in the public constructor via validate()
             return new WebSocketAgentConfig(this);
         }
     }
