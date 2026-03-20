@@ -253,11 +253,10 @@ public abstract class BaseAgent implements AutoCloseable {
      *   <li>Sleep for remaining tick time</li>
      * </ol>
      *
-     * <p>IF this method throws (e.g., deu to hardware initialization failure or exceeding max consecutive errors), the agent remains connected.
-     * Callers may invoke {@link #run(AgentRunConfig)} again to restart the loop, or call {@link #close()} to fully shut doww the agent.
+     * <p>IF this method throws (e.g., due to hardware initialization failure or exceeding max consecutive errors), the agent remains connected.
+     * Callers may invoke {@link #run(AgentRunConfig)} again to restart the loop, or call {@link #close()} to fully shut down the agent.
      * 
      * @param runConfig loop tuning (tick rate, error threshold); must not be null
-     * @throws FeagiSdkException     if the run loop aborts due to consecutive errors
      * @throws IllegalStateException if not connected
      * @throws FeagiSdkException     if consecutive errors exceed the threshold
      * @throws InterruptedException  if the thread is interrupted during sleep
