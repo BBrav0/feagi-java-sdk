@@ -5,6 +5,9 @@
 
 package io.feagi.sdk.core;
 
+import java.time.Duration;
+import java.util.Objects;
+
 /**
  * WebSocket relay (server) transport configuration.
  *
@@ -22,7 +25,10 @@ public final class WebSocketRelayConfig implements WebSocketTransportConfig {
     /**
      * Create a WebSocket relay configuration.
      *
-     * @param bindHost host to bind on (e.g. "127.0.0.1", "0.0.0.0"); non-null, non-empty
+     * @param bindHost host to bind on (e.g. "127.0.0.1", "0.0.0.0"); non-null, non-empty.
+     *                 <p><strong>Security note:</strong> Using "0.0.0.0" binds on all network
+     *                 interfaces, which may expose the relay on public networks in production
+     *                 deployments. Use "127.0.0.1" for localhost-only binding in development.
      * @param bindPort port to bind on (1-65535)
      * @param embodimentId agent/embodiment identifier; non-null, non-empty
      * @param maxMessageSizeBytes maximum WebSocket message size in bytes; must be > 0
@@ -37,43 +43,49 @@ public final class WebSocketRelayConfig implements WebSocketTransportConfig {
             long pingIntervalMs,
             long pingTimeoutMs
     ) {
-        this.bindHost = requireNonEmptyString(bindHost, "bindHost");
-        this.bindPort = requireValidPort(bindPort, "bindPort");
-        this.embodimentId = requireNonEmptyString(embodimentId, "embodimentId");
-        this.maxMessageSizeBytes = requirePositive(maxMessageSizeBytes, "maxMessageSizeBytes");
-        this.pingIntervalMs = requireNonNegative(pingIntervalMs, "pingIntervalMs");
-        this.pingTimeoutMs = requirePositive(pingTimeoutMs, "pingTimeoutMs");
+        this.bindHost = WebSocketConfigValidation.requireNonEmptyString(bindHost, "bindHost");
+        this.bindPort = WebSocketConfigValidation.requireValidPort(bindPort, "bindPort");
+        this.embodimentId = WebSocketConfigValidation.requireNonEmptyString(embodimentId, "embodimentId");
+        this.maxMessageSizeBytes = WebSocketConfigValidation.requirePositive(maxMessageSizeBytes, "maxMessageSizeBytes");
+        this.pingIntervalMs = WebSocketConfigValidation.requireNonNegative(pingIntervalMs, "pingIntervalMs");
+        this.pingTimeoutMs = WebSocketConfigValidation.requirePositive(pingTimeoutMs, "pingTimeoutMs");
     }
 
-    private static String requireNonEmptyString(String value, String name) {
-        if (value == null) {
-            throw new NullPointerException(name + " must not be null");
-        }
-        if (value.isEmpty()) {
-            throw new IllegalArgumentException(name + " must not be empty");
-        }
-        return value;
-    }
-
-    private static int requireValidPort(int value, String name) {
-        if (value < 1 || value > 65535) {
-            throw new IllegalArgumentException(name + " must be between 1 and 65535, got " + value);
-        }
-        return value;
-    }
-
-    private static long requirePositive(long value, String name) {
-        if (value <= 0) {
-            throw new IllegalArgumentException(name + " must be > 0");
-        }
-        return value;
-    }
-
-    private static long requireNonNegative(long value, String name) {
-        if (value < 0) {
-            throw new IllegalArgumentException(name + " must be >= 0");
-        }
-        return value;
+    /**
+     * Create a WebSocket relay configuration using {@link Duration} for timeout parameters.
+     *
+     * <p>This factory method aligns with {@link WebSocketAgentConfig}'s use of {@code Duration},
+     * making it easier to compose configurations without manual unit conversion.
+     *
+     * @param bindHost host to bind on (e.g. "127.0.0.1", "0.0.0.0"); non-null, non-empty.
+     *                 <p><strong>Security note:</strong> Using "0.0.0.0" binds on all network
+     *                 interfaces, which may expose the relay on public networks in production
+     *                 deployments. Use "127.0.0.1" for localhost-only binding in development.
+     * @param bindPort port to bind on (1-65535)
+     * @param embodimentId agent/embodiment identifier; non-null, non-empty
+     * @param maxMessageSizeBytes maximum WebSocket message size in bytes; must be > 0
+     * @param pingInterval ping interval (zero disables); non-null, must be >= 0
+     * @param pingTimeout ping timeout; non-null, must be > 0
+     * @return a new WebSocketRelayConfig instance
+     */
+    public static WebSocketRelayConfig of(
+            String bindHost,
+            int bindPort,
+            String embodimentId,
+            long maxMessageSizeBytes,
+            Duration pingInterval,
+            Duration pingTimeout
+    ) {
+        Objects.requireNonNull(pingInterval, "pingInterval must not be null");
+        Objects.requireNonNull(pingTimeout, "pingTimeout must not be null");
+        return new WebSocketRelayConfig(
+                bindHost,
+                bindPort,
+                embodimentId,
+                maxMessageSizeBytes,
+                pingInterval.toMillis(),
+                pingTimeout.toMillis()
+        );
     }
 
     /**
@@ -112,9 +124,53 @@ public final class WebSocketRelayConfig implements WebSocketTransportConfig {
     }
 
     /**
+     * Return the ping interval as a {@link Duration}.
+     */
+    public Duration pingInterval() {
+        return Duration.ofMillis(pingIntervalMs);
+    }
+
+    /**
      * Return the ping timeout in milliseconds.
      */
     public long pingTimeoutMs() {
         return pingTimeoutMs;
+    }
+
+    /**
+     * Return the ping timeout as a {@link Duration}.
+     */
+    public Duration pingTimeout() {
+        return Duration.ofMillis(pingTimeoutMs);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        WebSocketRelayConfig that = (WebSocketRelayConfig) o;
+        return bindPort == that.bindPort &&
+               maxMessageSizeBytes == that.maxMessageSizeBytes &&
+               pingIntervalMs == that.pingIntervalMs &&
+               pingTimeoutMs == that.pingTimeoutMs &&
+               Objects.equals(bindHost, that.bindHost) &&
+               Objects.equals(embodimentId, that.embodimentId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(bindHost, bindPort, embodimentId, maxMessageSizeBytes, pingIntervalMs, pingTimeoutMs);
+    }
+
+    @Override
+    public String toString() {
+        return "WebSocketRelayConfig{" +
+               "bindHost='" + bindHost + '\'' +
+               ", bindPort=" + bindPort +
+               ", embodimentId='" + embodimentId + '\'' +
+               ", maxMessageSizeBytes=" + maxMessageSizeBytes +
+               ", pingIntervalMs=" + pingIntervalMs +
+               ", pingTimeoutMs=" + pingTimeoutMs +
+               '}';
     }
 }

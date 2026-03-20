@@ -7,7 +7,11 @@ package io.feagi.sdk.core;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class WebSocketRelayConfigTest {
@@ -20,6 +24,26 @@ class WebSocketRelayConfigTest {
         assertEquals(10485760, config.maxMessageSizeBytes());
         assertEquals(60000, config.pingIntervalMs());
         assertEquals(5000, config.pingTimeoutMs());
+    }
+
+    @Test
+    void testStaticFactoryWithDuration() {
+        var config = WebSocketRelayConfig.of(
+                "127.0.0.1", 9052, "relay-1", 10485760,
+                Duration.ofMillis(60000), Duration.ofMillis(5000));
+        assertEquals("127.0.0.1", config.bindHost());
+        assertEquals(9052, config.bindPort());
+        assertEquals("relay-1", config.embodimentId());
+        assertEquals(10485760, config.maxMessageSizeBytes());
+        assertEquals(60000, config.pingIntervalMs());
+        assertEquals(5000, config.pingTimeoutMs());
+    }
+
+    @Test
+    void testDurationAccessors() {
+        var config = new WebSocketRelayConfig("127.0.0.1", 9052, "relay-1", 10485760, 60000, 5000);
+        assertEquals(Duration.ofMillis(60000), config.pingInterval());
+        assertEquals(Duration.ofMillis(5000), config.pingTimeout());
     }
 
     @Test
@@ -109,6 +133,32 @@ class WebSocketRelayConfigTest {
     @Test
     void testImplementsWebSocketTransportConfig() {
         var config = new WebSocketRelayConfig("127.0.0.1", 9052, "relay-1", 10485760, 60000, 5000);
-        org.junit.jupiter.api.Assertions.assertInstanceOf(WebSocketTransportConfig.class, config);
+        assertInstanceOf(WebSocketTransportConfig.class, config);
+    }
+
+    @Test
+    void testEquals() {
+        var config1 = new WebSocketRelayConfig("127.0.0.1", 9052, "relay-1", 10485760, 60000, 5000);
+        var config2 = new WebSocketRelayConfig("127.0.0.1", 9052, "relay-1", 10485760, 60000, 5000);
+        var config3 = new WebSocketRelayConfig("127.0.0.1", 9052, "relay-2", 10485760, 60000, 5000);
+        assertEquals(config1, config2);
+        assertNotEquals(config1, config3);
+    }
+
+    @Test
+    void testHashCode() {
+        var config1 = new WebSocketRelayConfig("127.0.0.1", 9052, "relay-1", 10485760, 60000, 5000);
+        var config2 = new WebSocketRelayConfig("127.0.0.1", 9052, "relay-1", 10485760, 60000, 5000);
+        assertEquals(config1.hashCode(), config2.hashCode());
+    }
+
+    @Test
+    void testToString() {
+        var config = new WebSocketRelayConfig("127.0.0.1", 9052, "relay-1", 10485760, 60000, 5000);
+        String str = config.toString();
+        assertEquals(true, str.contains("WebSocketRelayConfig"));
+        assertEquals(true, str.contains("127.0.0.1"));
+        assertEquals(true, str.contains("9052"));
+        assertEquals(true, str.contains("relay-1"));
     }
 }

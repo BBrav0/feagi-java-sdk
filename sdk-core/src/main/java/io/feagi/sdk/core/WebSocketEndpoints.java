@@ -23,11 +23,14 @@ public final class WebSocketEndpoints {
     /**
      * Create a WebSocket endpoint set. Endpoints not applicable to the agent type may be {@code null}.
      *
-     * @param registrationEndpoint required registration endpoint (ws://...)
-     * @param sensoryEndpoint optional sensory endpoint (ws://...)
-     * @param motorEndpoint optional motor endpoint (ws://...)
-     * @param visualizationEndpoint optional visualization endpoint (ws://...)
-     * @param controlEndpoint optional control endpoint (ws://...)
+     * @param registrationEndpoint required registration endpoint (ws://... or wss://...)
+     * @param sensoryEndpoint optional sensory endpoint (ws://... or wss://...)
+     * @param motorEndpoint optional motor endpoint (ws://... or wss://...)
+     * @param visualizationEndpoint optional visualization endpoint (ws://... or wss://...)
+     * @param controlEndpoint optional control endpoint for infrastructure commands (ws://... or wss://...).
+     *                         <p>Note: The control endpoint is not validated per agent-type because it serves
+     *                         a cross-cutting infrastructure role. Any agent type may optionally use a control
+     *                         channel regardless of its primary sensory/motor/visualization role.
      */
     public WebSocketEndpoints(
             String registrationEndpoint,
@@ -51,6 +54,11 @@ public final class WebSocketEndpoints {
         }
         if (!value.startsWith("ws://") && !value.startsWith("wss://")) {
             throw new IllegalArgumentException(name + " must start with ws:// or wss://");
+        }
+        // Validate that there's content after the scheme
+        int minLength = value.startsWith("wss://") ? "wss://".length() : "ws://".length();
+        if (value.length() <= minLength) {
+            throw new IllegalArgumentException(name + " must have a host after the scheme");
         }
         return value;
     }
@@ -84,6 +92,7 @@ public final class WebSocketEndpoints {
                 requirePresent(visualizationEndpoint, "visualizationEndpoint");
                 break;
             case INFRASTRUCTURE:
+                // No endpoint requirements for infrastructure type
                 break;
             default:
                 throw new IllegalArgumentException("Unsupported agentType: " + agentType);
@@ -126,8 +135,41 @@ public final class WebSocketEndpoints {
 
     /**
      * Return the control endpoint (may be null).
+     *
+     * <p>The control endpoint is not validated per agent-type because it serves
+     * a cross-cutting infrastructure role. Any agent type may optionally use a control
+     * channel regardless of its primary sensory/motor/visualization role.
      */
     public String controlEndpoint() {
         return controlEndpoint;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        WebSocketEndpoints that = (WebSocketEndpoints) o;
+        return Objects.equals(registrationEndpoint, that.registrationEndpoint) &&
+               Objects.equals(sensoryEndpoint, that.sensoryEndpoint) &&
+               Objects.equals(motorEndpoint, that.motorEndpoint) &&
+               Objects.equals(visualizationEndpoint, that.visualizationEndpoint) &&
+               Objects.equals(controlEndpoint, that.controlEndpoint);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(registrationEndpoint, sensoryEndpoint, motorEndpoint,
+                           visualizationEndpoint, controlEndpoint);
+    }
+
+    @Override
+    public String toString() {
+        return "WebSocketEndpoints{" +
+               "registrationEndpoint='" + registrationEndpoint + '\'' +
+               ", sensoryEndpoint='" + sensoryEndpoint + '\'' +
+               ", motorEndpoint='" + motorEndpoint + '\'' +
+               ", visualizationEndpoint='" + visualizationEndpoint + '\'' +
+               ", controlEndpoint='" + controlEndpoint + '\'' +
+               '}';
     }
 }

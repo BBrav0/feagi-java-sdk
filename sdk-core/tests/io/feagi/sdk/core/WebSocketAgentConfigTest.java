@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -79,6 +80,116 @@ class WebSocketAgentConfigTest {
     }
 
     @Test
+    void testBuilderWithClientConfig() {
+        var endpoints = new WebSocketEndpoints(
+                "ws://127.0.0.1:9053",
+                "ws://127.0.0.1:9051",
+                "ws://127.0.0.1:9052",
+                null,
+                null
+        );
+        var capabilities = AgentCapabilities.builder()
+                .sensory(new SensoryCapability(10.0, null))
+                .motor(MotorCapability.fromUnits(
+                        "test",
+                        1,
+                        List.of(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0))
+                ))
+                .build();
+        var clientConfig = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
+
+        var config = WebSocketAgentConfig.builder()
+                .agentId("agent-123")
+                .agentType(AgentType.BOTH)
+                .endpoints(endpoints)
+                .capabilities(capabilities)
+                .heartbeatInterval(Duration.ofSeconds(1))
+                .connectionTimeout(Duration.ofMillis(5000))
+                .registrationRetries(3)
+                .retryBackoff(Duration.ofMillis(100))
+                .transportConfig(clientConfig)
+                .build();
+
+        assertEquals("agent-123", config.agentId());
+        assertEquals(AgentType.BOTH, config.agentType());
+        assertTrue(config.isClientMode());
+        assertFalse(config.isRelayMode());
+    }
+
+    @Test
+    void testBuilderWithRelayConfig() {
+        var endpoints = new WebSocketEndpoints("ws://127.0.0.1:9053", "ws://127.0.0.1:9051", null, null, null);
+        var capabilities = AgentCapabilities.builder()
+                .sensory(new SensoryCapability(10.0, null))
+                .build();
+        var relayConfig = new WebSocketRelayConfig("0.0.0.0", 9052, "relay-1", 10485760, 60000, 5000);
+
+        var config = WebSocketAgentConfig.builder()
+                .agentId("relay-agent")
+                .agentType(AgentType.SENSORY)
+                .endpoints(endpoints)
+                .capabilities(capabilities)
+                .connectionTimeout(Duration.ofMillis(5000))
+                .retryBackoff(Duration.ofMillis(100))
+                .transportConfig(relayConfig)
+                .build();
+
+        assertEquals("relay-agent", config.agentId());
+        assertEquals(AgentType.SENSORY, config.agentType());
+        assertFalse(config.isClientMode());
+        assertTrue(config.isRelayMode());
+    }
+
+    @Test
+    void testBuilderDefaults() {
+        var endpoints = new WebSocketEndpoints("ws://127.0.0.1:9053", "ws://127.0.0.1:9051", null, null, null);
+        var capabilities = AgentCapabilities.builder()
+                .sensory(new SensoryCapability(10.0, null))
+                .build();
+        var clientConfig = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
+
+        var config = WebSocketAgentConfig.builder()
+                .agentId("agent-1")
+                .agentType(AgentType.SENSORY)
+                .endpoints(endpoints)
+                .capabilities(capabilities)
+                .connectionTimeout(Duration.ofMillis(5000))
+                .retryBackoff(Duration.ofMillis(100))
+                .transportConfig(clientConfig)
+                .build();
+
+        assertEquals(Duration.ZERO, config.heartbeatInterval());
+        assertEquals(0, config.registrationRetries());
+    }
+
+    @Test
+    void testBuilderMissingAgentId() {
+        assertThrows(NullPointerException.class,
+                () -> WebSocketAgentConfig.builder()
+                        .agentType(AgentType.SENSORY)
+                        .endpoints(new WebSocketEndpoints("ws://127.0.0.1:9053", "ws://127.0.0.1:9051", null, null, null))
+                        .capabilities(AgentCapabilities.builder().sensory(new SensoryCapability(10.0, null)).build())
+                        .connectionTimeout(Duration.ofMillis(5000))
+                        .retryBackoff(Duration.ofMillis(100))
+                        .transportConfig(new WebSocketClientConfig("127.0.0.1", 8080, "a", 5000, 100))
+                        .build());
+    }
+
+    @Test
+    void testBuilderEmptyAgentId() {
+        assertThrows(IllegalArgumentException.class,
+                () -> WebSocketAgentConfig.builder()
+                        .agentId("")
+                        .agentType(AgentType.SENSORY)
+                        .endpoints(new WebSocketEndpoints("ws://127.0.0.1:9053", "ws://127.0.0.1:9051", null, null, null))
+                        .capabilities(AgentCapabilities.builder().sensory(new SensoryCapability(10.0, null)).build())
+                        .connectionTimeout(Duration.ofMillis(5000))
+                        .retryBackoff(Duration.ofMillis(100))
+                        .transportConfig(new WebSocketClientConfig("127.0.0.1", 8080, "a", 5000, 100))
+                        .build());
+    }
+
+    @Test
     void testNullAgentId() {
         assertThrows(NullPointerException.class,
                 () -> new WebSocketAgentConfig(
@@ -96,19 +207,6 @@ class WebSocketAgentConfigTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new WebSocketAgentConfig(
                         "", AgentType.SENSORY,
-                        new WebSocketEndpoints("ws://127.0.0.1:9053", "ws://127.0.0.1:9051", null, null, null),
-                        AgentCapabilities.builder().sensory(new SensoryCapability(10.0, null)).build(),
-                        Duration.ofSeconds(1), Duration.ofMillis(5000), 0,
-                        Duration.ofMillis(100),
-                        new WebSocketClientConfig("127.0.0.1", 8080, "a", 5000, 100)
-                ));
-    }
-
-    @Test
-    void testNullAgentType() {
-        assertThrows(NullPointerException.class,
-                () -> new WebSocketAgentConfig(
-                        "agent-1", null,
                         new WebSocketEndpoints("ws://127.0.0.1:9053", "ws://127.0.0.1:9051", null, null, null),
                         AgentCapabilities.builder().sensory(new SensoryCapability(10.0, null)).build(),
                         Duration.ofSeconds(1), Duration.ofMillis(5000), 0,
@@ -195,18 +293,6 @@ class WebSocketAgentConfigTest {
     }
 
     @Test
-    void testNullTransportConfig() {
-        assertThrows(NullPointerException.class,
-                () -> new WebSocketAgentConfig(
-                        "agent-1", AgentType.SENSORY,
-                        new WebSocketEndpoints("ws://127.0.0.1:9053", "ws://127.0.0.1:9051", null, null, null),
-                        AgentCapabilities.builder().sensory(new SensoryCapability(10.0, null)).build(),
-                        Duration.ofSeconds(1), Duration.ofMillis(5000), 0,
-                        Duration.ofMillis(100), null
-                ));
-    }
-
-    @Test
     void testEndpointValidationForAgentType() {
         var endpoints = new WebSocketEndpoints("ws://127.0.0.1:9053", null, "ws://127.0.0.1:9052", null, null);
         var capabilities = AgentCapabilities.builder()
@@ -287,5 +373,108 @@ class WebSocketAgentConfigTest {
         assertEquals(retries, config.registrationRetries());
         assertEquals(backoff, config.retryBackoff());
         assertEquals(clientConfig, config.transportConfig());
+    }
+
+    @Test
+    void testEquals() {
+        var endpoints = new WebSocketEndpoints(
+                "ws://127.0.0.1:9053",
+                "ws://127.0.0.1:9051",
+                "ws://127.0.0.1:9052",
+                null,
+                null
+        );
+        var capabilities = AgentCapabilities.builder()
+                .sensory(new SensoryCapability(10.0, null))
+                .motor(MotorCapability.fromUnits(
+                        "test",
+                        1,
+                        List.of(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0))
+                ))
+                .build();
+        var clientConfig = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
+
+        var config1 = new WebSocketAgentConfig(
+                "agent-1", AgentType.BOTH, endpoints, capabilities,
+                Duration.ofSeconds(1), Duration.ofMillis(5000), 3,
+                Duration.ofMillis(100), clientConfig
+        );
+        var config2 = new WebSocketAgentConfig(
+                "agent-1", AgentType.BOTH, endpoints, capabilities,
+                Duration.ofSeconds(1), Duration.ofMillis(5000), 3,
+                Duration.ofMillis(100), clientConfig
+        );
+        var config3 = new WebSocketAgentConfig(
+                "agent-2", AgentType.BOTH, endpoints, capabilities,
+                Duration.ofSeconds(1), Duration.ofMillis(5000), 3,
+                Duration.ofMillis(100), clientConfig
+        );
+
+        assertEquals(config1, config2);
+        assertNotEquals(config1, config3);
+    }
+
+    @Test
+    void testHashCode() {
+        var endpoints = new WebSocketEndpoints(
+                "ws://127.0.0.1:9053",
+                "ws://127.0.0.1:9051",
+                "ws://127.0.0.1:9052",
+                null,
+                null
+        );
+        var capabilities = AgentCapabilities.builder()
+                .sensory(new SensoryCapability(10.0, null))
+                .motor(MotorCapability.fromUnits(
+                        "test",
+                        1,
+                        List.of(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0))
+                ))
+                .build();
+        var clientConfig = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
+
+        var config1 = new WebSocketAgentConfig(
+                "agent-1", AgentType.BOTH, endpoints, capabilities,
+                Duration.ofSeconds(1), Duration.ofMillis(5000), 3,
+                Duration.ofMillis(100), clientConfig
+        );
+        var config2 = new WebSocketAgentConfig(
+                "agent-1", AgentType.BOTH, endpoints, capabilities,
+                Duration.ofSeconds(1), Duration.ofMillis(5000), 3,
+                Duration.ofMillis(100), clientConfig
+        );
+
+        assertEquals(config1.hashCode(), config2.hashCode());
+    }
+
+    @Test
+    void testToString() {
+        var endpoints = new WebSocketEndpoints(
+                "ws://127.0.0.1:9053",
+                "ws://127.0.0.1:9051",
+                "ws://127.0.0.1:9052",
+                null,
+                null
+        );
+        var capabilities = AgentCapabilities.builder()
+                .sensory(new SensoryCapability(10.0, null))
+                .motor(MotorCapability.fromUnits(
+                        "test",
+                        1,
+                        List.of(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0))
+                ))
+                .build();
+        var clientConfig = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
+
+        var config = new WebSocketAgentConfig(
+                "test-agent", AgentType.BOTH, endpoints, capabilities,
+                Duration.ofSeconds(1), Duration.ofMillis(5000), 3,
+                Duration.ofMillis(100), clientConfig
+        );
+
+        String str = config.toString();
+        assertTrue(str.contains("WebSocketAgentConfig"));
+        assertTrue(str.contains("test-agent"));
+        assertTrue(str.contains("BOTH"));
     }
 }

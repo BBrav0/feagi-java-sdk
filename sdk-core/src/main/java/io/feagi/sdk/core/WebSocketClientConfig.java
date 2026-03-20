@@ -5,6 +5,9 @@
 
 package io.feagi.sdk.core;
 
+import java.time.Duration;
+import java.util.Objects;
+
 /**
  * WebSocket client transport configuration.
  *
@@ -34,35 +37,42 @@ public final class WebSocketClientConfig implements WebSocketTransportConfig {
             long connectionTimeoutMs,
             long receiveTimeoutMs
     ) {
-        this.host = requireNonEmptyString(host, "host");
-        this.port = requireValidPort(port, "port");
-        this.embodimentId = requireNonEmptyString(embodimentId, "embodimentId");
-        this.connectionTimeoutMs = requirePositive(connectionTimeoutMs, "connectionTimeoutMs");
-        this.receiveTimeoutMs = requirePositive(receiveTimeoutMs, "receiveTimeoutMs");
+        this.host = WebSocketConfigValidation.requireNonEmptyString(host, "host");
+        this.port = WebSocketConfigValidation.requireValidPort(port, "port");
+        this.embodimentId = WebSocketConfigValidation.requireNonEmptyString(embodimentId, "embodimentId");
+        this.connectionTimeoutMs = WebSocketConfigValidation.requirePositive(connectionTimeoutMs, "connectionTimeoutMs");
+        this.receiveTimeoutMs = WebSocketConfigValidation.requirePositive(receiveTimeoutMs, "receiveTimeoutMs");
     }
 
-    private static String requireNonEmptyString(String value, String name) {
-        if (value == null) {
-            throw new NullPointerException(name + " must not be null");
-        }
-        if (value.isEmpty()) {
-            throw new IllegalArgumentException(name + " must not be empty");
-        }
-        return value;
-    }
-
-    private static int requireValidPort(int value, String name) {
-        if (value < 1 || value > 65535) {
-            throw new IllegalArgumentException(name + " must be between 1 and 65535, got " + value);
-        }
-        return value;
-    }
-
-    private static long requirePositive(long value, String name) {
-        if (value <= 0) {
-            throw new IllegalArgumentException(name + " must be > 0");
-        }
-        return value;
+    /**
+     * Create a WebSocket client configuration using {@link Duration} for timeouts.
+     *
+     * <p>This factory method aligns with {@link WebSocketAgentConfig}'s use of {@code Duration},
+     * making it easier to compose configurations without manual unit conversion.
+     *
+     * @param host relay server host (e.g. "127.0.0.1"); non-null, non-empty
+     * @param port relay server port (1-65535)
+     * @param embodimentId agent/embodiment identifier; non-null, non-empty
+     * @param connectionTimeout connection timeout; non-null, must be > 0
+     * @param receiveTimeout receive timeout; non-null, must be > 0
+     * @return a new WebSocketClientConfig instance
+     */
+    public static WebSocketClientConfig of(
+            String host,
+            int port,
+            String embodimentId,
+            Duration connectionTimeout,
+            Duration receiveTimeout
+    ) {
+        Objects.requireNonNull(connectionTimeout, "connectionTimeout must not be null");
+        Objects.requireNonNull(receiveTimeout, "receiveTimeout must not be null");
+        return new WebSocketClientConfig(
+                host,
+                port,
+                embodimentId,
+                connectionTimeout.toMillis(),
+                receiveTimeout.toMillis()
+        );
     }
 
     /**
@@ -94,9 +104,51 @@ public final class WebSocketClientConfig implements WebSocketTransportConfig {
     }
 
     /**
+     * Return the connection timeout as a {@link Duration}.
+     */
+    public Duration connectionTimeout() {
+        return Duration.ofMillis(connectionTimeoutMs);
+    }
+
+    /**
      * Return the receive timeout in milliseconds.
      */
     public long receiveTimeoutMs() {
         return receiveTimeoutMs;
+    }
+
+    /**
+     * Return the receive timeout as a {@link Duration}.
+     */
+    public Duration receiveTimeout() {
+        return Duration.ofMillis(receiveTimeoutMs);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        WebSocketClientConfig that = (WebSocketClientConfig) o;
+        return port == that.port &&
+               connectionTimeoutMs == that.connectionTimeoutMs &&
+               receiveTimeoutMs == that.receiveTimeoutMs &&
+               Objects.equals(host, that.host) &&
+               Objects.equals(embodimentId, that.embodimentId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(host, port, embodimentId, connectionTimeoutMs, receiveTimeoutMs);
+    }
+
+    @Override
+    public String toString() {
+        return "WebSocketClientConfig{" +
+               "host='" + host + '\'' +
+               ", port=" + port +
+               ", embodimentId='" + embodimentId + '\'' +
+               ", connectionTimeoutMs=" + connectionTimeoutMs +
+               ", receiveTimeoutMs=" + receiveTimeoutMs +
+               '}';
     }
 }

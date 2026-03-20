@@ -8,6 +8,7 @@ package io.feagi.sdk.core;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -76,6 +77,18 @@ class WebSocketEndpointsTest {
     void testVisualizationEndpointNonWs() {
         assertThrows(IllegalArgumentException.class,
                 () -> new WebSocketEndpoints("ws://127.0.0.1:9053", null, null, "udp://127.0.0.1:8080", null));
+    }
+
+    @Test
+    void testBareWsSchemeRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new WebSocketEndpoints("ws://", null, null, null, null));
+    }
+
+    @Test
+    void testBareWssSchemeRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new WebSocketEndpoints("wss://", null, null, null, null));
     }
 
     @Test
@@ -185,5 +198,66 @@ class WebSocketEndpointsTest {
     void testValidateForAgentTypeInfrastructure() {
         var endpoints = new WebSocketEndpoints("ws://127.0.0.1:9053", null, null, null, null);
         endpoints.validateForAgentType(AgentType.INFRASTRUCTURE);
+    }
+
+    @Test
+    void testEquals() {
+        var endpoints1 = new WebSocketEndpoints(
+                "ws://127.0.0.1:9053",
+                "ws://127.0.0.1:9051",
+                "ws://127.0.0.1:9052",
+                null,
+                null
+        );
+        var endpoints2 = new WebSocketEndpoints(
+                "ws://127.0.0.1:9053",
+                "ws://127.0.0.1:9051",
+                "ws://127.0.0.1:9052",
+                null,
+                null
+        );
+        var endpoints3 = new WebSocketEndpoints(
+                "ws://127.0.0.1:9053",
+                "ws://127.0.0.1:9051",
+                null,
+                null,
+                null
+        );
+        assertEquals(endpoints1, endpoints2);
+        assertNotEquals(endpoints1, endpoints3);
+    }
+
+    @Test
+    void testHashCode() {
+        var endpoints1 = new WebSocketEndpoints(
+                "ws://127.0.0.1:9053",
+                "ws://127.0.0.1:9051",
+                "ws://127.0.0.1:9052",
+                null,
+                null
+        );
+        var endpoints2 = new WebSocketEndpoints(
+                "ws://127.0.0.1:9053",
+                "ws://127.0.0.1:9051",
+                "ws://127.0.0.1:9052",
+                null,
+                null
+        );
+        assertEquals(endpoints1.hashCode(), endpoints2.hashCode());
+    }
+
+    @Test
+    void testToString() {
+        var endpoints = new WebSocketEndpoints(
+                "ws://127.0.0.1:9053",
+                "ws://127.0.0.1:9051",
+                null,
+                null,
+                null
+        );
+        String str = endpoints.toString();
+        assertEquals(true, str.contains("WebSocketEndpoints"));
+        assertEquals(true, str.contains("ws://127.0.0.1:9053"));
+        assertEquals(true, str.contains("ws://127.0.0.1:9051"));
     }
 }

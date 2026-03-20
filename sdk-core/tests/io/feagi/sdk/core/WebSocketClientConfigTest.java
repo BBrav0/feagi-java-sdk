@@ -7,7 +7,11 @@ package io.feagi.sdk.core;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class WebSocketClientConfigTest {
@@ -19,6 +23,25 @@ class WebSocketClientConfigTest {
         assertEquals("agent-1", config.embodimentId());
         assertEquals(5000, config.connectionTimeoutMs());
         assertEquals(100, config.receiveTimeoutMs());
+    }
+
+    @Test
+    void testStaticFactoryWithDuration() {
+        var config = WebSocketClientConfig.of(
+                "127.0.0.1", 8080, "agent-1",
+                Duration.ofMillis(5000), Duration.ofMillis(100));
+        assertEquals("127.0.0.1", config.host());
+        assertEquals(8080, config.port());
+        assertEquals("agent-1", config.embodimentId());
+        assertEquals(5000, config.connectionTimeoutMs());
+        assertEquals(100, config.receiveTimeoutMs());
+    }
+
+    @Test
+    void testDurationAccessors() {
+        var config = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
+        assertEquals(Duration.ofMillis(5000), config.connectionTimeout());
+        assertEquals(Duration.ofMillis(100), config.receiveTimeout());
     }
 
     @Test
@@ -96,6 +119,32 @@ class WebSocketClientConfigTest {
     @Test
     void testImplementsWebSocketTransportConfig() {
         var config = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
-        org.junit.jupiter.api.Assertions.assertInstanceOf(WebSocketTransportConfig.class, config);
+        assertInstanceOf(WebSocketTransportConfig.class, config);
+    }
+
+    @Test
+    void testEquals() {
+        var config1 = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
+        var config2 = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
+        var config3 = new WebSocketClientConfig("127.0.0.1", 8080, "agent-2", 5000, 100);
+        assertEquals(config1, config2);
+        assertNotEquals(config1, config3);
+    }
+
+    @Test
+    void testHashCode() {
+        var config1 = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
+        var config2 = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
+        assertEquals(config1.hashCode(), config2.hashCode());
+    }
+
+    @Test
+    void testToString() {
+        var config = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
+        String str = config.toString();
+        assertEquals(true, str.contains("WebSocketClientConfig"));
+        assertEquals(true, str.contains("127.0.0.1"));
+        assertEquals(true, str.contains("8080"));
+        assertEquals(true, str.contains("agent-1"));
     }
 }

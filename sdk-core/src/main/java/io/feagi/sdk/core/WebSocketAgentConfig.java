@@ -14,6 +14,18 @@ import java.util.Objects;
  * <p>Guardrails:
  * - No hidden defaults for endpoints or timeouts.
  * - Validate all values at construction time.
+ *
+ * <p>For complex configurations with many parameters, prefer using the {@link #builder()}
+ * to avoid parameter ordering mistakes:
+ * <pre>{@code
+ * WebSocketAgentConfig config = WebSocketAgentConfig.builder()
+ *     .agentId("agent-123")
+ *     .agentType(AgentType.BOTH)
+ *     .endpoints(endpoints)
+ *     .capabilities(capabilities)
+ *     .transportConfig(transportConfig)
+ *     .build();
+ * }</pre>
  */
 public final class WebSocketAgentConfig {
     private final String agentId;
@@ -75,6 +87,22 @@ public final class WebSocketAgentConfig {
         this.capabilities.validateForAgentType(agentType);
     }
 
+    private WebSocketAgentConfig(Builder builder) {
+        this.agentId = builder.agentId;
+        this.agentType = builder.agentType;
+        this.endpoints = builder.endpoints;
+        this.capabilities = builder.capabilities;
+        this.heartbeatInterval = builder.heartbeatInterval;
+        this.connectionTimeout = builder.connectionTimeout;
+        this.registrationRetries = builder.registrationRetries;
+        this.retryBackoff = builder.retryBackoff;
+        this.transportConfig = builder.transportConfig;
+
+        // Validate after construction
+        this.endpoints.validateForAgentType(this.agentType);
+        this.capabilities.validateForAgentType(this.agentType);
+    }
+
     private static Duration requirePositive(Duration v, String name) {
         Objects.requireNonNull(v, name + " must not be null");
         if (v.isZero() || v.isNegative()) {
@@ -89,6 +117,15 @@ public final class WebSocketAgentConfig {
             throw new IllegalArgumentException(name + " must be >= 0");
         }
         return v;
+    }
+
+    /**
+     * Create a new builder for constructing {@code WebSocketAgentConfig} instances.
+     *
+     * @return a new builder instance
+     */
+    public static Builder builder() {
+        return new Builder();
     }
 
     /**
@@ -156,6 +193,11 @@ public final class WebSocketAgentConfig {
 
     /**
      * Return true if transport is configured for client (relay client) mode.
+     *
+     * <p>Note: While {@link WebSocketTransportConfig} is a sealed interface with only
+     * {@link WebSocketClientConfig} and {@link WebSocketRelayConfig} as permitted subtypes,
+     * pattern matching in switch requires Java 21+. When upgrading to Java 21+, this
+     * can be converted to an exhaustive switch expression for compile-time safety.
      */
     public boolean isClientMode() {
         return transportConfig instanceof WebSocketClientConfig;
@@ -163,8 +205,214 @@ public final class WebSocketAgentConfig {
 
     /**
      * Return true if transport is configured for relay (server) mode.
+     *
+     * <p>Note: While {@link WebSocketTransportConfig} is a sealed interface with only
+     * {@link WebSocketClientConfig} and {@link WebSocketRelayConfig} as permitted subtypes,
+     * pattern matching in switch requires Java 21+. When upgrading to Java 21+, this
+     * can be converted to an exhaustive switch expression for compile-time safety.
      */
     public boolean isRelayMode() {
         return transportConfig instanceof WebSocketRelayConfig;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        WebSocketAgentConfig that = (WebSocketAgentConfig) o;
+        return registrationRetries == that.registrationRetries &&
+               Objects.equals(agentId, that.agentId) &&
+               Objects.equals(agentType, that.agentType) &&
+               Objects.equals(endpoints, that.endpoints) &&
+               Objects.equals(capabilities, that.capabilities) &&
+               Objects.equals(heartbeatInterval, that.heartbeatInterval) &&
+               Objects.equals(connectionTimeout, that.connectionTimeout) &&
+               Objects.equals(retryBackoff, that.retryBackoff) &&
+               Objects.equals(transportConfig, that.transportConfig);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(agentId, agentType, endpoints, capabilities, heartbeatInterval,
+                           connectionTimeout, registrationRetries, retryBackoff, transportConfig);
+    }
+
+    @Override
+    public String toString() {
+        return "WebSocketAgentConfig{" +
+               "agentId='" + agentId + '\'' +
+               ", agentType=" + agentType +
+               ", endpoints=" + endpoints +
+               ", capabilities=" + capabilities +
+               ", heartbeatInterval=" + heartbeatInterval +
+               ", connectionTimeout=" + connectionTimeout +
+               ", registrationRetries=" + registrationRetries +
+               ", retryBackoff=" + retryBackoff +
+               ", transportConfig=" + transportConfig +
+               '}';
+    }
+
+    /**
+     * Builder for constructing {@link WebSocketAgentConfig} instances with a fluent API.
+     *
+     * <p>This builder helps prevent parameter ordering mistakes when constructing
+     * configurations with many parameters, especially when multiple parameters share
+     * the same type (e.g., {@code connectionTimeout} and {@code retryBackoff} are both
+     * {@link Duration}).
+     *
+     * <p>Required parameters must be set before calling {@link #build()}:
+     * <ul>
+     *   <li>{@link #agentId(String)}</li>
+     *   <li>{@link #agentType(AgentType)}</li>
+     *   <li>{@link #endpoints(WebSocketEndpoints)}</li>
+     *   <li>{@link #capabilities(AgentCapabilities)}</li>
+     *   <li>{@link #connectionTimeout(Duration)}</li>
+     *   <li>{@link #retryBackoff(Duration)}</li>
+     *   <li>{@link #transportConfig(WebSocketTransportConfig)}</li>
+     * </ul>
+     */
+    public static final class Builder {
+        private String agentId;
+        private AgentType agentType;
+        private WebSocketEndpoints endpoints;
+        private AgentCapabilities capabilities;
+        private Duration heartbeatInterval = Duration.ZERO;
+        private Duration connectionTimeout;
+        private int registrationRetries = 0;
+        private Duration retryBackoff;
+        private WebSocketTransportConfig transportConfig;
+
+        private Builder() {
+        }
+
+        /**
+         * Set the unique agent identifier.
+         *
+         * @param agentId unique agent identifier; non-null, non-empty
+         * @return this builder
+         */
+        public Builder agentId(String agentId) {
+            this.agentId = agentId;
+            return this;
+        }
+
+        /**
+         * Set the agent role.
+         *
+         * @param agentType agent role (sensory, motor, both, visualization, infrastructure)
+         * @return this builder
+         */
+        public Builder agentType(AgentType agentType) {
+            this.agentType = agentType;
+            return this;
+        }
+
+        /**
+         * Set the explicit FEAGI WebSocket endpoints.
+         *
+         * @param endpoints explicit FEAGI WebSocket endpoints
+         * @return this builder
+         */
+        public Builder endpoints(WebSocketEndpoints endpoints) {
+            this.endpoints = endpoints;
+            return this;
+        }
+
+        /**
+         * Set the declared agent capabilities.
+         *
+         * @param capabilities declared agent capabilities
+         * @return this builder
+         */
+        public Builder capabilities(AgentCapabilities capabilities) {
+            this.capabilities = capabilities;
+            return this;
+        }
+
+        /**
+         * Set the heartbeat interval.
+         *
+         * @param heartbeatInterval heartbeat interval (zero disables); defaults to {@code Duration.ZERO}
+         * @return this builder
+         */
+        public Builder heartbeatInterval(Duration heartbeatInterval) {
+            this.heartbeatInterval = heartbeatInterval;
+            return this;
+        }
+
+        /**
+         * Set the connection timeout for requests.
+         *
+         * @param connectionTimeout connection timeout; non-null, must be > 0
+         * @return this builder
+         */
+        public Builder connectionTimeout(Duration connectionTimeout) {
+            this.connectionTimeout = connectionTimeout;
+            return this;
+        }
+
+        /**
+         * Set the registration retry attempts.
+         *
+         * @param registrationRetries registration retry attempts; defaults to 0
+         * @return this builder
+         */
+        public Builder registrationRetries(int registrationRetries) {
+            this.registrationRetries = registrationRetries;
+            return this;
+        }
+
+        /**
+         * Set the retry backoff duration.
+         *
+         * @param retryBackoff retry backoff duration; non-null, must be > 0
+         * @return this builder
+         */
+        public Builder retryBackoff(Duration retryBackoff) {
+            this.retryBackoff = retryBackoff;
+            return this;
+        }
+
+        /**
+         * Set the WebSocket transport mode configuration.
+         *
+         * @param transportConfig WebSocket transport mode configuration (client or relay)
+         * @return this builder
+         */
+        public Builder transportConfig(WebSocketTransportConfig transportConfig) {
+            this.transportConfig = transportConfig;
+            return this;
+        }
+
+        /**
+         * Build the {@link WebSocketAgentConfig} instance.
+         *
+         * @return a new WebSocketAgentConfig instance
+         * @throws NullPointerException if required parameters are null
+         * @throws IllegalArgumentException if validation fails
+         */
+        public WebSocketAgentConfig build() {
+            Objects.requireNonNull(agentId, "agentId must not be null");
+            if (agentId.isEmpty()) {
+                throw new IllegalArgumentException("agentId must not be empty");
+            }
+            Objects.requireNonNull(agentType, "agentType must not be null");
+            Objects.requireNonNull(endpoints, "endpoints must not be null");
+            Objects.requireNonNull(capabilities, "capabilities must not be null");
+            Objects.requireNonNull(connectionTimeout, "connectionTimeout must not be null");
+            Objects.requireNonNull(retryBackoff, "retryBackoff must not be null");
+            Objects.requireNonNull(transportConfig, "transportConfig must not be null");
+
+            // Validate durations
+            heartbeatInterval = requireNonNegative(heartbeatInterval, "heartbeatInterval");
+            connectionTimeout = requirePositive(connectionTimeout, "connectionTimeout");
+            retryBackoff = requirePositive(retryBackoff, "retryBackoff");
+
+            if (registrationRetries < 0) {
+                throw new IllegalArgumentException("registrationRetries must be >= 0");
+            }
+
+            return new WebSocketAgentConfig(this);
+        }
     }
 }
