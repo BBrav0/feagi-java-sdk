@@ -9,7 +9,12 @@ import io.feagi.sdk.core.AgentCapabilities;
 import io.feagi.sdk.core.AgentConfig;
 import io.feagi.sdk.core.AgentType;
 import io.feagi.sdk.core.FeagiEndpoints;
+import io.feagi.sdk.core.MotorCapability;
+import io.feagi.sdk.core.MotorSocketConfig;
+import io.feagi.sdk.core.MotorUnit;
+import io.feagi.sdk.core.MotorUnitSpec;
 import io.feagi.sdk.core.SensorySocketConfig;
+import io.feagi.sdk.core.VisionCapability;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,21 +23,29 @@ import org.zeromq.ZContext;
 import org.zeromq.ZMQ;
 
 import java.time.Duration;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import io.feagi.sdk.core.MotorCapability;
-import io.feagi.sdk.core.VisionCapability;
-import io.feagi.sdk.core.MotorUnitSpec;
-import io.feagi.sdk.core.MotorUnit;
-import java.util.List;
 
 /**
  * Unit tests for ZmqTransport.
  */
 public class ZmqTransportTest {
+
+    /**
+     * Registration endpoint is required by {@link FeagiEndpoints} / {@link AgentConfig} validation
+     * only; {@link ZmqTransport} does not open this socket in these tests.
+     */
+    private static final String REGISTRATION_PLACEHOLDER = "tcp://127.0.0.1:30001";
+
+    private static final Duration ONE_SECOND = Duration.ofSeconds(1);
+    private static final SensorySocketConfig DEFAULT_SENSORY_SOCKET = new SensorySocketConfig(1, 0, false);
+    private static final MotorSocketConfig DEFAULT_MOTOR_SOCKET = new MotorSocketConfig(1, 0, true);
 
     private ZContext feagiContext;
     private ZMQ.Socket mockFeagiSensorySocket;
@@ -43,8 +56,7 @@ public class ZmqTransportTest {
     @BeforeEach
     public void setup() {
         feagiContext = new ZContext();
-        
-        // Mock FEAGI binds to random ports
+
         mockFeagiSensorySocket = feagiContext.createSocket(SocketType.PULL);
         int sensoryPort = mockFeagiSensorySocket.bindToRandomPort("tcp://127.0.0.1");
         sensoryEndpoint = "tcp://127.0.0.1:" + sensoryPort;
@@ -67,89 +79,108 @@ public class ZmqTransportTest {
         }
     }
 
-    @Test
-    public void testSendSensoryBytes() throws Exception {
+    private AgentCapabilities bothCapabilities() {
+        return AgentCapabilities.builder()
+                .vision(VisionCapability.fromTargetArea("camera", 640, 480, 3, "i_vision"))
+                .motor(MotorCapability.fromUnits(
+                        "servo", 1, List.of(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0))))
+                .build();
+    }
+
+    private AgentConfig bothAgentConfig() {
         FeagiEndpoints endpoints = new FeagiEndpoints(
-                "tcp://127.0.0.1:30001",
+                REGISTRATION_PLACEHOLDER,
                 sensoryEndpoint,
                 motorEndpoint,
                 null,
-                null
-        );
-
-        AgentCapabilities capabilities = AgentCapabilities.builder()
-                .vision(VisionCapability.fromTargetArea("camera", 640, 480, 3, "i_vision"))
-                .motor(MotorCapability.fromUnits("servo", 1, List.of(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0))))
-                .build();
-
-        AgentConfig config = new AgentConfig(
+                null);
+        return new AgentConfig(
                 "agent1",
                 AgentType.BOTH,
                 endpoints,
-                capabilities,
-                Duration.ofSeconds(1),
-                Duration.ofSeconds(1),
+                bothCapabilities(),
+                ONE_SECOND,
+                ONE_SECOND,
                 3,
-                Duration.ofSeconds(1),
-                new SensorySocketConfig(1, 0, false)
-        );
+                ONE_SECOND,
+                DEFAULT_SENSORY_SOCKET,
+                DEFAULT_MOTOR_SOCKET);
+    }
 
-        try (ZmqTransport transport = new ZmqTransport(config)) {
+    private AgentConfig motorOnlyAgentConfig() {
+        FeagiEndpoints endpoints = new FeagiEndpoints(
+                REGISTRATION_PLACEHOLDER,
+                null,
+                motorEndpoint,
+                null,
+                null);
+        AgentCapabilities capabilities = AgentCapabilities.builder()
+                .motor(MotorCapability.fromUnits(
+                        "servo", 1, List.of(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0))))
+                .build();
+        return new AgentConfig(
+                "motor-agent",
+                AgentType.MOTOR,
+                endpoints,
+                capabilities,
+                ONE_SECOND,
+                ONE_SECOND,
+                3,
+                ONE_SECOND,
+                DEFAULT_SENSORY_SOCKET,
+                DEFAULT_MOTOR_SOCKET);
+    }
+
+    private AgentConfig sensoryOnlyAgentConfig() {
+        FeagiEndpoints endpoints = new FeagiEndpoints(
+                REGISTRATION_PLACEHOLDER,
+                sensoryEndpoint,
+                null,
+                null,
+                null);
+        AgentCapabilities capabilities = AgentCapabilities.builder()
+                .vision(VisionCapability.fromTargetArea("camera", 640, 480, 3, "i_vision"))
+                .build();
+        return new AgentConfig(
+                "sensory-agent",
+                AgentType.SENSORY,
+                endpoints,
+                capabilities,
+                ONE_SECOND,
+                ONE_SECOND,
+                3,
+                ONE_SECOND,
+                DEFAULT_SENSORY_SOCKET,
+                DEFAULT_MOTOR_SOCKET);
+    }
+
+    @Test
+    public void sendSensoryBytes_deliversPayloadToFeagi() throws Exception {
+        try (ZmqTransport transport = new ZmqTransport(bothAgentConfig())) {
             byte[] payload = "sensory_data".getBytes();
             transport.sendSensoryBytes(payload);
 
-            // Mock FEAGI should receive it
-            // Need a bit of time for ZMQ to deliver
             byte[] receivedBytes = mockFeagiSensorySocket.recv(ZMQ.DONTWAIT);
-            
-            // Retry a few times in case of slight delay
+
             for (int i = 0; i < 10 && receivedBytes == null; i++) {
                 Thread.sleep(100);
                 receivedBytes = mockFeagiSensorySocket.recv(ZMQ.DONTWAIT);
             }
-            
+
             assertNotNull(receivedBytes, "FEAGI sensory socket should receive payload");
             assertArrayEquals(payload, receivedBytes);
         }
     }
 
     @Test
-    public void testPollMotorBytes() throws Exception {
-        FeagiEndpoints endpoints = new FeagiEndpoints(
-                "tcp://127.0.0.1:30001",
-                sensoryEndpoint,
-                motorEndpoint,
-                null,
-                null
-        );
-
-        AgentCapabilities capabilities = AgentCapabilities.builder()
-                .vision(VisionCapability.fromTargetArea("camera", 640, 480, 3, "i_vision"))
-                .motor(MotorCapability.fromUnits("servo", 1, List.of(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0))))
-                .build();
-
-        AgentConfig config = new AgentConfig(
-                "agent1",
-                AgentType.BOTH,
-                endpoints,
-                capabilities,
-                Duration.ofSeconds(1),
-                Duration.ofSeconds(1),
-                3,
-                Duration.ofSeconds(1),
-                new SensorySocketConfig(1, 0, false)
-        );
-
-        try (ZmqTransport transport = new ZmqTransport(config)) {
-            // Mock FEAGI sends motor data
+    public void pollMotorBytes_returnsPayloadFromFeagi() throws Exception {
+        try (ZmqTransport transport = new ZmqTransport(bothAgentConfig())) {
             byte[] payload = "motor_data".getBytes();
             boolean sent = mockFeagiMotorSocket.send(payload);
             assertTrue(sent, "Mock FEAGI motor socket should send successfully");
 
-            // Agent should poll it
             byte[] receivedBytes = transport.pollMotorBytes();
-            
-            // Retry a few times in case of slight delay
+
             for (int i = 0; i < 10 && receivedBytes == null; i++) {
                 Thread.sleep(100);
                 receivedBytes = transport.pollMotorBytes();
@@ -157,6 +188,51 @@ public class ZmqTransportTest {
 
             assertNotNull(receivedBytes, "Agent motor socket should receive payload");
             assertArrayEquals(payload, receivedBytes);
+        }
+    }
+
+    @Test
+    public void sendSensoryBytes_onMotorOnlyAgent_throwsIllegalStateException() {
+        try (ZmqTransport transport = new ZmqTransport(motorOnlyAgentConfig())) {
+            IllegalStateException ex = assertThrows(
+                    IllegalStateException.class,
+                    () -> transport.sendSensoryBytes(new byte[] {1}));
+            assertTrue(ex.getMessage().contains("MOTOR"));
+        }
+    }
+
+    @Test
+    public void pollMotorBytes_onSensoryOnlyAgent_throwsIllegalStateException() {
+        try (ZmqTransport transport = new ZmqTransport(sensoryOnlyAgentConfig())) {
+            IllegalStateException ex = assertThrows(
+                    IllegalStateException.class,
+                    transport::pollMotorBytes);
+            assertTrue(ex.getMessage().contains("SENSORY"));
+        }
+    }
+
+    @Test
+    public void sendSensoryBytes_and_pollMotorBytes_afterClose_throwIllegalStateException() {
+        ZmqTransport transport = new ZmqTransport(bothAgentConfig());
+        transport.close();
+
+        IllegalStateException sendEx = assertThrows(
+                IllegalStateException.class,
+                () -> transport.sendSensoryBytes(new byte[] {1}));
+        assertTrue(sendEx.getMessage().contains("closed"));
+
+        IllegalStateException pollEx = assertThrows(
+                IllegalStateException.class,
+                transport::pollMotorBytes);
+        assertTrue(pollEx.getMessage().contains("closed"));
+    }
+
+    @Test
+    public void sendSensoryBytes_nullPayload_isNoOp() {
+        try (ZmqTransport transport = new ZmqTransport(bothAgentConfig())) {
+            assertDoesNotThrow(() -> transport.sendSensoryBytes(null));
+            byte[] received = mockFeagiSensorySocket.recv(ZMQ.DONTWAIT);
+            assertNull(received, "Null payload must not enqueue a ZMQ frame");
         }
     }
 }

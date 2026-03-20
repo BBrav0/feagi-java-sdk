@@ -46,7 +46,8 @@ public class AgentConfigTest {
                         Duration.ofSeconds(2),
                         3,
                         Duration.ofMillis(500),
-                        new SensorySocketConfig(1, 0, true)
+                        new SensorySocketConfig(1, 0, true),
+                        new MotorSocketConfig(1, 0, true)
                 )
         );
         assertEquals("sensoryEndpoint must be set for this agent type", ex.getMessage());
@@ -81,7 +82,8 @@ public class AgentConfigTest {
                         Duration.ofSeconds(2),
                         3,
                         Duration.ofMillis(500),
-                        new SensorySocketConfig(1, 0, true)
+                        new SensorySocketConfig(1, 0, true),
+                        new MotorSocketConfig(1, 0, true)
                 )
         );
         assertEquals("Motor agent must declare motor capability", ex.getMessage());

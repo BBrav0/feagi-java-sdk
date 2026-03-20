@@ -254,6 +254,16 @@ public final class FeagiNativeBindings {
     );
 
     /**
+     * Set motor socket configuration.
+     */
+    public static native int feagiConfigSetMotorSocketConfig(
+            long cfgHandle,
+            int rcvHwm,
+            int lingerMs,
+            boolean conflate
+    );
+
+    /**
      * Set generic sensory capability.
      */
     public static native int feagiConfigSetSensoryCapability(
