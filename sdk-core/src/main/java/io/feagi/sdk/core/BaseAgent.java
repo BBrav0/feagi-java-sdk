@@ -99,6 +99,7 @@ public abstract class BaseAgent implements AutoCloseable {
 
     /** Set by {@link #stop()} to request graceful run-loop exit. */
     private final AtomicBoolean stopRequested = new AtomicBoolean(false);
+    private final AtomicBoolean clientClosed = new AtomicBoolean(false);
 
     private volatile boolean connected = false;
     private volatile boolean hardwareInitialized = false;
@@ -257,6 +258,11 @@ public abstract class BaseAgent implements AutoCloseable {
                     "Agent '" + agentId + "' is not connected. Call connect() first.");
         }
 
+        if (stopRequested.get()) {
+            LOG.info("BaseAgent[" + agentId + "]: run() called with stop already requested; exiting without starting loop");
+            return;
+        }
+
         LOG.info("BaseAgent[" + agentId + "]: initializing hardware");
         try {
             initializeHardware();
@@ -269,7 +275,6 @@ public abstract class BaseAgent implements AutoCloseable {
                 + " tickInterval=" + runConfig.tickInterval().toMillis() + "ms"
                 + " maxConsecutiveErrors=" + runConfig.maxConsecutiveErrors());
 
-        stopRequested.set(false);
         int consecutiveErrors = 0;
 
         while (!stopRequested.get()) {
@@ -351,11 +356,13 @@ public abstract class BaseAgent implements AutoCloseable {
     @Override
     public final void close() {
         stop();
-        try {
-            client.close();
-        } catch (Exception e) {
-            LOG.log(Level.WARNING,
-                    "BaseAgent[" + agentId + "]: exception during client.close()", e);
+        if (clientClosed.compareAndSet(false, true)) {
+            try {
+                client.close();
+            } catch (Exception e) {
+                LOG.log(Level.WARNING,
+                        "BaseAgent[" + agentId + "]: exception during client.close()", e);
+            }
         }
         connected = false;
         if (hardwareInitialized) {
@@ -381,28 +388,40 @@ public abstract class BaseAgent implements AutoCloseable {
      * @param sensorData channel map from {@link #mapSensors}; non-null, non-empty
      * @return serialized payload bytes, or null to suppress sending
      */
-    protected byte[] serializeSensoryData(Map<String, byte[]> sensorData) {
-        if (sensorData == null || sensorData.isEmpty()) return null;
+    protected byte[] serializeSensoryData(Map<String, byte[]> sensorData) {        
+        if (sensorData == null || sensorData.isEmpty()) { return null; }
 
+        record EncodedEntry(byte[] key, byte[] value) {}
+        java.util.List<EncodedEntry> entries = new java.util.ArrayList<>(sensorData.size());
         int totalSize = 0;
         for (Map.Entry<String, byte[]> e : sensorData.entrySet()) {
-            byte[] k = e.getKey().getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            byte[] v = e.getValue();
-            totalSize += 4 + k.length + 4 + (v != null ? v.length : 0);
+            byte[] keyBytes = e.getKey().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] valueBytes = (e.getValue() != null) ? e.getValue() : new byte[0];
+            entries.add(new EncodedEntry(keyBytes, valueBytes));
+            totalSize += 4 + keyBytes.length + 4 + valueBytes.length;
         }
 
         byte[] buf = new byte[totalSize];
         int pos = 0;
-        for (Map.Entry<String, byte[]> e : sensorData.entrySet()) {
-            byte[] k = e.getKey().getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            byte[] v = e.getValue() != null ? e.getValue() : new byte[0];
-            buf[pos++] = (byte) (k.length >>> 24); buf[pos++] = (byte) (k.length >>> 16);
-            buf[pos++] = (byte) (k.length >>> 8);  buf[pos++] = (byte)  k.length;
-            System.arraycopy(k, 0, buf, pos, k.length); pos += k.length;
-            buf[pos++] = (byte) (v.length >>> 24); buf[pos++] = (byte) (v.length >>> 16);
-            buf[pos++] = (byte) (v.length >>> 8);  buf[pos++] = (byte)  v.length;
-            System.arraycopy(v, 0, buf, pos, v.length); pos += v.length;
+        for (EncodedEntry entry : entries) {
+            byte[] k = entry.key();
+            byte[] v = entry.value();
+
+            buf[pos++] = (byte) (k.length >>> 24);
+            buf[pos++] = (byte) (k.length >>> 16);
+            buf[pos++] = (byte) (k.length >>> 8);
+            buf[pos++] = (byte) k.length;
+            System.arraycopy(k, 0, buf, pos, k.length);
+            pos += k.length;
+
+            buf[pos++] = (byte) (v.length >>> 24);
+            buf[pos++] = (byte) (v.length >>> 16);
+            buf[pos++] = (byte) (v.length >>> 8);
+            buf[pos++] = (byte) v.length;
+            System.arraycopy(v, 0, buf, pos, v.length);
+            pos += v.length;
         }
+
         return buf;
     }
 

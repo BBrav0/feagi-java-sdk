@@ -26,7 +26,7 @@ public final class AgentFrame {
     private final byte[] motorBytes;
 
     private AgentFrame(byte[] motorBytes) {
-        this.motorBytes = motorBytes;
+        this.motorBytes = motorBytes == null ? null : motorBytes.clone();
     }
 
     /**
@@ -59,6 +59,6 @@ public final class AgentFrame {
      * Return the raw motor payload bytes, or {@code null} if {@link #hasData()} is false.
      */
     public byte[] motorBytes() {
-        return motorBytes;
+        return motorBytes == null ? null : motorBytes.clone();
     }
 }
