@@ -100,8 +100,11 @@ public abstract class BaseAgent implements AutoCloseable {
     /** Set by {@link #stop()} to request graceful run-loop exit. */
     private final AtomicBoolean stopRequested = new AtomicBoolean(false);
     private final AtomicBoolean clientClosed = new AtomicBoolean(false);
+    private final AtomicBoolean runActive = new AtomicBoolean(false);
+    private final AtomicBoolean connected = new AtomicBoolean(false);
 
-    private volatile boolean connected = false;
+    private final Object runMonitor = new Object();
+
     private volatile boolean hardwareInitialized = false;
 
     // ── Construction ───────────────────────────────────────────────────────────
@@ -118,7 +121,7 @@ public abstract class BaseAgent implements AutoCloseable {
      */
     protected BaseAgent(String agentId, AgentConfig config, FeagiAgentClient client) {
         Objects.requireNonNull(agentId, "agentId must not be null");
-        if (agentId.isEmpty()) throw new IllegalArgumentException("agentId must not be empty");
+        if (agentId.isBlank()) throw new IllegalArgumentException("agentId must not be empty");
         this.agentId = agentId;
         this.config  = Objects.requireNonNull(config, "config must not be null");
         this.client  = Objects.requireNonNull(client, "client must not be null");
@@ -220,14 +223,18 @@ public abstract class BaseAgent implements AutoCloseable {
      * @throws FeagiSdkException     if the transport fails to connect
      */
     public final void connect() {
-        if (connected) {
+        if (!connected.compareAndSet(false, true)) {
             throw new IllegalStateException("Agent '" + agentId + "' is already connected.");
         }
         LOG.info("BaseAgent[" + agentId + "]: connecting to "
                 + config.endpoints().registrationEndpoint());
-        client.connect();
-        connected = true;
-        LOG.info("BaseAgent[" + agentId + "]: connected");
+        try {
+            client.connect();
+            LOG.info("BaseAgent[" + agentId + "]: connected");
+        } catch (RuntimeException | Error e) {
+            connected.set(false);
+            throw e;
+        }
     }
 
     /**
@@ -253,81 +260,81 @@ public abstract class BaseAgent implements AutoCloseable {
      */
     public final void run(AgentRunConfig runConfig) throws InterruptedException {
         Objects.requireNonNull(runConfig, "runConfig must not be null");
-        if (!connected) {
+        if (!connected.get()) {
             throw new IllegalStateException(
                     "Agent '" + agentId + "' is not connected. Call connect() first.");
         }
-        LOG.info("BaseAgent[" + agentId + "]: initializing hardware");
-        try {
-            initializeHardware();
-            hardwareInitialized = true;
-        } catch (Exception e) {
-            throw new FeagiSdkException(
-                    "BaseAgent[" + agentId + "]: hardware initialization failed", e);
-        }
-        LOG.info("BaseAgent[" + agentId + "]: hardware initialized, starting run loop"
-                + " tickInterval=" + runConfig.tickInterval().toMillis() + "ms"
-                + " maxConsecutiveErrors=" + runConfig.maxConsecutiveErrors());
 
         stopRequested.set(false);
-        int consecutiveErrors = 0;
-
-        while (!stopRequested.get()) {
-            long tickStart = System.nanoTime();
+        runActive.set(true);
+        try {
+            LOG.info("BaseAgent[" + agentId + "]: initializing hardware");
             try {
-                // ── 1. Read sensors ──────────────────────────────────────────
-                Object hwData = readSensors();
+                initializeHardware();
+                hardwareInitialized = true;
+            } catch (Exception e) {
+                throw new FeagiSdkException(
+                        "BaseAgent[" + agentId + "]: hardware initialization failed", e);
+            }
 
-                // ── 2. Map sensors ───────────────────────────────────────────
-                Map<String, byte[]> sensorData = mapSensors(hwData);
+            LOG.info("BaseAgent[" + agentId + "]: hardware initialized, starting run loop"
+                    + " tickInterval=" + runConfig.tickInterval().toMillis() + "ms"
+                    + " maxConsecutiveErrors=" + runConfig.maxConsecutiveErrors());
 
-                // ── 3. Send to FEAGI ─────────────────────────────────────────
-                if (sensorData != null && !sensorData.isEmpty()) {
-                    byte[] payload = serializeSensoryData(sensorData);
-                    if (payload != null && payload.length > 0) {
-                        client.sendSensoryBytes(payload);
+            int consecutiveErrors = 0;
+
+            while (!stopRequested.get()) {
+                long tickStart = System.nanoTime();
+                try {
+                    Object hwData = readSensors();
+                    Map<String, byte[]> sensorData = mapSensors(hwData);
+
+                    if (sensorData != null && !sensorData.isEmpty()) {
+                        byte[] payload = serializeSensoryData(sensorData);
+                        if (payload != null && payload.length > 0) {
+                            client.sendSensoryBytes(payload);
+                        }
+                    }
+
+                    byte[] motorBytes = client.pollMotorBytes();
+                    AgentFrame frame = (motorBytes != null)
+                            ? AgentFrame.of(motorBytes) : AgentFrame.empty();
+
+                    Object hwCommands = mapMotors(frame);
+                    executeCommands(hwCommands);
+
+                    consecutiveErrors = 0;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                } catch (Exception e) {
+                    consecutiveErrors++;
+                    LOG.log(Level.WARNING,
+                            "BaseAgent[" + agentId + "]: tick error ("
+                                    + consecutiveErrors + "/" + runConfig.maxConsecutiveErrors() + ")", e);
+                    if (consecutiveErrors >= runConfig.maxConsecutiveErrors()) {
+                        throw new FeagiSdkException(
+                                "BaseAgent[" + agentId + "]: run loop aborted after "
+                                        + consecutiveErrors + " consecutive errors", e);
                     }
                 }
 
-                // ── 4. Poll motor data ───────────────────────────────────────
-                byte[] motorBytes = client.pollMotorBytes();
-                AgentFrame frame = (motorBytes != null)
-                        ? AgentFrame.of(motorBytes) : AgentFrame.empty();
-
-                // ── 5. Map motors ────────────────────────────────────────────
-                Object hwCommands = mapMotors(frame);
-
-                // ── 6. Execute commands ──────────────────────────────────────
-                executeCommands(hwCommands);
-
-                consecutiveErrors = 0;
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw e;
-            } catch (Exception e) {
-                consecutiveErrors++;
-                LOG.log(Level.WARNING,
-                        "BaseAgent[" + agentId + "]: tick error ("
-                        + consecutiveErrors + "/" + runConfig.maxConsecutiveErrors() + ")", e);
-                if (consecutiveErrors >= runConfig.maxConsecutiveErrors()) {
-                    throw new FeagiSdkException(
-                            "BaseAgent[" + agentId + "]: run loop aborted after "
-                            + consecutiveErrors + " consecutive errors", e);
+                long tickNanos = runConfig.tickInterval().toNanos();
+                if (tickNanos > 0) {
+                    long remaining = tickNanos - (System.nanoTime() - tickStart);
+                    if (remaining > 0) {
+                        Thread.sleep(remaining / 1_000_000L, (int) (remaining % 1_000_000L));
+                    }
                 }
             }
 
-            // ── 7. Tick pacing ───────────────────────────────────────────────
-            long tickNanos = runConfig.tickInterval().toNanos();
-            if (tickNanos > 0) {
-                long remaining = tickNanos - (System.nanoTime() - tickStart);
-                if (remaining > 0) {
-                    Thread.sleep(remaining / 1_000_000L, (int) (remaining % 1_000_000L));
-                }
+            LOG.info("BaseAgent[" + agentId + "]: run loop stopped");
+        } finally {
+            runActive.set(false);
+            synchronized (runMonitor) {
+                runMonitor.notifyAll();
             }
         }
-
-        LOG.info("BaseAgent[" + agentId + "]: run loop stopped");
     }
 
     /**
@@ -351,6 +358,20 @@ public abstract class BaseAgent implements AutoCloseable {
     @Override
     public final void close() {
         stop();
+
+        synchronized (runMonitor) {
+            while (runActive.get()) {
+                try {
+                    runMonitor.wait();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    LOG.log(Level.WARNING,
+                            "BaseAgent[" + agentId + "]: interrupted while waiting for run loop to stop", e);
+                    break;
+                }
+            }
+        }
+
         if (clientClosed.compareAndSet(false, true)) {
             try {
                 client.close();
@@ -359,7 +380,9 @@ public abstract class BaseAgent implements AutoCloseable {
                         "BaseAgent[" + agentId + "]: exception during client.close()", e);
             }
         }
-        connected = false;
+
+        connected.set(false);
+
         if (hardwareInitialized) {
             try {
                 closeHardware();
@@ -369,6 +392,7 @@ public abstract class BaseAgent implements AutoCloseable {
             }
             hardwareInitialized = false;
         }
+
         LOG.info("BaseAgent[" + agentId + "]: closed");
     }
     // ── Serialization hook ────────────────────────────────────────────────────
@@ -428,7 +452,7 @@ public abstract class BaseAgent implements AutoCloseable {
     public final AgentConfig config()              { return config; }
 
     /** Return {@code true} if the agent is currently connected to FEAGI. */
-    public final boolean isConnected()             { return connected; }
+    public final boolean isConnected()             { return connected.get(); }
 
     /** Return {@code true} if hardware has been initialized inside the run loop. */
     public final boolean isHardwareInitialized()   { return hardwareInitialized; }
