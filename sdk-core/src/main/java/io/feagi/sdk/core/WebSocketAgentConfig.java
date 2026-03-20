@@ -88,7 +88,7 @@ public final class WebSocketAgentConfig {
         this.retryBackoff = builder.retryBackoff;
         this.transportConfig = builder.transportConfig;
 
-        // No validation here - Builder.build() calls validate() before invoking this constructor
+        validate();
     }
 
     /**
@@ -408,7 +408,6 @@ public final class WebSocketAgentConfig {
          * @throws IllegalArgumentException if validation fails
          */
         public WebSocketAgentConfig build() {
-            // Validation happens in the public constructor via validate()
             return new WebSocketAgentConfig(this);
         }
     }

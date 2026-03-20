@@ -52,6 +52,37 @@ public final class WebSocketRelayConfig implements WebSocketTransportConfig {
     }
 
     /**
+     * Create a WebSocket relay configuration using {@link Duration} for ping timing.
+     *
+     * @param bindHost host to bind on; non-null, non-empty
+     * @param bindPort port to bind on (1-65535)
+     * @param embodimentId agent/embodiment identifier; non-null, non-empty
+     * @param maxMessageSizeBytes maximum WebSocket message size in bytes; must be > 0
+     * @param pingInterval ping interval ({@code Duration.ZERO} disables); non-null, must be >= 0
+     * @param pingTimeout ping timeout; non-null, must be > 0
+     * @return a new WebSocketRelayConfig instance
+     */
+    public static WebSocketRelayConfig of(
+            String bindHost,
+            int bindPort,
+            String embodimentId,
+            long maxMessageSizeBytes,
+            Duration pingInterval,
+            Duration pingTimeout
+    ) {
+        Objects.requireNonNull(pingInterval, "pingInterval must not be null");
+        Objects.requireNonNull(pingTimeout, "pingTimeout must not be null");
+        return new WebSocketRelayConfig(
+                bindHost,
+                bindPort,
+                embodimentId,
+                maxMessageSizeBytes,
+                pingInterval.toMillis(),
+                pingTimeout.toMillis()
+        );
+    }
+
+    /**
      * Return the bind host.
      */
     public String bindHost() {
@@ -79,6 +110,52 @@ public final class WebSocketRelayConfig implements WebSocketTransportConfig {
         return maxMessageSizeBytes;
     }
 
+    /**
+     * Return the ping interval in milliseconds (0 = disabled).
+     */
+    public long pingIntervalMs() {
+        return pingIntervalMs;
+    }
+
+    /**
+     * Return the ping interval as a {@link Duration} ({@code Duration.ZERO} = disabled).
+     */
+    public Duration pingInterval() {
+        return Duration.ofMillis(pingIntervalMs);
+    }
+
+    /**
+     * Return the ping timeout in milliseconds.
+     */
+    public long pingTimeoutMs() {
+        return pingTimeoutMs;
+    }
+
+    /**
+     * Return the ping timeout as a {@link Duration}.
+     */
+    public Duration pingTimeout() {
+        return Duration.ofMillis(pingTimeoutMs);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        WebSocketRelayConfig that = (WebSocketRelayConfig) o;
+        return bindPort == that.bindPort &&
+               maxMessageSizeBytes == that.maxMessageSizeBytes &&
+               pingIntervalMs == that.pingIntervalMs &&
+               pingTimeoutMs == that.pingTimeoutMs &&
+               Objects.equals(bindHost, that.bindHost) &&
+               Objects.equals(embodimentId, that.embodimentId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(bindHost, bindPort, embodimentId, maxMessageSizeBytes,
+                           pingIntervalMs, pingTimeoutMs);
+    }
 
     @Override
     public String toString() {

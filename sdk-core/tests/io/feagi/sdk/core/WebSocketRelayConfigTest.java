@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WebSocketRelayConfigTest {
     @Test
@@ -156,9 +157,9 @@ class WebSocketRelayConfigTest {
     void testToString() {
         var config = new WebSocketRelayConfig("127.0.0.1", 9052, "relay-1", 10485760, 60000, 5000);
         String str = config.toString();
-        assertEquals(true, str.contains("WebSocketRelayConfig"));
-        assertEquals(true, str.contains("127.0.0.1"));
-        assertEquals(true, str.contains("9052"));
-        assertEquals(true, str.contains("relay-1"));
+        assertTrue(str.contains("WebSocketRelayConfig"));
+        assertTrue(str.contains("127.0.0.1"));
+        assertTrue(str.contains("9052"));
+        assertTrue(str.contains("relay-1"));
     }
 }

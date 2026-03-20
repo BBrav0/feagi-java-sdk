@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WebSocketEndpointsTest {
     @Test
@@ -256,8 +257,8 @@ class WebSocketEndpointsTest {
                 null
         );
         String str = endpoints.toString();
-        assertEquals(true, str.contains("WebSocketEndpoints"));
-        assertEquals(true, str.contains("ws://127.0.0.1:9053"));
-        assertEquals(true, str.contains("ws://127.0.0.1:9051"));
+        assertTrue(str.contains("WebSocketEndpoints"));
+        assertTrue(str.contains("ws://127.0.0.1:9053"));
+        assertTrue(str.contains("ws://127.0.0.1:9051"));
     }
 }

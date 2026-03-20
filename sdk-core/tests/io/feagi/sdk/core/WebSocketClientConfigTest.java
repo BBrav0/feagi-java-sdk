@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WebSocketClientConfigTest {
     @Test
@@ -142,9 +143,9 @@ class WebSocketClientConfigTest {
     void testToString() {
         var config = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
         String str = config.toString();
-        assertEquals(true, str.contains("WebSocketClientConfig"));
-        assertEquals(true, str.contains("127.0.0.1"));
-        assertEquals(true, str.contains("8080"));
-        assertEquals(true, str.contains("agent-1"));
+        assertTrue(str.contains("WebSocketClientConfig"));
+        assertTrue(str.contains("127.0.0.1"));
+        assertTrue(str.contains("8080"));
+        assertTrue(str.contains("agent-1"));
     }
 }

@@ -21,20 +21,7 @@ public final class WebSocketClientConfig implements WebSocketTransportConfig {
     private final long connectionTimeoutMs;
     private final long receiveTimeoutMs;
 
-    private static void requireDurationAtLeast1ms(String name, {
-        Objects.requireNonNull(duration, name + " must not be null");
-        if (value.isZero() || value.isNegative()) {
-            throw new IllegalArgumentException(name + " must be > 0");
-        }
-        if (!value.startsWith("ws://") && !value.startsWith("wss://")) {
-            throw new IllegalArgumentException(name + " must start with ws:// or wss://");
-        }
-        // Validate that there's content after the scheme
-        int minLength = value.startsWith("wss://") ? "wss://".length() : "ws://".length() :        if (value.length() <= minLength) {
-            throw new IllegalArgumentException(name + " must have a host after the scheme");
-        }
-        return value;
-    }
+    /**
      * Create a WebSocket client configuration.
      *
      * @param host relay server host (e.g. "127.0.0.1"); non-null, non-empty
