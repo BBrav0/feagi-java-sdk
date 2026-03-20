@@ -93,6 +93,18 @@ class WebSocketEndpointsTest {
     }
 
     @Test
+    void testRegistrationEndpointMalformedUriWithSpaces() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new WebSocketEndpoints("ws://invalid url with spaces", null, null, null, null));
+    }
+
+    @Test
+    void testRegistrationEndpointNotUri() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new WebSocketEndpoints("not a uri at all", null, null, null, null));
+    }
+
+    @Test
     void testOptionalEndpointsNull() {
         var endpoints = new WebSocketEndpoints("ws://127.0.0.1:9053", null, null, null, null);
         assertEquals("ws://127.0.0.1:9053", endpoints.registrationEndpoint());

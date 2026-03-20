@@ -9,7 +9,10 @@ package io.feagi.sdk.core;
  * Supported transport modes for FEAGI agent communication.
  */
 public enum TransportMode {
-    /** ZMQ transport (TCP-based) */
+    /**
+     * ZMQ transport (TCP-based). Included for unified preference strings with native ZMQ-based agents;
+     * Java WebSocket-specific APIs use the WEBSOCKET constant instead.
+     */
     ZMQ("zmq"),
     /** WebSocket transport (WS-based) */
     WEBSOCKET("websocket");

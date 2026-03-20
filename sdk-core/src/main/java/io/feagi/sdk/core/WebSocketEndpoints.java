@@ -5,6 +5,8 @@
 
 package io.feagi.sdk.core;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Objects;
 
 /**
@@ -46,15 +48,21 @@ public final class WebSocketEndpoints {
 
     private static String requireWsEndpoint(String value, String name) {
         Objects.requireNonNull(value, name + " must not be null");
-        if (value.isEmpty()) {
-            throw new IllegalArgumentException(name + " must not be empty");
+        if (value.isBlank()) {
+            throw new IllegalArgumentException(name + " must not be blank");
         }
-        if (!value.startsWith("ws://") && !value.startsWith("wss://")) {
-            throw new IllegalArgumentException(name + " must start with ws:// or wss://");
-        }
-        int minLength = value.startsWith("wss://") ? "wss://".length() : "ws://".length();
-        if (value.length() <= minLength) {
-            throw new IllegalArgumentException(name + " must have a host after the scheme");
+        try {
+            URI uri = new URI(value);
+            String scheme = uri.getScheme();
+            if (scheme == null || (!scheme.equalsIgnoreCase("ws") && !scheme.equalsIgnoreCase("wss"))) {
+                throw new IllegalArgumentException(name + " must use ws or wss scheme");
+            }
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                throw new IllegalArgumentException(name + " must have a host");
+            }
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException(name + " is not a valid URI: " + e.getMessage(), e);
         }
         return value;
     }
@@ -96,7 +104,7 @@ public final class WebSocketEndpoints {
     }
 
     private static void requirePresent(String value, String name) {
-        if (value == null || value.isEmpty()) {
+        if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " must be set for this agent type");
         }
     }

@@ -47,7 +47,9 @@ public final class WebSocketAgentConfig {
      *                          and positive. Independent of {@link WebSocketClientConfig#connectionTimeoutMs}
      *                          when using client transport.
      * @param registrationRetries registration retry attempts
-     * @param retryBackoff retry backoff duration
+     * @param retryBackoff backoff between registration retries; may be {@code null} only when
+     *                     {@code registrationRetries == 0} (treated as {@link Duration#ZERO}).
+     *                     When {@code registrationRetries > 0}, must be non-null and positive.
      * @param transportConfig WebSocket transport mode configuration (client or relay)
      */
     public WebSocketAgentConfig(
@@ -68,7 +70,10 @@ public final class WebSocketAgentConfig {
         this.heartbeatInterval = heartbeatInterval;
         this.connectionTimeout = connectionTimeout;
         this.registrationRetries = registrationRetries;
-        this.retryBackoff = retryBackoff;
+        if (registrationRetries < 0) {
+            throw new IllegalArgumentException("registrationRetries must be >= 0");
+        }
+        this.retryBackoff = resolveRetryBackoff(retryBackoff, registrationRetries);
         this.transportConfig = transportConfig;
 
         validate();
@@ -82,10 +87,26 @@ public final class WebSocketAgentConfig {
         this.heartbeatInterval = builder.heartbeatInterval;
         this.connectionTimeout = builder.connectionTimeout;
         this.registrationRetries = builder.registrationRetries;
-        this.retryBackoff = builder.retryBackoff;
+        if (builder.registrationRetries < 0) {
+            throw new IllegalArgumentException("registrationRetries must be >= 0");
+        }
+        this.retryBackoff = resolveRetryBackoff(builder.retryBackoff, builder.registrationRetries);
         this.transportConfig = builder.transportConfig;
 
         validate();
+    }
+
+    /**
+     * When there are no retries, missing {@code retryBackoff} is treated as {@link Duration#ZERO}.
+     */
+    private static Duration resolveRetryBackoff(Duration retryBackoff, int registrationRetries) {
+        if (retryBackoff == null) {
+            if (registrationRetries == 0) {
+                return Duration.ZERO;
+            }
+            throw new NullPointerException("retryBackoff must not be null when registrationRetries > 0");
+        }
+        return retryBackoff;
     }
 
     /**
@@ -96,8 +117,8 @@ public final class WebSocketAgentConfig {
      */
     private void validate() {
         Objects.requireNonNull(agentId, "agentId must not be null");
-        if (agentId.isEmpty()) {
-            throw new IllegalArgumentException("agentId must not be empty");
+        if (agentId.isBlank()) {
+            throw new IllegalArgumentException("agentId must not be blank");
         }
         Objects.requireNonNull(agentType, "agentType must not be null");
         Objects.requireNonNull(endpoints, "endpoints must not be null");
@@ -107,10 +128,11 @@ public final class WebSocketAgentConfig {
         requireNonNegative(heartbeatInterval, "heartbeatInterval");
         requirePositive(connectionTimeout, "connectionTimeout");
 
-        if (registrationRetries < 0) {
-            throw new IllegalArgumentException("registrationRetries must be >= 0");
+        if (registrationRetries > 0) {
+            requirePositive(retryBackoff, "retryBackoff");
+        } else {
+            requireNonNegative(retryBackoff, "retryBackoff");
         }
-        requirePositive(retryBackoff, "retryBackoff");
 
         endpoints.validateForAgentType(agentType);
         capabilities.validateForAgentType(agentType);
@@ -192,7 +214,7 @@ public final class WebSocketAgentConfig {
     }
 
     /**
-     * Return the retry backoff duration.
+     * Return the retry backoff duration (never null; {@link Duration#ZERO} when no retries are configured).
      */
     public Duration retryBackoff() {
         return retryBackoff;
@@ -211,7 +233,13 @@ public final class WebSocketAgentConfig {
     // WebSocketTransportConfig is sealed to WebSocketClientConfig and WebSocketRelayConfig; with Java 21+,
     // this could use an exhaustive switch on the sealed hierarchy for compile-time coverage.
     public boolean isClientMode() {
-        return transportConfig instanceof WebSocketClientConfig;
+        if (transportConfig instanceof WebSocketClientConfig) {
+            return true;
+        }
+        if (transportConfig instanceof WebSocketRelayConfig) {
+            return false;
+        }
+        throw new IllegalStateException("Unexpected WebSocketTransportConfig: " + transportConfig.getClass());
     }
 
     /**
@@ -219,7 +247,13 @@ public final class WebSocketAgentConfig {
      */
     // See isClientMode() for notes on sealed transport types and Java 21+ pattern matching.
     public boolean isRelayMode() {
-        return transportConfig instanceof WebSocketRelayConfig;
+        if (transportConfig instanceof WebSocketRelayConfig) {
+            return true;
+        }
+        if (transportConfig instanceof WebSocketClientConfig) {
+            return false;
+        }
+        throw new IllegalStateException("Unexpected WebSocketTransportConfig: " + transportConfig.getClass());
     }
 
     @Override
@@ -229,7 +263,7 @@ public final class WebSocketAgentConfig {
         WebSocketAgentConfig that = (WebSocketAgentConfig) o;
         return registrationRetries == that.registrationRetries &&
                Objects.equals(agentId, that.agentId) &&
-               Objects.equals(agentType, that.agentType) &&
+               agentType == that.agentType &&
                Objects.equals(endpoints, that.endpoints) &&
                Objects.equals(capabilities, that.capabilities) &&
                Objects.equals(heartbeatInterval, that.heartbeatInterval) &&
@@ -267,7 +301,9 @@ public final class WebSocketAgentConfig {
      * the same type (for example connectionTimeout and retryBackoff are both Duration values).
      *
      * <p>Required parameters must be set before calling {@link #build}:
-     * agentId, agentType, endpoints, capabilities, connectionTimeout, retryBackoff, transportConfig.
+     * agentId, agentType, endpoints, capabilities, connectionTimeout, transportConfig.
+     * Retry backoff is required when registrationRetries is greater than zero; when retries are zero it may
+     * be omitted (defaults to a zero duration).
      */
     public static final class Builder {
         private String agentId;
@@ -286,7 +322,7 @@ public final class WebSocketAgentConfig {
         /**
          * Set the unique agent identifier.
          *
-         * @param agentId unique agent identifier; non-null, non-empty
+         * @param agentId unique agent identifier; non-null, non-blank
          * @return this builder
          */
         public Builder agentId(String agentId) {
@@ -363,7 +399,8 @@ public final class WebSocketAgentConfig {
         /**
          * Set the retry backoff duration.
          *
-         * @param retryBackoff retry backoff duration; non-null, must be positive
+         * @param retryBackoff backoff between retries; required and positive when registrationRetries is
+         *                     greater than zero. When retries are zero, may be omitted (defaults to zero).
          * @return this builder
          */
         public Builder retryBackoff(Duration retryBackoff) {
