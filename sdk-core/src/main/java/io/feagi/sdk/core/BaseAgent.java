@@ -7,6 +7,7 @@ package io.feagi.sdk.core;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -223,6 +224,9 @@ public abstract class BaseAgent implements AutoCloseable {
      * @throws FeagiSdkException     if the transport fails to connect
      */
     public final void connect() {
+        if (clientClosed.get()) {
+            throw new IllegalStateException("Agent '" + agentId + "' has been closed and cannot be reconnected.");
+        }
         if (!connected.compareAndSet(false, true)) {
             throw new IllegalStateException("Agent '" + agentId + "' is already connected.");
         }
@@ -267,7 +271,8 @@ public abstract class BaseAgent implements AutoCloseable {
             throw new IllegalStateException(
                     "Agent '" + agentId + "' is not connected. Call connect() first.");
         }
-
+        // stop() controls only the currently active run loop.
+        // Clear any prior stop request so a connected agent can be run again.
         stopRequested.set(false);
         if (!runActive.compareAndSet(false, true)) {
             throw new IllegalStateException("Agent '" + agentId + "' is already running.");
@@ -359,15 +364,26 @@ public abstract class BaseAgent implements AutoCloseable {
      * if hardware was initialized, even if the transport close throws. Exceptions from
      * either {@code client.close()} or {@code closeHardware()} are logged and swallowed
      * so that close() itself never throws.
+     * 
+     * <p>After this method returns, the agent instance is closed permanently and cannot
+     * be reconnected or reused.
+     * 
      */
     @Override
     public final void close() {
         stop();
 
         synchronized (runMonitor) {
-            while (runActive.get()) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (runActive.get()) {
+                long remainingNanos = deadline - System.nanoTime();
+                if (remainingNanos <= 0) {
+                    break;
+                }
                 try {
-                    runMonitor.wait(5_000);
+                    long millis = TimeUnit.NANOSECONDS.toMillis(remainingNanos);
+                    int nanos = (int) (remainingNanos - TimeUnit.MILLISECONDS.toNanos(millis));
+                    runMonitor.wait(millis, nanos);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     LOG.log(Level.WARNING,
@@ -375,6 +391,10 @@ public abstract class BaseAgent implements AutoCloseable {
                     break;
                 }
             }
+        }
+
+        if (runActive.get()) {
+            LOG.warning("BaseAgent[" + agentId + "]: run loop did not stop within 5 s; proceeding with close");
         }
 
         if (clientClosed.compareAndSet(false, true)) {
