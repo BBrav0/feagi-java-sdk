@@ -25,7 +25,7 @@ public final class WebSocketRelayConfig implements WebSocketTransportConfig {
     /**
      * Create a WebSocket relay configuration.
      *
-     * @param bindHost host to bind on (e.g. "127.0.0.1", "0.0.0.0"); non-null, non-empty.
+     * @param bindHost host to bind on (e.g. "127.0.0.1", "0.0.0.0"); non-null, non-blank.
      *                 <p><strong>Security note:</strong> Using "0.0.0.0" binds on all network
      *                 interfaces, which may expose the relay on public networks in production
      *                 deployments. Use "127.0.0.1" for localhost-only binding in development.
@@ -54,7 +54,7 @@ public final class WebSocketRelayConfig implements WebSocketTransportConfig {
     /**
      * Create a WebSocket relay configuration using {@link Duration} for ping timing.
      *
-     * @param bindHost host to bind on; non-null, non-empty
+     * @param bindHost host to bind on; non-null, non-blank
      * @param bindPort port to bind on (1-65535)
      * @param embodimentId agent/embodiment identifier; non-null, non-empty
      * @param maxMessageSizeBytes maximum WebSocket message size in bytes; must be > 0
@@ -70,8 +70,9 @@ public final class WebSocketRelayConfig implements WebSocketTransportConfig {
             Duration pingInterval,
             Duration pingTimeout
     ) {
-        Objects.requireNonNull(pingInterval, "pingInterval must not be null");
-        Objects.requireNonNull(pingTimeout, "pingTimeout must not be null");
+        WebSocketConfigValidation.requireNonNegativeDuration(pingInterval, "pingInterval");
+        WebSocketConfigValidation.rejectSubMillisecondNonZeroDuration(pingInterval, "pingInterval");
+        WebSocketConfigValidation.requirePositiveDurationRepresentableAsMillis(pingTimeout, "pingTimeout");
         return new WebSocketRelayConfig(
                 bindHost,
                 bindPort,

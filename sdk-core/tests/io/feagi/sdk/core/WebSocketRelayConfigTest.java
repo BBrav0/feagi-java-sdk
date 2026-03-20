@@ -41,6 +41,15 @@ class WebSocketRelayConfigTest {
     }
 
     @Test
+    void testStaticFactoryWithZeroPingInterval() {
+        var config = WebSocketRelayConfig.of(
+                "127.0.0.1", 9052, "relay-1", 10485760,
+                Duration.ZERO, Duration.ofMillis(5000));
+        assertEquals(0, config.pingIntervalMs());
+        assertEquals(5000, config.pingTimeoutMs());
+    }
+
+    @Test
     void testDurationAccessors() {
         var config = new WebSocketRelayConfig("127.0.0.1", 9052, "relay-1", 10485760, 60000, 5000);
         assertEquals(Duration.ofMillis(60000), config.pingInterval());
@@ -63,6 +72,12 @@ class WebSocketRelayConfigTest {
     void testEmptyBindHost() {
         assertThrows(IllegalArgumentException.class,
                 () -> new WebSocketRelayConfig("", 9052, "relay-1", 10485760, 60000, 5000));
+    }
+
+    @Test
+    void testBlankBindHost() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new WebSocketRelayConfig(" ", 9052, "relay-1", 10485760, 60000, 5000));
     }
 
     @Test
@@ -99,6 +114,32 @@ class WebSocketRelayConfigTest {
     void testEmptyEmbodimentId() {
         assertThrows(IllegalArgumentException.class,
                 () -> new WebSocketRelayConfig("127.0.0.1", 9052, "", 10485760, 60000, 5000));
+    }
+
+    @Test
+    void testBlankEmbodimentId() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new WebSocketRelayConfig("127.0.0.1", 9052, "  ", 10485760, 60000, 5000));
+    }
+
+    @Test
+    void testOfSubMillisecondPingIntervalRejected() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> WebSocketRelayConfig.of(
+                        "127.0.0.1", 9052, "relay-1", 10485760,
+                        Duration.ofNanos(500_000), Duration.ofMillis(5000)));
+        assertTrue(ex.getMessage().contains("pingInterval"));
+        assertTrue(ex.getMessage().contains("sub-millisecond"));
+    }
+
+    @Test
+    void testOfSubMillisecondPingTimeoutRejected() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> WebSocketRelayConfig.of(
+                        "127.0.0.1", 9052, "relay-1", 10485760,
+                        Duration.ZERO, Duration.ofNanos(500_000)));
+        assertTrue(ex.getMessage().contains("pingTimeout"));
+        assertTrue(ex.getMessage().contains("sub-millisecond"));
     }
 
     @Test
@@ -156,10 +197,9 @@ class WebSocketRelayConfigTest {
     @Test
     void testToString() {
         var config = new WebSocketRelayConfig("127.0.0.1", 9052, "relay-1", 10485760, 60000, 5000);
-        String str = config.toString();
-        assertTrue(str.contains("WebSocketRelayConfig"));
-        assertTrue(str.contains("127.0.0.1"));
-        assertTrue(str.contains("9052"));
-        assertTrue(str.contains("relay-1"));
+        assertEquals(
+                "WebSocketRelayConfig{bindHost='127.0.0.1', bindPort=9052, embodimentId='relay-1', "
+                        + "maxMessageSizeBytes=10485760, pingIntervalMs=60000, pingTimeoutMs=5000}",
+                config.toString());
     }
 }

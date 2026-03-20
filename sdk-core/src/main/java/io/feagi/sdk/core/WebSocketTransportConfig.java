@@ -9,8 +9,10 @@ package io.feagi.sdk.core;
  * Sealed interface for WebSocket transport configuration modes.
  *
  * <p>Permitted implementations:
- * - {@link WebSocketClientConfig} - client mode (connects to relay)
- * - {@link WebSocketRelayConfig} - server/relay mode (listens for connections)
+ * <ul>
+ *   <li>{@link WebSocketClientConfig} &mdash; client mode (connects to relay)</li>
+ *   <li>{@link WebSocketRelayConfig} &mdash; server/relay mode (listens for connections)</li>
+ * </ul>
  */
 public sealed interface WebSocketTransportConfig
     permits WebSocketClientConfig, WebSocketRelayConfig {}

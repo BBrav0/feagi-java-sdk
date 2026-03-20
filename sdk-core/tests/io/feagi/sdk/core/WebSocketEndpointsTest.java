@@ -8,10 +8,10 @@ package io.feagi.sdk.core;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WebSocketEndpointsTest {
     @Test
@@ -256,9 +256,11 @@ class WebSocketEndpointsTest {
                 null,
                 null
         );
-        String str = endpoints.toString();
-        assertTrue(str.contains("WebSocketEndpoints"));
-        assertTrue(str.contains("ws://127.0.0.1:9053"));
-        assertTrue(str.contains("ws://127.0.0.1:9051"));
+        assertEquals(
+                "WebSocketEndpoints{registrationEndpoint='ws://127.0.0.1:9053', "
+                        + "sensoryEndpoint='ws://127.0.0.1:9051'}",
+                endpoints.toString());
+        assertFalse(endpoints.toString().contains("motorEndpoint"));
+        assertFalse(endpoints.toString().contains("null"));
     }
 }

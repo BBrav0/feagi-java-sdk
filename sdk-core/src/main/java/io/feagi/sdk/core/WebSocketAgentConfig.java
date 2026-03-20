@@ -15,17 +15,12 @@ import java.util.Objects;
  * - No hidden defaults for endpoints or timeouts.
  * - Validate all values at construction time.
  *
- * <p>For complex configurations with many parameters, prefer using the {@link #builder()}
- * to avoid parameter ordering mistakes:
- * <pre>{@code
- * WebSocketAgentConfig config = WebSocketAgentConfig.builder()
- *     .agentId("agent-123")
- *     .agentType(AgentType.BOTH)
- *     .endpoints(endpoints)
- *     .capabilities(capabilities)
- *     .transportConfig(transportConfig)
- *     .build();
- * }</pre>
+ * <p>For complex configurations with many parameters, prefer {@link #builder}.
+ *
+ * <p><strong>Timeouts vs transport:</strong> {@link #connectionTimeout} limits SDK-level registration
+ * and agent requests. When {@link #transportConfig} is a {@link WebSocketClientConfig},
+ * {@link WebSocketClientConfig#connectionTimeoutMs} applies separately to the relay socket connect.
+ * Neither value overrides the other.
  */
 public final class WebSocketAgentConfig {
     private final String agentId;
@@ -48,7 +43,9 @@ public final class WebSocketAgentConfig {
      * @param endpoints explicit FEAGI WebSocket endpoints
      * @param capabilities declared agent capabilities
      * @param heartbeatInterval heartbeat interval (0 disables)
-     * @param connectionTimeout connection timeout for requests
+     * @param connectionTimeout SDK-level connection timeout for registration and agent requests; non-null
+     *                          and positive. Independent of {@link WebSocketClientConfig#connectionTimeoutMs}
+     *                          when using client transport.
      * @param registrationRetries registration retry attempts
      * @param retryBackoff retry backoff duration
      * @param transportConfig WebSocket transport mode configuration (client or relay)
@@ -180,7 +177,8 @@ public final class WebSocketAgentConfig {
     }
 
     /**
-     * Return the connection timeout.
+     * Return the SDK-level connection timeout (registration and agent requests).
+     * Differs from {@link WebSocketClientConfig#connectionTimeoutMs} when transport is client mode.
      */
     public Duration connectionTimeout() {
         return connectionTimeout;
@@ -209,24 +207,17 @@ public final class WebSocketAgentConfig {
 
     /**
      * Return true if transport is configured for client (relay client) mode.
-     *
-     * <p>Note: While {@link WebSocketTransportConfig} is a sealed interface with only
-     * {@link WebSocketClientConfig} and {@link WebSocketRelayConfig} as permitted subtypes,
-     * pattern matching in switch requires Java 21+. When upgrading to Java 21+, this
-     * can be converted to an exhaustive switch expression for compile-time safety.
      */
+    // WebSocketTransportConfig is sealed to WebSocketClientConfig and WebSocketRelayConfig; with Java 21+,
+    // this could use an exhaustive switch on the sealed hierarchy for compile-time coverage.
     public boolean isClientMode() {
         return transportConfig instanceof WebSocketClientConfig;
     }
 
     /**
      * Return true if transport is configured for relay (server) mode.
-     *
-     * <p>Note: While {@link WebSocketTransportConfig} is a sealed interface with only
-     * {@link WebSocketClientConfig} and {@link WebSocketRelayConfig} as permitted subtypes,
-     * pattern matching in switch requires Java 21+. When upgrading to Java 21+, this
-     * can be converted to an exhaustive switch expression for compile-time safety.
      */
+    // See isClientMode() for notes on sealed transport types and Java 21+ pattern matching.
     public boolean isRelayMode() {
         return transportConfig instanceof WebSocketRelayConfig;
     }
@@ -273,19 +264,10 @@ public final class WebSocketAgentConfig {
      *
      * <p>This builder helps prevent parameter ordering mistakes when constructing
      * configurations with many parameters, especially when multiple parameters share
-     * the same type (e.g., {@code connectionTimeout} and {@code retryBackoff} are both
-     * {@link Duration}).
+     * the same type (for example connectionTimeout and retryBackoff are both Duration values).
      *
-     * <p>Required parameters must be set before calling {@link #build()}:
-     * <ul>
-     *   <li>{@link #agentId(String)}</li>
-     *   <li>{@link #agentType(AgentType)}</li>
-     *   <li>{@link #endpoints(WebSocketEndpoints)}</li>
-     *   <li>{@link #capabilities(AgentCapabilities)}</li>
-     *   <li>{@link #connectionTimeout(Duration)}</li>
-     *   <li>{@link #retryBackoff(Duration)}</li>
-     *   <li>{@link #transportConfig(WebSocketTransportConfig)}</li>
-     * </ul>
+     * <p>Required parameters must be set before calling {@link #build}:
+     * agentId, agentType, endpoints, capabilities, connectionTimeout, retryBackoff, transportConfig.
      */
     public static final class Builder {
         private String agentId;
@@ -348,7 +330,7 @@ public final class WebSocketAgentConfig {
         /**
          * Set the heartbeat interval.
          *
-         * @param heartbeatInterval heartbeat interval (zero disables); defaults to {@code Duration.ZERO}
+         * @param heartbeatInterval heartbeat interval, or zero to disable
          * @return this builder
          */
         public Builder heartbeatInterval(Duration heartbeatInterval) {
@@ -357,9 +339,9 @@ public final class WebSocketAgentConfig {
         }
 
         /**
-         * Set the connection timeout for requests.
+         * Set the SDK-level connection timeout for registration and agent requests.
          *
-         * @param connectionTimeout connection timeout; non-null, must be > 0
+         * @param connectionTimeout non-null positive duration, independent of relay transport connect timeout
          * @return this builder
          */
         public Builder connectionTimeout(Duration connectionTimeout) {
@@ -381,7 +363,7 @@ public final class WebSocketAgentConfig {
         /**
          * Set the retry backoff duration.
          *
-         * @param retryBackoff retry backoff duration; non-null, must be > 0
+         * @param retryBackoff retry backoff duration; non-null, must be positive
          * @return this builder
          */
         public Builder retryBackoff(Duration retryBackoff) {

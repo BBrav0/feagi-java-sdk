@@ -58,6 +58,12 @@ class WebSocketClientConfigTest {
     }
 
     @Test
+    void testBlankHost() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new WebSocketClientConfig("   ", 8080, "agent-1", 5000, 100));
+    }
+
+    @Test
     void testPortZero() {
         assertThrows(IllegalArgumentException.class,
                 () -> new WebSocketClientConfig("127.0.0.1", 0, "agent-1", 5000, 100));
@@ -91,6 +97,32 @@ class WebSocketClientConfigTest {
     void testEmptyEmbodimentId() {
         assertThrows(IllegalArgumentException.class,
                 () -> new WebSocketClientConfig("127.0.0.1", 8080, "", 5000, 100));
+    }
+
+    @Test
+    void testBlankEmbodimentId() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new WebSocketClientConfig("127.0.0.1", 8080, " \t", 5000, 100));
+    }
+
+    @Test
+    void testOfSubMillisecondConnectionTimeoutRejected() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> WebSocketClientConfig.of(
+                        "127.0.0.1", 8080, "agent-1",
+                        Duration.ofNanos(500_000), Duration.ofMillis(100)));
+        assertTrue(ex.getMessage().contains("connectionTimeout"));
+        assertTrue(ex.getMessage().contains("sub-millisecond"));
+    }
+
+    @Test
+    void testOfSubMillisecondReceiveTimeoutRejected() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> WebSocketClientConfig.of(
+                        "127.0.0.1", 8080, "agent-1",
+                        Duration.ofMillis(100), Duration.ofNanos(500_000)));
+        assertTrue(ex.getMessage().contains("receiveTimeout"));
+        assertTrue(ex.getMessage().contains("sub-millisecond"));
     }
 
     @Test
@@ -142,10 +174,9 @@ class WebSocketClientConfigTest {
     @Test
     void testToString() {
         var config = new WebSocketClientConfig("127.0.0.1", 8080, "agent-1", 5000, 100);
-        String str = config.toString();
-        assertTrue(str.contains("WebSocketClientConfig"));
-        assertTrue(str.contains("127.0.0.1"));
-        assertTrue(str.contains("8080"));
-        assertTrue(str.contains("agent-1"));
+        assertEquals(
+                "WebSocketClientConfig{host='127.0.0.1', port=8080, embodimentId='agent-1', "
+                        + "connectionTimeoutMs=5000, receiveTimeoutMs=100}",
+                config.toString());
     }
 }

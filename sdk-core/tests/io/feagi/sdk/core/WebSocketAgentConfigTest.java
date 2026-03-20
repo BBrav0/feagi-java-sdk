@@ -473,8 +473,17 @@ class WebSocketAgentConfigTest {
         );
 
         String str = config.toString();
-        assertTrue(str.contains("WebSocketAgentConfig"));
-        assertTrue(str.contains("test-agent"));
-        assertTrue(str.contains("BOTH"));
+        assertTrue(str.startsWith("WebSocketAgentConfig{"));
+        assertTrue(str.contains("agentId='test-agent'"));
+        assertTrue(str.contains("agentType=BOTH"));
+        assertTrue(str.contains("heartbeatInterval=PT1S"));
+        assertTrue(str.contains("connectionTimeout=PT5S"));
+        assertTrue(str.contains("registrationRetries=3"));
+        assertTrue(str.contains("retryBackoff=PT0.1S"));
+        assertTrue(str.contains("endpoints="));
+        assertTrue(str.contains("capabilities="));
+        assertTrue(str.contains(
+                "transportConfig=WebSocketClientConfig{host='127.0.0.1', port=8080, embodimentId='agent-1', "
+                        + "connectionTimeoutMs=5000, receiveTimeoutMs=100}"));
     }
 }

@@ -156,12 +156,22 @@ public final class WebSocketEndpoints {
 
     @Override
     public String toString() {
-        return "WebSocketEndpoints{" +
-               "registrationEndpoint='" + registrationEndpoint + '\'' +
-               ", sensoryEndpoint='" + sensoryEndpoint + '\'' +
-               ", motorEndpoint='" + motorEndpoint + '\'' +
-               ", visualizationEndpoint='" + visualizationEndpoint + '\'' +
-               ", controlEndpoint='" + controlEndpoint + '\'' +
-               '}';
+        StringBuilder sb = new StringBuilder("WebSocketEndpoints{");
+        sb.append("registrationEndpoint='").append(registrationEndpoint).append('\'');
+        if (sensoryEndpoint != null) {
+            sb.append(", sensoryEndpoint='").append(sensoryEndpoint).append('\'');
+        }
+        if (motorEndpoint != null) {
+            sb.append(", motorEndpoint='").append(motorEndpoint).append('\'');
+        }
+        if (visualizationEndpoint != null) {
+            sb.append(", visualizationEndpoint='").append(visualizationEndpoint).append('\'');
+        }
+        if (controlEndpoint != null) {
+            sb.append(", controlEndpoint='").append(controlEndpoint).append('\'');
+        }
+        sb.append('}');
+        return sb.toString();
     }
 }
+

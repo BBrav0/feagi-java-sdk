@@ -13,6 +13,11 @@ import java.util.Objects;
  *
  * <p>Used when the agent connects as a WebSocket client to a platform-managed relay
  * (e.g. Tauri/Electron BLE relay). No builder needed: all fields are scalar and required.
+ *
+ * <p><strong>Timeouts vs {@link WebSocketAgentConfig}:</strong> {@link #connectionTimeoutMs} is the
+ * transport-layer socket connect timeout for the relay WebSocket client. {@link WebSocketAgentConfig#connectionTimeout}
+ * is the SDK-level timeout for registration and other agent requests. They operate at different layers;
+ * neither overrides the other.
  */
 public final class WebSocketClientConfig implements WebSocketTransportConfig {
     private final String host;
@@ -24,9 +29,9 @@ public final class WebSocketClientConfig implements WebSocketTransportConfig {
     /**
      * Create a WebSocket client configuration.
      *
-     * @param host relay server host (e.g. "127.0.0.1"); non-null, non-empty
+     * @param host relay server host (e.g. "127.0.0.1"); non-null, non-blank
      * @param port relay server port (1-65535)
-     * @param embodimentId agent/embodiment identifier; non-null, non-empty
+     * @param embodimentId agent/embodiment identifier; non-null, non-blank
      * @param connectionTimeoutMs connection timeout in milliseconds; must be > 0
      * @param receiveTimeoutMs receive timeout in milliseconds; must be > 0
      */
@@ -50,9 +55,9 @@ public final class WebSocketClientConfig implements WebSocketTransportConfig {
      * <p>This factory method aligns with {@link WebSocketAgentConfig}'s use of {@code Duration},
      * making it easier to compose configurations without manual unit conversion.
      *
-     * @param host relay server host (e.g. "127.0.0.1"); non-null, non-empty
+     * @param host relay server host (e.g. "127.0.0.1"); non-null, non-blank
      * @param port relay server port (1-65535)
-     * @param embodimentId agent/embodiment identifier; non-null, non-empty
+     * @param embodimentId agent/embodiment identifier; non-null, non-blank
      * @param connectionTimeout connection timeout; non-null, must be > 0
      * @param receiveTimeout receive timeout; non-null, must be > 0
      * @return a new WebSocketClientConfig instance
@@ -64,8 +69,10 @@ public final class WebSocketClientConfig implements WebSocketTransportConfig {
             Duration connectionTimeout,
             Duration receiveTimeout
     ) {
-        Objects.requireNonNull(connectionTimeout, "connectionTimeout must not be null");
-        Objects.requireNonNull(receiveTimeout, "receiveTimeout must not be null");
+        WebSocketConfigValidation.requirePositiveDurationRepresentableAsMillis(
+                connectionTimeout, "connectionTimeout");
+        WebSocketConfigValidation.requirePositiveDurationRepresentableAsMillis(
+                receiveTimeout, "receiveTimeout");
         return new WebSocketClientConfig(
                 host,
                 port,
