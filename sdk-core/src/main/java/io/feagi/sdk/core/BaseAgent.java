@@ -253,7 +253,11 @@ public abstract class BaseAgent implements AutoCloseable {
      *   <li>Sleep for remaining tick time</li>
      * </ol>
      *
+     * <p>IF this method throws (e.g., deu to hardware initialization failure or exceeding max consecutive errors), the agent remains connected.
+     * Callers may invoke {@link #run(AgentRunConfig)} again to restart the loop, or call {@link #close()} to fully shut doww the agent.
+     * 
      * @param runConfig loop tuning (tick rate, error threshold); must not be null
+     * @throws FeagiSdkException     if the run loop aborts due to consecutive errors
      * @throws IllegalStateException if not connected
      * @throws FeagiSdkException     if consecutive errors exceed the threshold
      * @throws InterruptedException  if the thread is interrupted during sleep
@@ -266,7 +270,9 @@ public abstract class BaseAgent implements AutoCloseable {
         }
 
         stopRequested.set(false);
-        runActive.set(true);
+        if (!runActive.compareAndSet(false, true)) {
+            throw new IllegalStateException("Agent '" + agentId + "' is already running.");
+        }
         try {
             LOG.info("BaseAgent[" + agentId + "]: initializing hardware");
             try {
@@ -362,7 +368,7 @@ public abstract class BaseAgent implements AutoCloseable {
         synchronized (runMonitor) {
             while (runActive.get()) {
                 try {
-                    runMonitor.wait();
+                    runMonitor.wait(5_000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     LOG.log(Level.WARNING,
