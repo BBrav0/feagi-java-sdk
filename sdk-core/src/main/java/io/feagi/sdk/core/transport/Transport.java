@@ -16,7 +16,7 @@ public interface Transport extends AutoCloseable {
      * <p>No implicit buffering: underlying implementation may drop on backpressure.
      *
      * @param payload payload bytes to send; {@code null} or a zero-length array is a no-op
-     *     (implementations may log at {@link java.util.logging.Level#FINE})
+     *     (implementations may log skipped sends at {@link java.util.logging.Level#FINE})
      */
     void sendSensoryBytes(byte[] payload);
 
@@ -27,9 +27,7 @@ public interface Transport extends AutoCloseable {
      */
     byte[] pollMotorBytes();
 
-    /**
-     * Close the transport and release related resources.
-     */
+    /** {@inheritDoc} */
     @Override
     void close();
 }

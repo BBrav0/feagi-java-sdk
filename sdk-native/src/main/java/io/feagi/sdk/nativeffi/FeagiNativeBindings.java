@@ -255,6 +255,9 @@ public final class FeagiNativeBindings {
 
     /**
      * Set motor socket configuration.
+     *
+     * <p>Native implementation lives in the {@code feagi-java-ffi} / CMake native library, not in
+     * this repository; regenerate JNI headers after signature changes.
      */
     public static native int feagiConfigSetMotorSocketConfig(
             long cfgHandle,

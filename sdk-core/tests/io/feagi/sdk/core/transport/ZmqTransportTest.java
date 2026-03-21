@@ -173,20 +173,19 @@ public class ZmqTransportTest {
     @Test
     public void pollMotorBytes_returnsPayloadFromFeagi() throws Exception {
         try (ZmqTransport transport = new ZmqTransport(bothAgentConfig())) {
-            byte[] payload = "motor_data".getBytes();
-            boolean sent = mockFeagiMotorSocket.send(payload);
-            assertTrue(sent, "Mock FEAGI motor socket should send successfully");
+            transport.setMotorReceiveTimeoutMsForTest(1000);
+            try {
+                byte[] payload = "motor_data".getBytes();
+                boolean sent = mockFeagiMotorSocket.send(payload);
+                assertTrue(sent, "Mock FEAGI motor socket should send successfully");
 
-            byte[] receivedBytes = null;
-            for (int i = 0; i < 50 && receivedBytes == null; i++) {
-                receivedBytes = transport.pollMotorBytes();
-                if (receivedBytes == null) {
-                    Thread.sleep(10);
-                }
+                byte[] receivedBytes = transport.recvMotorBytesBlockingForTest();
+
+                assertNotNull(receivedBytes, "Agent motor socket should receive payload");
+                assertArrayEquals(payload, receivedBytes);
+            } finally {
+                transport.setMotorReceiveTimeoutMsForTest(-1);
             }
-
-            assertNotNull(receivedBytes, "Agent motor socket should receive payload");
-            assertArrayEquals(payload, receivedBytes);
         }
     }
 
@@ -243,6 +242,45 @@ public class ZmqTransportTest {
             // (unlike the happy-path test, which waits for delivery).
             byte[] received = mockFeagiSensorySocket.recv(ZMQ.DONTWAIT);
             assertNull(received, "Null payload must not enqueue a ZMQ frame");
+        }
+    }
+
+    @Test
+    public void sendSensoryBytes_emptyPayload_isNoOp() {
+        try (ZmqTransport transport = new ZmqTransport(bothAgentConfig())) {
+            assertDoesNotThrow(() -> transport.sendSensoryBytes(new byte[0]));
+            byte[] received = mockFeagiSensorySocket.recv(ZMQ.DONTWAIT);
+            assertNull(received, "Empty payload must not enqueue a ZMQ frame");
+        }
+    }
+
+    /**
+     * {@link AgentConfig} normally rejects BOTH without a sensory URI; the package-private
+     * constructor mirrors the public one so the defensive "missing endpoint" path stays covered.
+     */
+    @Test
+    public void constructor_missingSensoryUri_opensMotorOnly_sendSensoryThrows() {
+        FeagiEndpoints endpoints = new FeagiEndpoints(
+                REGISTRATION_PLACEHOLDER,
+                null,
+                motorEndpoint,
+                null,
+                null);
+        try (ZmqTransport transport = new ZmqTransport(
+                AgentType.BOTH,
+                endpoints,
+                DEFAULT_SENSORY_SOCKET,
+                DEFAULT_MOTOR_SOCKET)) {
+            assertThrows(IllegalStateException.class, () -> transport.sendSensoryBytes(new byte[] {1}));
+
+            transport.setMotorReceiveTimeoutMsForTest(1000);
+            try {
+                byte[] payload = "motor_still_works".getBytes();
+                assertTrue(mockFeagiMotorSocket.send(payload));
+                assertArrayEquals(payload, transport.recvMotorBytesBlockingForTest());
+            } finally {
+                transport.setMotorReceiveTimeoutMsForTest(-1);
+            }
         }
     }
 }
