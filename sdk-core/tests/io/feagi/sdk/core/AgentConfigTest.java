@@ -153,6 +153,74 @@ public class AgentConfigTest {
     }
 
     /**
+     * Bidirectional agents require sensory socket config.
+     */
+    @Test
+    public void bothAgent_requiresSensorySocketConfig() {
+        FeagiEndpoints endpoints = new FeagiEndpoints(
+                "tcp://host:30001",
+                "tcp://host:5560",
+                "tcp://host:5564",
+                null,
+                null);
+        AgentCapabilities capabilities = AgentCapabilities.builder()
+                .vision(VisionCapability.fromTargetArea("camera", 640, 480, 3, "i_vision"))
+                .motor(MotorCapability.fromUnits(
+                        "servo",
+                        1,
+                        List.of(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0))))
+                .build();
+        NullPointerException ex = assertThrows(
+                NullPointerException.class,
+                () -> new AgentConfig(
+                        "agent",
+                        AgentType.BOTH,
+                        endpoints,
+                        capabilities,
+                        Duration.ofSeconds(5),
+                        Duration.ofSeconds(2),
+                        3,
+                        Duration.ofMillis(500),
+                        null,
+                        new MotorSocketConfig(1, 0)));
+        assertEquals("sensorySocketConfig is required for agent type BOTH", ex.getMessage());
+    }
+
+    /**
+     * Bidirectional agents require motor socket config.
+     */
+    @Test
+    public void bothAgent_requiresMotorSocketConfig() {
+        FeagiEndpoints endpoints = new FeagiEndpoints(
+                "tcp://host:30001",
+                "tcp://host:5560",
+                "tcp://host:5564",
+                null,
+                null);
+        AgentCapabilities capabilities = AgentCapabilities.builder()
+                .vision(VisionCapability.fromTargetArea("camera", 640, 480, 3, "i_vision"))
+                .motor(MotorCapability.fromUnits(
+                        "servo",
+                        1,
+                        List.of(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0))))
+                .build();
+        NullPointerException ex = assertThrows(
+                NullPointerException.class,
+                () -> new AgentConfig(
+                        "agent",
+                        AgentType.BOTH,
+                        endpoints,
+                        capabilities,
+                        Duration.ofSeconds(5),
+                        Duration.ofSeconds(2),
+                        3,
+                        Duration.ofMillis(500),
+                        new SensorySocketConfig(1, 0, true),
+                        null));
+        assertEquals("motorSocketConfig is required for agent type BOTH", ex.getMessage());
+    }
+
+    /**
      * Validate that motor capability can be constructed from semantic units.
      */
     @Test

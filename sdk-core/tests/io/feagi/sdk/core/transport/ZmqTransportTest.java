@@ -166,6 +166,8 @@ public class ZmqTransportTest {
             assertNotNull(receivedBytes, "FEAGI sensory socket should receive payload");
             assertArrayEquals(payload, receivedBytes);
         } finally {
+            // Restore default blocking so other tests (or refactored teardown order) never inherit a
+            // 1s timeout on the shared mock socket.
             mockFeagiSensorySocket.setReceiveTimeOut(-1);
         }
     }

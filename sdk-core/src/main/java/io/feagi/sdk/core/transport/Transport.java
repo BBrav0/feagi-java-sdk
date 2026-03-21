@@ -27,7 +27,12 @@ public interface Transport extends AutoCloseable {
      */
     byte[] pollMotorBytes();
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Narrows {@link AutoCloseable#close()} to not declare {@code throws Exception} so callers are
+     * not forced to handle checked exceptions.
+     */
     @Override
     void close();
 }

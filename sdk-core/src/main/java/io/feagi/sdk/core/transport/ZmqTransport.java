@@ -42,7 +42,8 @@ public class ZmqTransport implements Transport {
     private final Object motorLock = new Object();
     private final ZContext context;
     private final AgentType agentType;
-    private boolean closed;
+    /** Set under {@code sensoryLock} + {@code motorLock} in {@link #close()}; volatile for readability. */
+    private volatile boolean closed;
 
     private ZMQ.Socket sensorySocket;
     private ZMQ.Socket motorSocket;
@@ -108,9 +109,8 @@ public class ZmqTransport implements Transport {
             FeagiEndpoints endpoints,
             SensorySocketConfig sensoryCfgNullable,
             MotorSocketConfig motorCfgNullable) {
-        boolean hasSensory =
-                agentType == AgentType.SENSORY || agentType == AgentType.BOTH;
-        boolean hasMotor = agentType == AgentType.MOTOR || agentType == AgentType.BOTH;
+        boolean hasSensory = agentType.needsSensory();
+        boolean hasMotor = agentType.needsMotor();
 
         if (hasSensory) {
             String sensoryEndpoint = endpoints.sensoryEndpoint();
@@ -124,6 +124,10 @@ public class ZmqTransport implements Transport {
                 LOG.info("Connecting ZMQ PUSH to sensory endpoint: " + sensoryEndpoint);
                 sensorySocket.connect(sensoryEndpoint);
             } else {
+                // Intentionally no exception here: valid AgentConfig + FeagiEndpoints always supply
+                // required URIs; the package-private constructor is for tests with inconsistent
+                // endpoints. Failing at first send keeps ctor side-effect free and allows partial
+                // transport (e.g. motor-only) in those scenarios.
                 LOG.warning("AgentType indicates sensory, but no sensory endpoint was provided.");
             }
         }
@@ -138,6 +142,7 @@ public class ZmqTransport implements Transport {
                 LOG.info("Connecting ZMQ PULL to motor endpoint: " + motorEndpoint);
                 motorSocket.connect(motorEndpoint);
             } else {
+                // Same deferred-failure rationale as the sensory branch above.
                 LOG.warning("AgentType indicates motor, but no motor endpoint was provided.");
             }
         }

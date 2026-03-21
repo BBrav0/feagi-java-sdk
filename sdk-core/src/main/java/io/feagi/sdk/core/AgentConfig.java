@@ -14,6 +14,9 @@ import java.util.Objects;
  * <p>Guardrails:
  * - No hidden defaults for endpoints or timeouts.
  * - Validate all values at construction time.
+ *
+ * <p><b>API note:</b> the constructor has many parameters; a builder or factory may be added
+ * before this type is treated as stable API.
  */
 public final class AgentConfig {
     private final String agentId;
@@ -75,14 +78,14 @@ public final class AgentConfig {
         this.registrationRetries = registrationRetries;
         this.retryBackoff = requirePositive(retryBackoff, "retryBackoff");
 
-        if (needsSensory(agentType)) {
+        if (agentType.needsSensory()) {
             this.sensorySocketConfig = Objects.requireNonNull(
                     sensorySocketConfig,
                     "sensorySocketConfig is required for agent type " + agentType);
         } else {
             this.sensorySocketConfig = sensorySocketConfig;
         }
-        if (needsMotor(agentType)) {
+        if (agentType.needsMotor()) {
             this.motorSocketConfig = Objects.requireNonNull(
                     motorSocketConfig,
                     "motorSocketConfig is required for agent type " + agentType);
@@ -108,14 +111,6 @@ public final class AgentConfig {
             throw new IllegalArgumentException(name + " must be >= 0");
         }
         return v;
-    }
-
-    private static boolean needsSensory(AgentType agentType) {
-        return agentType == AgentType.SENSORY || agentType == AgentType.BOTH;
-    }
-
-    private static boolean needsMotor(AgentType agentType) {
-        return agentType == AgentType.MOTOR || agentType == AgentType.BOTH;
     }
 
     public String agentId() {
