@@ -16,5 +16,6 @@ sourceSets {
 
 dependencies {
     // Intentionally minimal for the skeleton.
+    implementation("org.zeromq:jeromq:0.6.0")
 }
 
