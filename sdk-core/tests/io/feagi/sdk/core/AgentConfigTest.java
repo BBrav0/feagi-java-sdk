@@ -47,7 +47,7 @@ public class AgentConfigTest {
                         3,
                         Duration.ofMillis(500),
                         new SensorySocketConfig(1, 0, true),
-                        new MotorSocketConfig(1, 0, true)
+                        null
                 )
         );
         assertEquals("sensoryEndpoint must be set for this agent type", ex.getMessage());
@@ -82,11 +82,74 @@ public class AgentConfigTest {
                         Duration.ofSeconds(2),
                         3,
                         Duration.ofMillis(500),
-                        new SensorySocketConfig(1, 0, true),
-                        new MotorSocketConfig(1, 0, true)
+                        null,
+                        new MotorSocketConfig(1, 0)
                 )
         );
         assertEquals("Motor agent must declare motor capability", ex.getMessage());
+    }
+
+    /**
+     * Sensory agents require a non-null sensory socket config.
+     */
+    @Test
+    public void sensoryAgent_requiresSensorySocketConfig() {
+        FeagiEndpoints endpoints = new FeagiEndpoints(
+                "tcp://host:30001",
+                "tcp://host:5560",
+                null,
+                null,
+                null);
+        AgentCapabilities capabilities = AgentCapabilities.builder()
+                .vision(VisionCapability.fromTargetArea("camera", 640, 480, 3, "i_vision"))
+                .build();
+        NullPointerException ex = assertThrows(
+                NullPointerException.class,
+                () -> new AgentConfig(
+                        "agent",
+                        AgentType.SENSORY,
+                        endpoints,
+                        capabilities,
+                        Duration.ofSeconds(5),
+                        Duration.ofSeconds(2),
+                        3,
+                        Duration.ofMillis(500),
+                        null,
+                        null));
+        assertEquals("sensorySocketConfig is required for agent type SENSORY", ex.getMessage());
+    }
+
+    /**
+     * Motor agents require a non-null motor socket config.
+     */
+    @Test
+    public void motorAgent_requiresMotorSocketConfig() {
+        FeagiEndpoints endpoints = new FeagiEndpoints(
+                "tcp://host:30001",
+                null,
+                "tcp://host:5564",
+                null,
+                null);
+        AgentCapabilities capabilities = AgentCapabilities.builder()
+                .motor(MotorCapability.fromUnits(
+                        "servo",
+                        1,
+                        List.of(new MotorUnitSpec(MotorUnit.ROTARY_MOTOR, 0))))
+                .build();
+        NullPointerException ex = assertThrows(
+                NullPointerException.class,
+                () -> new AgentConfig(
+                        "agent",
+                        AgentType.MOTOR,
+                        endpoints,
+                        capabilities,
+                        Duration.ofSeconds(5),
+                        Duration.ofSeconds(2),
+                        3,
+                        Duration.ofMillis(500),
+                        null,
+                        null));
+        assertEquals("motorSocketConfig is required for agent type MOTOR", ex.getMessage());
     }
 
     /**

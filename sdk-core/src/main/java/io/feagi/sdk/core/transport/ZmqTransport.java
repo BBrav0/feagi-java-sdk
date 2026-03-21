@@ -8,6 +8,8 @@ package io.feagi.sdk.core.transport;
 import io.feagi.sdk.core.AgentConfig;
 import io.feagi.sdk.core.AgentType;
 import io.feagi.sdk.core.FeagiSdkException;
+import io.feagi.sdk.core.MotorSocketConfig;
+import io.feagi.sdk.core.SensorySocketConfig;
 import org.zeromq.ZContext;
 import org.zeromq.ZMQ;
 import org.zeromq.SocketType;
@@ -23,6 +25,14 @@ import java.util.logging.Logger;
  * underlying ZMQ sockets (Jeromq sockets are not thread-safe). Operations are serialized on this
  * lock.
  *
+ * <p>Because send and receive share one lock, a slow or blocked {@link #pollMotorBytes} can delay
+ * {@link #sendSensoryBytes} and vice versa. For lowest cross-thread latency, avoid multiplexing
+ * high-frequency sensory sends and motor polls on the same {@code ZmqTransport} instance from
+ * different threads.
+ *
+ * <p>Only {@link AgentType#SENSORY}, {@link AgentType#MOTOR}, and {@link AgentType#BOTH} are
+ * supported; other types throw {@link IllegalArgumentException} at construction time.
+ *
  * <p>{@link #close()} is idempotent.
  */
 public class ZmqTransport implements Transport {
@@ -31,7 +41,7 @@ public class ZmqTransport implements Transport {
     private final Object lock = new Object();
     private final ZContext context;
     private final AgentType agentType;
-    private volatile boolean closed;
+    private boolean closed;
 
     private ZMQ.Socket sensorySocket;
     private ZMQ.Socket motorSocket;
@@ -61,9 +71,9 @@ public class ZmqTransport implements Transport {
                 hasMotor = true;
                 break;
             default:
-                // Visualization or infrastructure may not use sensory/motor transport in the same way,
-                // but if endpoints are present, they could be supported if needed.
-                break;
+                throw new IllegalArgumentException(
+                        "ZmqTransport supports only SENSORY, MOTOR, and BOTH agent types; got: "
+                                + agentType);
         }
 
         try {
@@ -71,9 +81,11 @@ public class ZmqTransport implements Transport {
                 String sensoryEndpoint = config.endpoints().sensoryEndpoint();
                 if (sensoryEndpoint != null && !sensoryEndpoint.isEmpty()) {
                     sensorySocket = context.createSocket(SocketType.PUSH);
-                    sensorySocket.setSndHWM(config.sensorySocketConfig().sendHwm());
-                    sensorySocket.setLinger(config.sensorySocketConfig().lingerMs());
-                    sensorySocket.setImmediate(config.sensorySocketConfig().immediate());
+                    SensorySocketConfig sCfg = Objects.requireNonNull(
+                            config.sensorySocketConfig(), "sensorySocketConfig");
+                    sensorySocket.setSndHWM(sCfg.sendHwm());
+                    sensorySocket.setLinger(sCfg.lingerMs());
+                    sensorySocket.setImmediate(sCfg.immediate());
                     LOG.info("Connecting ZMQ PUSH to sensory endpoint: " + sensoryEndpoint);
                     sensorySocket.connect(sensoryEndpoint);
                 } else {
@@ -85,9 +97,10 @@ public class ZmqTransport implements Transport {
                 String motorEndpoint = config.endpoints().motorEndpoint();
                 if (motorEndpoint != null && !motorEndpoint.isEmpty()) {
                     motorSocket = context.createSocket(SocketType.PULL);
-                    motorSocket.setRcvHWM(config.motorSocketConfig().rcvHwm());
-                    motorSocket.setLinger(config.motorSocketConfig().lingerMs());
-                    motorSocket.setConflate(config.motorSocketConfig().conflate());
+                    MotorSocketConfig mCfg = Objects.requireNonNull(
+                            config.motorSocketConfig(), "motorSocketConfig");
+                    motorSocket.setRcvHWM(mCfg.rcvHwm());
+                    motorSocket.setLinger(mCfg.lingerMs());
                     LOG.info("Connecting ZMQ PULL to motor endpoint: " + motorEndpoint);
                     motorSocket.connect(motorEndpoint);
                 } else {
@@ -110,12 +123,18 @@ public class ZmqTransport implements Transport {
                 throw new IllegalStateException(
                         "Sensory socket is not available (agentType=" + agentType + ")");
             }
-            if (payload != null && payload.length > 0) {
-                // Non-blocking send by default so we don't stall the agent
-                boolean sent = sensorySocket.send(payload, ZMQ.DONTWAIT);
-                if (!sent) {
-                    LOG.fine("Sensory payload dropped (ZMQ PUSH queue full)");
-                }
+            if (payload == null) {
+                LOG.fine("sendSensoryBytes skipped: null payload");
+                return;
+            }
+            if (payload.length == 0) {
+                LOG.fine("sendSensoryBytes skipped: empty payload");
+                return;
+            }
+            // Non-blocking send by default so we don't stall the agent
+            boolean sent = sensorySocket.send(payload, ZMQ.DONTWAIT);
+            if (!sent) {
+                LOG.fine("Sensory payload dropped (ZMQ PUSH queue full)");
             }
         }
     }

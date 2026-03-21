@@ -7,20 +7,22 @@ package io.feagi.sdk.core;
 
 /**
  * Motor socket configuration aligned with FEAGI agent settings.
+ *
+ * <p>Used with a ZMQ {@code PULL} socket in {@link io.feagi.sdk.core.transport.ZmqTransport}. ZMQ
+ * {@code CONFLATE} is not supported on {@code PULL} sockets in libzmq/jeromq, so this type only
+ * carries options that apply to the current transport shape ({@code rcvHwm}, {@code lingerMs}).
  */
 public final class MotorSocketConfig {
     private final int rcvHwm;
     private final int lingerMs;
-    private final boolean conflate;
 
     /**
      * Create a motor socket configuration.
      *
      * @param rcvHwm ZMQ receive high-water mark (must be >= 0)
      * @param lingerMs linger duration in ms (must be >= 0)
-     * @param conflate whether to conflate incoming messages (keep only the latest)
      */
-    public MotorSocketConfig(int rcvHwm, int lingerMs, boolean conflate) {
+    public MotorSocketConfig(int rcvHwm, int lingerMs) {
         if (rcvHwm < 0) {
             throw new IllegalArgumentException("rcvHwm must be >= 0");
         }
@@ -29,7 +31,6 @@ public final class MotorSocketConfig {
         }
         this.rcvHwm = rcvHwm;
         this.lingerMs = lingerMs;
-        this.conflate = conflate;
     }
 
     /**
@@ -44,12 +45,5 @@ public final class MotorSocketConfig {
      */
     public int lingerMs() {
         return lingerMs;
-    }
-
-    /**
-     * Return whether conflate mode is enabled.
-     */
-    public boolean conflate() {
-        return conflate;
     }
 }

@@ -40,8 +40,10 @@ public final class AgentConfig {
      * @param connectionTimeout connection timeout for requests
      * @param registrationRetries registration retry attempts
      * @param retryBackoff retry backoff duration
-     * @param sensorySocketConfig sensory socket configuration
-     * @param motorSocketConfig motor socket configuration
+     * @param sensorySocketConfig sensory socket configuration; required for {@link AgentType#SENSORY}
+     *     and {@link AgentType#BOTH}, otherwise {@code null}
+     * @param motorSocketConfig motor socket configuration; required for {@link AgentType#MOTOR} and
+     *     {@link AgentType#BOTH}, otherwise {@code null}
      */
     public AgentConfig(
             String agentId,
@@ -72,10 +74,21 @@ public final class AgentConfig {
         }
         this.registrationRetries = registrationRetries;
         this.retryBackoff = requirePositive(retryBackoff, "retryBackoff");
-        this.sensorySocketConfig = Objects.requireNonNull(
-                sensorySocketConfig, "sensorySocketConfig must not be null");
-        this.motorSocketConfig = Objects.requireNonNull(
-                motorSocketConfig, "motorSocketConfig must not be null");
+
+        if (needsSensory(agentType)) {
+            this.sensorySocketConfig = Objects.requireNonNull(
+                    sensorySocketConfig,
+                    "sensorySocketConfig is required for agent type " + agentType);
+        } else {
+            this.sensorySocketConfig = sensorySocketConfig;
+        }
+        if (needsMotor(agentType)) {
+            this.motorSocketConfig = Objects.requireNonNull(
+                    motorSocketConfig,
+                    "motorSocketConfig is required for agent type " + agentType);
+        } else {
+            this.motorSocketConfig = motorSocketConfig;
+        }
 
         this.endpoints.validateForAgentType(agentType);
         this.capabilities.validateForAgentType(agentType);
@@ -95,6 +108,14 @@ public final class AgentConfig {
             throw new IllegalArgumentException(name + " must be >= 0");
         }
         return v;
+    }
+
+    private static boolean needsSensory(AgentType agentType) {
+        return agentType == AgentType.SENSORY || agentType == AgentType.BOTH;
+    }
+
+    private static boolean needsMotor(AgentType agentType) {
+        return agentType == AgentType.MOTOR || agentType == AgentType.BOTH;
     }
 
     public String agentId() {
@@ -151,14 +172,16 @@ public final class AgentConfig {
     }
 
     /**
-     * Return sensory socket configuration.
+     * Return sensory socket configuration, or {@code null} when this agent type does not use
+     * sensory transport.
      */
     public SensorySocketConfig sensorySocketConfig() {
         return sensorySocketConfig;
     }
 
     /**
-     * Return motor socket configuration.
+     * Return motor socket configuration, or {@code null} when this agent type does not use motor
+     * transport.
      */
     public MotorSocketConfig motorSocketConfig() {
         return motorSocketConfig;

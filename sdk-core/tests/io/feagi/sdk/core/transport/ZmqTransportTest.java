@@ -45,7 +45,7 @@ public class ZmqTransportTest {
 
     private static final Duration ONE_SECOND = Duration.ofSeconds(1);
     private static final SensorySocketConfig DEFAULT_SENSORY_SOCKET = new SensorySocketConfig(1, 0, false);
-    private static final MotorSocketConfig DEFAULT_MOTOR_SOCKET = new MotorSocketConfig(1, 0, true);
+    private static final MotorSocketConfig DEFAULT_MOTOR_SOCKET = new MotorSocketConfig(1, 0);
 
     private ZContext feagiContext;
     private ZMQ.Socket mockFeagiSensorySocket;
@@ -127,7 +127,7 @@ public class ZmqTransportTest {
                 ONE_SECOND,
                 3,
                 ONE_SECOND,
-                DEFAULT_SENSORY_SOCKET,
+                null,
                 DEFAULT_MOTOR_SOCKET);
     }
 
@@ -151,24 +151,22 @@ public class ZmqTransportTest {
                 3,
                 ONE_SECOND,
                 DEFAULT_SENSORY_SOCKET,
-                DEFAULT_MOTOR_SOCKET);
+                null);
     }
 
     @Test
     public void sendSensoryBytes_deliversPayloadToFeagi() throws Exception {
+        mockFeagiSensorySocket.setReceiveTimeOut(1000);
         try (ZmqTransport transport = new ZmqTransport(bothAgentConfig())) {
             byte[] payload = "sensory_data".getBytes();
             transport.sendSensoryBytes(payload);
 
-            byte[] receivedBytes = mockFeagiSensorySocket.recv(ZMQ.DONTWAIT);
-
-            for (int i = 0; i < 10 && receivedBytes == null; i++) {
-                Thread.sleep(100);
-                receivedBytes = mockFeagiSensorySocket.recv(ZMQ.DONTWAIT);
-            }
+            byte[] receivedBytes = mockFeagiSensorySocket.recv(0);
 
             assertNotNull(receivedBytes, "FEAGI sensory socket should receive payload");
             assertArrayEquals(payload, receivedBytes);
+        } finally {
+            mockFeagiSensorySocket.setReceiveTimeOut(-1);
         }
     }
 
@@ -179,11 +177,12 @@ public class ZmqTransportTest {
             boolean sent = mockFeagiMotorSocket.send(payload);
             assertTrue(sent, "Mock FEAGI motor socket should send successfully");
 
-            byte[] receivedBytes = transport.pollMotorBytes();
-
-            for (int i = 0; i < 10 && receivedBytes == null; i++) {
-                Thread.sleep(100);
+            byte[] receivedBytes = null;
+            for (int i = 0; i < 50 && receivedBytes == null; i++) {
                 receivedBytes = transport.pollMotorBytes();
+                if (receivedBytes == null) {
+                    Thread.sleep(10);
+                }
             }
 
             assertNotNull(receivedBytes, "Agent motor socket should receive payload");
@@ -228,9 +227,20 @@ public class ZmqTransportTest {
     }
 
     @Test
+    public void close_isIdempotent() {
+        ZmqTransport transport = new ZmqTransport(bothAgentConfig());
+        assertDoesNotThrow(() -> {
+            transport.close();
+            transport.close();
+        });
+    }
+
+    @Test
     public void sendSensoryBytes_nullPayload_isNoOp() {
         try (ZmqTransport transport = new ZmqTransport(bothAgentConfig())) {
             assertDoesNotThrow(() -> transport.sendSensoryBytes(null));
+            // No ZMQ frame is sent for null, so a single DONTWAIT recv cannot race undelivered data
+            // (unlike the happy-path test, which waits for delivery).
             byte[] received = mockFeagiSensorySocket.recv(ZMQ.DONTWAIT);
             assertNull(received, "Null payload must not enqueue a ZMQ frame");
         }

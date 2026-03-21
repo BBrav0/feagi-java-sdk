@@ -259,8 +259,7 @@ public final class FeagiNativeBindings {
     public static native int feagiConfigSetMotorSocketConfig(
             long cfgHandle,
             int rcvHwm,
-            int lingerMs,
-            boolean conflate
+            int lingerMs
     );
 
     /**
