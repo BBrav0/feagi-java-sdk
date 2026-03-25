@@ -101,7 +101,14 @@ public abstract class BaseAgent implements AutoCloseable {
     private final AtomicBoolean stopRequested = new AtomicBoolean(false);
 
     private volatile boolean connected = false;
-    private volatile boolean hardwareInitialized = false;
+
+    /**
+     * Guards hardware initialization state. AtomicBoolean with compareAndSet(true, false)
+     * ensures closeHardware() is called exactly once even when close() and run()'s finally
+     * block execute concurrently — a volatile boolean check-then-act is not atomic and
+     * allows both to read true and both to call closeHardware().
+     */
+    private final AtomicBoolean hardwareInitialized = new AtomicBoolean(false);
 
     // ── Construction ───────────────────────────────────────────────────────────
 
@@ -285,7 +292,7 @@ public abstract class BaseAgent implements AutoCloseable {
         LOG.info("BaseAgent[" + agentId + "]: initializing hardware");
         try {
             initializeHardware();
-            hardwareInitialized = true;
+            hardwareInitialized.set(true);
         } catch (Exception e) {
             throw new FeagiSdkException(
                     "BaseAgent[" + agentId + "]: hardware initialization failed", e);
@@ -354,18 +361,15 @@ public abstract class BaseAgent implements AutoCloseable {
             LOG.info("BaseAgent[" + agentId + "]: run loop stopped");
 
         } finally {
-            // #3 fix: release hardware on every exit path — normal stop(), error threshold
-            // (FeagiSdkException), or InterruptedException. Callers still need to call
-            // close() to release the transport, but hardware is freed here immediately so
-            // resources are not held while the caller decides whether to reconnect or not.
-            if (hardwareInitialized) {
+            // compareAndSet(true, false) is atomic — exactly one caller wins even if
+            // close() races with this finally block. The loser sees false and skips.
+            if (hardwareInitialized.compareAndSet(true, false)) {
                 try {
                     closeHardware();
                 } catch (Exception e) {
                     LOG.log(Level.WARNING,
                             "BaseAgent[" + agentId + "]: exception in closeHardware() during run() cleanup", e);
                 }
-                hardwareInitialized = false;
             }
         }
     }
@@ -398,14 +402,15 @@ public abstract class BaseAgent implements AutoCloseable {
                     "BaseAgent[" + agentId + "]: exception during client.close()", e);
         }
         connected = false;
-        if (hardwareInitialized) {
+        // compareAndSet(true, false) is atomic — exactly one of close() and run()'s
+        // finally block will win and call closeHardware(); the other sees false and skips.
+        if (hardwareInitialized.compareAndSet(true, false)) {
             try {
                 closeHardware();
             } catch (Exception e) {
                 LOG.log(Level.WARNING,
                         "BaseAgent[" + agentId + "]: exception during closeHardware()", e);
             }
-            hardwareInitialized = false;
         }
         try {
             onClose();
@@ -463,8 +468,8 @@ public abstract class BaseAgent implements AutoCloseable {
     /** Return {@code true} if the agent is currently connected to FEAGI. */
     public final boolean isConnected()             { return connected; }
 
-    /** Return {@code true} if hardware has been initialized inside the run loop. */
-    public final boolean isHardwareInitialized()   { return hardwareInitialized; }
+    /** Return {@code true} if hardware has been initialized and not yet released. */
+    public final boolean isHardwareInitialized()   { return hardwareInitialized.get(); }
 
     /**
      * Send a pre-serialized sensory payload to FEAGI directly.
