@@ -333,10 +333,29 @@ class VideoStreamAgentTest {
         VideoStreamAgent a = agent();
         a.connect();
         a.run();
-        // Decoder is already closed when the iterator exhausts.
-        // close() is idempotent — calling it again must not throw.
+        // Decoder already closed by iterator at EOF.
+        // close() must be idempotent and not throw.
         assertDoesNotThrow(a::close);
-        assertTrue(decoder.closed, "decoder must remain closed after close()");
+        assertTrue(decoder.closed);
+    }
+
+    @Test
+    void stream_earlyBreak_decoderReleasedByClose() {
+        // If caller breaks out of stream() before EOF, the decoder must be released
+        // when close() is called — it must not leak.
+        VideoStreamAgent a = agent();
+        a.connect();
+
+        // Break after first frame
+        for (VideoStreamAgent.Frame f : a.stream(0, false, 0)) {
+            break;
+        }
+
+        // Decoder is still open because early break skips the EOF close in next().
+        // close() must detect decoderOpen=true and release it.
+        a.close();
+        assertTrue(decoder.closed,
+                "decoder must be closed by close() after early stream() exit");
     }
 
     // ── videoProperties after open ────────────────────────────────────────────

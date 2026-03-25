@@ -76,6 +76,13 @@ public class VideoStreamAgent extends BaseAgent {
 
     private volatile VideoProperties videoProperties;
 
+    /**
+     * Tracks whether the decoder is currently open, regardless of which code path
+     * opened it (BaseAgent run loop or StreamIterator directly).
+     * Used by {@link #close()} to ensure the decoder is always released.
+     */
+    private volatile boolean decoderOpen = false;
+
     // ── Construction ──────────────────────────────────────────────────────────
 
     /**
@@ -161,6 +168,7 @@ public class VideoStreamAgent extends BaseAgent {
     protected void initializeHardware() throws Exception {
         LOG.info("VideoStreamAgent: opening " + videoPath);
         videoProperties = decoder.open(videoPath);
+        decoderOpen = true;
         LOG.info("VideoStreamAgent: " + videoProperties.width()
                 + "x" + videoProperties.height()
                 + " @ " + videoProperties.fps() + " fps, "
@@ -203,11 +211,24 @@ public class VideoStreamAgent extends BaseAgent {
     /** Release the decoder. */
     @Override
     protected void closeHardware() {
+        if (!decoderOpen) return; // idempotent
+        decoderOpen = false;
         try {
             decoder.close();
         } catch (Exception e) {
             LOG.warning("VideoStreamAgent: error closing decoder: " + e.getMessage());
         }
+    }
+
+    /**
+     * Called unconditionally by {@link BaseAgent#close()}.
+     * Ensures the decoder is released even when it was opened by {@link StreamIterator}
+     * directly (the {@link #stream()} path), in which case {@link #closeHardware()} is
+     * not called because {@code hardwareInitialized} is never set on that path.
+     */
+    @Override
+    protected void onClose() {
+        closeHardware(); // idempotent via decoderOpen guard
     }
 
     // ── High-level API ────────────────────────────────────────────────────────
@@ -352,17 +373,25 @@ public class VideoStreamAgent extends BaseAgent {
     // ── Stream iterator — single source of truth ──────────────────────────────
 
     /**
-     * The primary engine. Each call to {@link #next()} does exactly:
-     * <ol>
-     *   <li>Read one frame from the decoder</li>
-     *   <li>Send it to FEAGI via the sensory path</li>
-     *   <li>Log progress if due</li>
-     *   <li>Sleep for FPS pacing if enabled</li>
-     *   <li>Return the frame to the caller</li>
-     * </ol>
-     * Frame accounting lives here and nowhere else.
+     * The primary engine. Implements {@link AutoCloseable} so that early loop exits
+     * (break, exception, return) release the decoder via try-with-resources:
+     *
+     * <pre>{@code
+     * try (var it = agent.stream().iterator()) {
+     *     while (it.hasNext()) {
+     *         Frame f = it.next();
+     *         if (done) break; // decoder released here
+     *     }
+     * }
+     * }</pre>
+     *
+     * When using the for-each form ({@code for (Frame f : agent.stream())}), the
+     * decoder is released when the iterator is naturally exhausted (EOF or maxFrames).
+     * For early-exit loops, prefer try-with-resources on the iterator.
+     *
+     * <p>Frame accounting lives here and nowhere else.
      */
-    private class StreamIterator implements Iterator<Frame> {
+    private class StreamIterator implements Iterator<Frame>, AutoCloseable {
 
         private final int maxFrames;
         private final boolean paceByFps;
@@ -372,7 +401,6 @@ public class VideoStreamAgent extends BaseAgent {
         private long startNanos = System.nanoTime();
         private Frame nextFrame;
         private boolean done = false;
-        private boolean ownsHardware = false; // true if we opened the decoder
 
         StreamIterator(int maxFrames, boolean paceByFps, int progressInterval) {
             this.maxFrames        = maxFrames;
@@ -386,11 +414,12 @@ public class VideoStreamAgent extends BaseAgent {
                         + "Call connect() first.");
             }
 
-            // Open decoder if not already done by BaseAgent.run(AgentRunConfig)
-            if (videoProperties == null) {
+            // Open decoder if not already done by BaseAgent.run(AgentRunConfig).
+            // Sets decoderOpen=true on the outer VideoStreamAgent so that close()
+            // will release the decoder even if this iterator is abandoned early.
+            if (!decoderOpen) {
                 try {
-                    initializeHardware();
-                    ownsHardware = true; // we opened it, we must close it
+                    initializeHardware(); // sets decoderOpen = true
                 } catch (Exception e) {
                     done = true;
                     LOG.warning("VideoStreamAgent: failed to initialize: " + e.getMessage());
@@ -411,17 +440,21 @@ public class VideoStreamAgent extends BaseAgent {
             if (!hasNext()) throw new NoSuchElementException("No more frames");
             Frame current = nextFrame;
             advance();
-            // Close decoder when iteration is exhausted and we own the hardware
-            if (!hasNext() && ownsHardware) {
-                try {
-                    closeHardware();
-                } catch (Exception e) {
-                    LOG.warning("VideoStreamAgent: error closing after stream: "
-                            + e.getMessage());
-                }
-                ownsHardware = false;
+            // Close decoder when iteration is naturally exhausted
+            if (!hasNext()) {
+                closeHardware(); // idempotent via decoderOpen guard
             }
             return current;
+        }
+
+        /**
+         * Release the decoder if the iterator is abandoned before EOF.
+         * Called automatically when used in try-with-resources.
+         */
+        @Override
+        public void close() {
+            done = true;
+            closeHardware(); // idempotent via decoderOpen guard
         }
 
         private void advance() {
