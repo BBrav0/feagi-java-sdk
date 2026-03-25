@@ -63,7 +63,7 @@ public class VideoStreamAgent extends BaseAgent {
     /** Default FEAGI sensory channel name for the camera feed. */
     public static final String DEFAULT_CHANNEL = "camera";
 
-    /** Default progress log interval in frames (0 = disabled). */
+    /** Default progress log interval passed to {@link #run()} and {@link #stream()} (0 = disabled). */
     public static final int DEFAULT_PROGRESS_INTERVAL = 30;
 
     // ── Configuration ──────────────────────────────────────────────────────────
@@ -81,20 +81,18 @@ public class VideoStreamAgent extends BaseAgent {
     /**
      * Create a VideoStreamAgent with explicit decoder and channel settings.
      *
-     * @param videoPath        path to the video file; must exist
-     * @param config           agent config declaring a sensory/vision capability
-     * @param client           transport client
-     * @param decoder          video decoder implementation
-     * @param channelName      FEAGI sensory channel name (e.g. {@code "camera"})
-     * @param progressInterval log progress every N frames; 0 disables
+     * @param videoPath   path to the video file; must exist
+     * @param config      agent config declaring a sensory/vision capability
+     * @param client      transport client
+     * @param decoder     video decoder implementation
+     * @param channelName FEAGI sensory channel name (e.g. {@code "camera"})
      */
     public VideoStreamAgent(
             Path videoPath,
             AgentConfig config,
             FeagiAgentClient client,
             VideoDecoder decoder,
-            String channelName,
-            int progressInterval) {
+            String channelName) {
         super(deriveAgentId(videoPath), config, client);
         this.videoPath   = validated(videoPath);
         this.decoder     = Objects.requireNonNull(decoder, "decoder must not be null");
@@ -103,16 +101,14 @@ public class VideoStreamAgent extends BaseAgent {
     }
 
     /**
-     * Convenience constructor: {@value #DEFAULT_CHANNEL} channel,
-     * {@value #DEFAULT_PROGRESS_INTERVAL}-frame progress interval.
+     * Convenience constructor: uses {@value #DEFAULT_CHANNEL} as the channel name.
      */
     public VideoStreamAgent(
             Path videoPath,
             AgentConfig config,
             FeagiAgentClient client,
             VideoDecoder decoder) {
-        this(videoPath, config, client, decoder,
-                DEFAULT_CHANNEL, DEFAULT_PROGRESS_INTERVAL);
+        this(videoPath, config, client, decoder, DEFAULT_CHANNEL);
     }
 
     /**
