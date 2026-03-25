@@ -132,25 +132,30 @@ public class VideoStreamAgent extends BaseAgent {
     // ── Early metadata detection (mirrors Python auto_detect=True) ────────────
 
     /**
-     * Open the video file, read metadata, then close — without starting the
-     * full agent lifecycle. Safe to call immediately after construction.
+     * Open the video file using the agent's decoder, read metadata, then close it —
+     * without starting the full agent lifecycle. Safe to call immediately after
+     * construction.
      *
-     * <p>Mirrors Python's {@code auto_detect=True} constructor parameter.
-     * Properties are also populated automatically when {@link #run()} or
-     * {@link #stream()} first opens the file.
+     * <p>Mirrors Python's {@code auto_detect=True} constructor parameter. Properties
+     * are also populated automatically when {@link #run()} or {@link #stream()} first
+     * opens the file.
+     *
+     * <p>Note: this opens and closes the agent's own decoder instance. If the decoder
+     * is stateful and cannot be reopened after closing, call this method only once and
+     * before {@link #run()} or {@link #stream()}.
      *
      * @return this agent, for chaining
      * @throws IOException if the file cannot be opened or is not a valid video
      */
     public VideoStreamAgent detectProperties() throws IOException {
-        try (VideoDecoder probe = decoder.getClass()
-                .getDeclaredConstructor().newInstance()) {
-            videoProperties = probe.open(videoPath);
-        } catch (IOException e) {
-            throw e;
+        VideoProperties props = decoder.open(videoPath);
+        try {
+            decoder.close(); // release immediately — reopen happens in initializeHardware()
         } catch (Exception e) {
-            throw new IOException("Failed to probe video properties", e);
+            LOG.warning("VideoStreamAgent: error closing probe decoder: " + e.getMessage());
         }
+        decoderOpen = false;
+        videoProperties = props;
         LOG.info("VideoStreamAgent: detected " + videoProperties.width()
                 + "x" + videoProperties.height()
                 + " @ " + videoProperties.fps() + " fps, "
@@ -467,6 +472,8 @@ public class VideoStreamAgent extends BaseAgent {
                 return;
             }
 
+            long tickStart = System.nanoTime(); // must be before read + send
+
             // 1. Read frame
             RawFrame raw;
             try {
@@ -511,16 +518,20 @@ public class VideoStreamAgent extends BaseAgent {
                         actualFps));
             }
 
-            // 4. FPS pacing
+            // 4. FPS pacing — subtract time already spent on read + send,
+            //    identical to BaseAgent.run() tick pacing.
             if (paceByFps && videoProperties != null && videoProperties.fps() > 0) {
-                long sleepMs = Math.round(1000.0 / videoProperties.fps());
-                try {
-                    Thread.sleep(sleepMs);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    done = true;
-                    nextFrame = null;
-                    return;
+                long frameNanos = Math.round(1_000_000_000.0 / videoProperties.fps());
+                long remaining  = frameNanos - (System.nanoTime() - tickStart);
+                if (remaining > 0) {
+                    try {
+                        Thread.sleep(remaining / 1_000_000L, (int) (remaining % 1_000_000L));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        done = true;
+                        nextFrame = null;
+                        return;
+                    }
                 }
             }
 

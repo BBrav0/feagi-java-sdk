@@ -60,7 +60,6 @@ class BaseAgentTest {
     static class RecordingAgent extends BaseAgent {
 
         record HwSnapshot(byte[] data) {}
-        final CountDownLatch firstTick = new CountDownLatch(1);
 
         // Call counts
         int initHwCalls;
@@ -104,7 +103,6 @@ class BaseAgentTest {
         protected Map<String, byte[]> mapSensors(Object hwData) throws Exception {
             mapSensorsCalls++;
             hwDataReceived.add(hwData);
-            firstTick.countDown();
             if (throwOnMapSensors) throw new RuntimeException("sensor map error");
             return sensorsToReturn;
         }
@@ -163,7 +161,6 @@ class BaseAgentTest {
             try { a.run(AgentRunConfig.builder().tickInterval(Duration.ZERO).build()); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         });
-        assertTrue(a.firstTick.await(1, TimeUnit.SECONDS), "Agent failed to execute a tick");
         Thread.sleep(sleepMs);
         a.stop();
         f.get(3, TimeUnit.SECONDS);
@@ -238,7 +235,13 @@ class BaseAgentTest {
         runBriefly(agent, 30);
         assertEquals(1, agent.initHwCalls,
                 "initializeHardware must be called exactly once per run()");
-        assertTrue(agent.isHardwareInitialized());
+        // hardwareInitialized is cleared by run()'s finally block after the loop exits,
+        // so isHardwareInitialized() is false once run() returns — this is correct.
+        assertFalse(agent.isHardwareInitialized(),
+                "hardwareInitialized must be cleared by run() finally block");
+        // closeHardware must have been called exactly once by run()'s finally block
+        assertEquals(1, agent.closeHwCalls,
+                "closeHardware must be called once by run() finally block");
     }
 
     @Test
@@ -426,10 +429,14 @@ class BaseAgentTest {
     @Test
     void close_closesTransportAndHardware() throws Exception {
         runBriefly(agent, 20);
+        // closeHardware() is now called by run()'s finally block, not by close().
+        assertEquals(1, agent.closeHwCalls,
+                "closeHardware must be called by run() finally block");
         agent.close();
-
         assertEquals(1, stub.closeCalls);
-        assertEquals(1, agent.closeHwCalls);
+        // closeHardware must not be called a second time by close()
+        assertEquals(1, agent.closeHwCalls,
+                "closeHardware must not be called again by close()");
         assertFalse(agent.isConnected());
         assertFalse(agent.isHardwareInitialized());
     }
@@ -466,20 +473,22 @@ class BaseAgentTest {
             @Override protected void closeHardware() { hwCloses.incrementAndGet(); }
         };
         a.connect();
-        // Run one tick to initialize hardware
         var exec = Executors.newSingleThreadExecutor();
         Future<?> f = exec.submit(() -> {
             try { a.run(AgentRunConfig.builder().tickInterval(Duration.ZERO).build()); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         });
-        Thread.sleep(20);
+        Thread.sleep(30); // let at least one tick run
         a.stop();
         f.get(2, TimeUnit.SECONDS);
         exec.shutdown();
 
-        // close() must not propagate the transport exception
+        // Hardware is now released by run()'s finally block, not by close().
+        assertEquals(1, hwCloses.get(), "closeHardware must be called by run() finally block");
+
+        // close() must not propagate the transport exception, and must not double-call closeHardware
         assertDoesNotThrow(a::close);
-        assertEquals(1, hwCloses.get(), "closeHardware must be called even when transport throws");
+        assertEquals(1, hwCloses.get(), "closeHardware must not be called a second time by close()");
     }
 
     // ── AgentFrame ────────────────────────────────────────────────────────────

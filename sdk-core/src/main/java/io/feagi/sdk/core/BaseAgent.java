@@ -236,7 +236,7 @@ public abstract class BaseAgent implements AutoCloseable {
      * @throws IllegalStateException if already connected
      * @throws FeagiSdkException     if the transport fails to connect
      */
-    public final void connect() {
+    public final synchronized void connect() {
         if (connected) {
             throw new IllegalStateException("Agent '" + agentId + "' is already connected.");
         }
@@ -265,16 +265,17 @@ public abstract class BaseAgent implements AutoCloseable {
      *
      * @param runConfig loop tuning (tick rate, error threshold); must not be null
      * @throws IllegalStateException if not connected
-     * @throws FeagiSdkException     if consecutive errors exceed the threshold
-     * @throws InterruptedException  if the thread is interrupted during sleep
+     * @throws FeagiSdkException     if consecutive errors exceed the threshold;
+     *                               hardware is released before this is thrown
+     * @throws InterruptedException  if the thread is interrupted during sleep;
+     *                               hardware is released before this propagates
      */
     public final void run(AgentRunConfig runConfig) throws InterruptedException {
         Objects.requireNonNull(runConfig, "runConfig must not be null");
-        // Clear any prior stop request before checking guards. This must happen first:
-        // if stop() is called concurrently after the connected check but before the old
-        // stopRequested.set(false) location, the stop request would be wiped and the
-        // loop would run indefinitely. By resetting here, we minimise (but cannot
-        // fully eliminate without a lock) the window between reset and loop start.
+        // Reset the stop flag before entering. This allows a connected agent to be
+        // re-run after a previous run() returned. The narrow race window between this
+        // reset and the while-loop start cannot be fully closed without a lock; run()
+        // is documented as single-threaded and must not overlap with stop().
         stopRequested.set(false);
         if (!connected) {
             throw new IllegalStateException(
@@ -295,62 +296,78 @@ public abstract class BaseAgent implements AutoCloseable {
 
         int consecutiveErrors = 0;
 
-        while (!stopRequested.get()) {
-            long tickStart = System.nanoTime();
-            try {
-                // ── 1. Read sensors ──────────────────────────────────────────
-                Object hwData = readSensors();
+        try {
+            while (!stopRequested.get()) {
+                long tickStart = System.nanoTime();
+                try {
+                    // ── 1. Read sensors ──────────────────────────────────────────
+                    Object hwData = readSensors();
 
-                // ── 2. Map sensors ───────────────────────────────────────────
-                Map<String, byte[]> sensorData = mapSensors(hwData);
+                    // ── 2. Map sensors ───────────────────────────────────────────
+                    Map<String, byte[]> sensorData = mapSensors(hwData);
 
-                // ── 3. Send to FEAGI ─────────────────────────────────────────
-                if (sensorData != null && !sensorData.isEmpty()) {
-                    byte[] payload = serializeSensoryData(sensorData);
-                    if (payload != null && payload.length > 0) {
-                        client.sendSensoryBytes(payload);
+                    // ── 3. Send to FEAGI ─────────────────────────────────────────
+                    if (sensorData != null && !sensorData.isEmpty()) {
+                        byte[] payload = serializeSensoryData(sensorData);
+                        if (payload != null && payload.length > 0) {
+                            client.sendSensoryBytes(payload);
+                        }
+                    }
+
+                    // ── 4. Poll motor data ───────────────────────────────────────
+                    byte[] motorBytes = client.pollMotorBytes();
+                    AgentFrame frame = (motorBytes != null)
+                            ? AgentFrame.of(motorBytes) : AgentFrame.empty();
+
+                    // ── 5. Map motors ────────────────────────────────────────────
+                    Object hwCommands = mapMotors(frame);
+
+                    // ── 6. Execute commands ──────────────────────────────────────
+                    executeCommands(hwCommands);
+
+                    consecutiveErrors = 0;
+
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                } catch (Exception e) {
+                    consecutiveErrors++;
+                    LOG.log(Level.WARNING,
+                            "BaseAgent[" + agentId + "]: tick error ("
+                            + consecutiveErrors + "/" + runConfig.maxConsecutiveErrors() + ")", e);
+                    if (consecutiveErrors >= runConfig.maxConsecutiveErrors()) {
+                        throw new FeagiSdkException(
+                                "BaseAgent[" + agentId + "]: run loop aborted after "
+                                + consecutiveErrors + " consecutive errors", e);
                     }
                 }
 
-                // ── 4. Poll motor data ───────────────────────────────────────
-                byte[] motorBytes = client.pollMotorBytes();
-                AgentFrame frame = (motorBytes != null)
-                        ? AgentFrame.of(motorBytes) : AgentFrame.empty();
-
-                // ── 5. Map motors ────────────────────────────────────────────
-                Object hwCommands = mapMotors(frame);
-
-                // ── 6. Execute commands ──────────────────────────────────────
-                executeCommands(hwCommands);
-
-                consecutiveErrors = 0;
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw e;
-            } catch (Exception e) {
-                consecutiveErrors++;
-                LOG.log(Level.WARNING,
-                        "BaseAgent[" + agentId + "]: tick error ("
-                        + consecutiveErrors + "/" + runConfig.maxConsecutiveErrors() + ")", e);
-                if (consecutiveErrors >= runConfig.maxConsecutiveErrors()) {
-                    throw new FeagiSdkException(
-                            "BaseAgent[" + agentId + "]: run loop aborted after "
-                            + consecutiveErrors + " consecutive errors", e);
+                // ── 7. Tick pacing ───────────────────────────────────────────────
+                long tickNanos = runConfig.tickInterval().toNanos();
+                if (tickNanos > 0) {
+                    long remaining = tickNanos - (System.nanoTime() - tickStart);
+                    if (remaining > 0) {
+                        Thread.sleep(remaining / 1_000_000L, (int) (remaining % 1_000_000L));
+                    }
                 }
             }
+            LOG.info("BaseAgent[" + agentId + "]: run loop stopped");
 
-            // ── 7. Tick pacing ───────────────────────────────────────────────
-            long tickNanos = runConfig.tickInterval().toNanos();
-            if (tickNanos > 0) {
-                long remaining = tickNanos - (System.nanoTime() - tickStart);
-                if (remaining > 0) {
-                    Thread.sleep(remaining / 1_000_000L, (int) (remaining % 1_000_000L));
+        } finally {
+            // #3 fix: release hardware on every exit path — normal stop(), error threshold
+            // (FeagiSdkException), or InterruptedException. Callers still need to call
+            // close() to release the transport, but hardware is freed here immediately so
+            // resources are not held while the caller decides whether to reconnect or not.
+            if (hardwareInitialized) {
+                try {
+                    closeHardware();
+                } catch (Exception e) {
+                    LOG.log(Level.WARNING,
+                            "BaseAgent[" + agentId + "]: exception in closeHardware() during run() cleanup", e);
                 }
+                hardwareInitialized = false;
             }
         }
-
-        LOG.info("BaseAgent[" + agentId + "]: run loop stopped");
     }
 
     /**
