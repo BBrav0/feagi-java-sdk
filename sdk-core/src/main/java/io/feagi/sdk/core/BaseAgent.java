@@ -481,4 +481,22 @@ public abstract class BaseAgent implements AutoCloseable {
 
     /** Return {@code true} if hardware has been initialized inside the run loop. */
     public final boolean isHardwareInitialized()   { return hardwareInitialized; }
+
+    /**
+     * Send a pre-serialized sensory payload to FEAGI directly.
+     *
+     * <p>Subclasses that drive their own loop (e.g. {@code VideoStreamAgent.stream()})
+     * can call this instead of going through the {@link #run(AgentRunConfig)} loop.
+     * The agent must be connected before calling this.
+     *
+     * @param payload serialized byte-container payload; must not be null or empty
+     * @throws IllegalStateException if not connected
+     */
+    protected final void sendSensoryPayload(byte[] payload) {
+        if (!connected.get()) {
+            throw new IllegalStateException(
+                    "Agent '" + agentId + "' is not connected. Call connect() first.");
+        }
+        client.sendSensoryBytes(payload);
+    }
 }
