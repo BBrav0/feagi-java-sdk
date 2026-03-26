@@ -379,6 +379,25 @@ class VideoStreamAgentTest {
     // ── mapMotors — input-only contract ───────────────────────────────────────
 
     @Test
+    void frame_rgbBytes_isDefensivelyCopied() {
+        byte[] original = {1, 2, 3};
+        VideoStreamAgent.Frame frame =
+                new VideoStreamAgent.Frame(1, original, 1, 1);
+
+        // Mutating the array passed to the constructor must not affect the frame.
+        // The compact constructor copies on construction — this is the guarantee.
+        original[0] = 99;
+        assertEquals(1, frame.rgbBytes()[0],
+                "Frame must defensively copy rgbBytes — mutation of original must not affect frame");
+
+        // Note: rgbBytes() returns the same internal array reference on each call
+        // (standard record accessor behaviour). Callers who need an independent copy
+        // must clone the result themselves: frame.rgbBytes().clone()
+    }
+
+    // ── mapMotors — input-only contract ───────────────────────────────────────
+
+    @Test
     void mapMotors_isAlwaysNoop() {
         VideoStreamAgent a = agent();
         assertNull(a.mapMotors(AgentFrame.empty()));

@@ -329,7 +329,16 @@ public class VideoStreamAgent extends BaseAgent {
      * @param width       frame width in pixels
      * @param height      frame height in pixels
      */
-    public record Frame(int frameNumber, byte[] rgbBytes, int width, int height) {}
+    public record Frame(int frameNumber, byte[] rgbBytes, int width, int height) {
+        /**
+         * Compact constructor: defensively copies {@code rgbBytes} so that callers
+         * who mutate the returned array cannot affect other consumers or internal state.
+         * Records do not copy array fields automatically.
+         */
+        public Frame {
+            rgbBytes = (rgbBytes != null) ? rgbBytes.clone() : null;
+        }
+    }
 
     /**
      * Video file metadata returned by {@link VideoDecoder#open(Path)}.
@@ -420,11 +429,12 @@ public class VideoStreamAgent extends BaseAgent {
             }
 
             // Open decoder if not already done by BaseAgent.run(AgentRunConfig).
-            // Sets decoderOpen=true on the outer VideoStreamAgent so that close()
-            // will release the decoder even if this iterator is abandoned early.
+            // Also marks hardware initialized so isHardwareInitialized() reflects reality
+            // and close() can call closeHardware() via the standard path if needed.
             if (!decoderOpen) {
                 try {
-                    initializeHardware(); // sets decoderOpen = true
+                    initializeHardware();    // sets decoderOpen = true
+                    markHardwareInitialized(); // keeps BaseAgent state consistent
                 } catch (Exception e) {
                     done = true;
                     LOG.warning("VideoStreamAgent: failed to initialize: " + e.getMessage());

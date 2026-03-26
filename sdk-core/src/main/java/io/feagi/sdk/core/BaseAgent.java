@@ -391,9 +391,14 @@ public abstract class BaseAgent implements AutoCloseable {
      * if hardware was initialized, and always calls {@link #onClose()} unconditionally,
      * even if the transport close throws. All exceptions are logged and swallowed so
      * that close() itself never throws.
+     *
+     * <p>Synchronized on the same monitor as {@link #connect()} to prevent a race where
+     * {@code connected} is written {@code true} by {@code connect()} after {@code close()}
+     * has already set it {@code false}, leaving the agent showing connected with a closed
+     * transport.
      */
     @Override
-    public final void close() {
+    public final synchronized void close() {
         stop();
         try {
             client.close();
@@ -470,6 +475,19 @@ public abstract class BaseAgent implements AutoCloseable {
 
     /** Return {@code true} if hardware has been initialized and not yet released. */
     public final boolean isHardwareInitialized()   { return hardwareInitialized.get(); }
+
+    /**
+     * Mark hardware as initialized from a subclass-driven loop (e.g. a custom
+     * streaming iterator) that calls {@link #initializeHardware()} directly rather
+     * than going through {@link #run(AgentRunConfig)}.
+     *
+     * <p>Calling this ensures {@link #isHardwareInitialized()} returns the correct
+     * observable state, and that {@link #close()} will call {@link #closeHardware()}
+     * via the standard path if the subclass loop exits without cleaning up.
+     */
+    protected final void markHardwareInitialized() {
+        hardwareInitialized.set(true);
+    }
 
     /**
      * Send a pre-serialized sensory payload to FEAGI directly.
