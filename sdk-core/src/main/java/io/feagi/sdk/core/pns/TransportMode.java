@@ -10,7 +10,7 @@ package io.feagi.sdk.core.pns;
  *
  * <p>Transport names are intentionally explicit so that callers cannot rely on hidden defaults.
  */
-public enum BrainInputTransportType {
+public enum TransportMode {
     ZMQ,
     WEBSOCKET;
 
@@ -21,9 +21,9 @@ public enum BrainInputTransportType {
      * @return resolved transport type
      * @throws IllegalArgumentException if transport is not supported
      */
-    public static BrainInputTransportType from(String value) {
-        if (value == null) {
-            throw new IllegalArgumentException("transport must not be null");
+    public static TransportMode from(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("transport must not be null or blank");
         }
         return switch (value.trim().toLowerCase()) {
             case "zmq" -> ZMQ;

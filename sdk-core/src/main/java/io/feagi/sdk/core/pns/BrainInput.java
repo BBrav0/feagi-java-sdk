@@ -19,6 +19,8 @@ import java.util.Objects;
  * {@link #send()} to encode and flush all inputs as one payload.
  */
 public final class BrainInput implements AutoCloseable {
+    private static final byte[] MAGIC = new byte[]{'F', 'B', 'I', 'N'};
+    private static final byte VERSION = 1;
     private static final BrainInput GLOBAL = new BrainInput();
 
     private final List<RegisteredInput> inputs = new ArrayList<>();
@@ -37,6 +39,9 @@ public final class BrainInput implements AutoCloseable {
      * Create a fresh BrainInput instance with the provided transport.
      */
     public static BrainInput create(BrainInputTransport transport) {
+        if (transport == null) {
+            throw new IllegalArgumentException("transport must not be null");
+        }
         return new BrainInput(transport);
     }
 
@@ -51,14 +56,14 @@ public final class BrainInput implements AutoCloseable {
     }
 
     private BrainInput(BrainInputTransport transport) {
-        this.transport = Objects.requireNonNull(transport, "transport must not be null");
+        this.transport = transport;
     }
 
     /**
      * Configure the singleton/global input manager.
      */
-    public synchronized BrainInput configure(String host, int port, BrainInputTransportType transportType) {
-        return configure(new BrainInputConfig(host, port, transportType));
+    public synchronized BrainInput configure(String host, int port, TransportMode transportMode) {
+        return configure(new BrainInputConfig(host, port, transportMode));
     }
 
     /**
@@ -68,7 +73,10 @@ public final class BrainInput implements AutoCloseable {
         if (connected) {
             throw new IllegalStateException("cannot reconfigure while connected");
         }
-        this.config = Objects.requireNonNull(config, "config must not be null");
+        if (config == null) {
+            throw new IllegalArgumentException("config must not be null");
+        }
+        this.config = config;
         return this;
     }
 
@@ -79,19 +87,30 @@ public final class BrainInput implements AutoCloseable {
         if (connected) {
             throw new IllegalStateException("cannot replace transport while connected");
         }
-        this.transport = Objects.requireNonNull(transport, "transport must not be null");
+        if (transport == null) {
+            throw new IllegalArgumentException("transport must not be null");
+        }
+        this.transport = transport;
         return this;
     }
 
     /**
      * Register a named input source.
      */
-    public synchronized BrainInput registerInput(String name, BrainInputInput input) {
-        Objects.requireNonNull(name, "name must not be null");
+    public synchronized BrainInput registerInput(String name, BrainInputSource input) {
+        if (name == null) {
+            throw new IllegalArgumentException("name must not be null");
+        }
         if (name.isBlank()) {
             throw new IllegalArgumentException("name must not be blank");
         }
-        Objects.requireNonNull(input, "input must not be null");
+        if (input == null) {
+            throw new IllegalArgumentException("input must not be null");
+        }
+        boolean duplicateName = inputs.stream().anyMatch(existing -> existing.name().equals(name));
+        if (duplicateName) {
+            throw new IllegalArgumentException("input name already registered: " + name);
+        }
         inputs.add(new RegisteredInput(name, input));
         return this;
     }
@@ -100,9 +119,13 @@ public final class BrainInput implements AutoCloseable {
      * Register multiple input sources in order.
      */
     public synchronized BrainInput registerInputs(RegisteredInput... inputs) {
-        Objects.requireNonNull(inputs, "inputs must not be null");
+        if (inputs == null) {
+            throw new IllegalArgumentException("inputs must not be null");
+        }
         for (RegisteredInput input : inputs) {
-            Objects.requireNonNull(input, "registered input must not be null");
+            if (input == null) {
+                throw new IllegalArgumentException("registered input must not be null");
+            }
             registerInput(input.name(), input.input());
         }
         return this;
@@ -156,6 +179,9 @@ public final class BrainInput implements AutoCloseable {
 
     /**
      * Disconnect and release transport resources.
+     *
+     * <p>Closing also clears configuration and inputs so the global singleton cannot retain stale
+     * state across independent callers.
      */
     @Override
     public synchronized void close() {
@@ -163,6 +189,8 @@ public final class BrainInput implements AutoCloseable {
             transport.close();
         }
         connected = false;
+        config = null;
+        inputs.clear();
     }
 
     private void requireConfigured() {
@@ -173,6 +201,8 @@ public final class BrainInput implements AutoCloseable {
 
     private byte[] encodePayload() {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
+        output.writeBytes(MAGIC);
+        output.write(VERSION);
         output.writeBytes(ByteBuffer.allocate(4).putInt(inputs.size()).array());
         for (RegisteredInput input : inputs) {
             byte[] nameBytes = input.name().getBytes(StandardCharsets.UTF_8);
@@ -190,13 +220,17 @@ public final class BrainInput implements AutoCloseable {
     /**
      * Named registered input descriptor.
      */
-    public record RegisteredInput(String name, BrainInputInput input) {
+    public record RegisteredInput(String name, BrainInputSource input) {
         public RegisteredInput {
-            Objects.requireNonNull(name, "name must not be null");
+            if (name == null) {
+                throw new IllegalArgumentException("name must not be null");
+            }
             if (name.isBlank()) {
                 throw new IllegalArgumentException("name must not be blank");
             }
-            Objects.requireNonNull(input, "input must not be null");
+            if (input == null) {
+                throw new IllegalArgumentException("input must not be null");
+            }
         }
     }
 }

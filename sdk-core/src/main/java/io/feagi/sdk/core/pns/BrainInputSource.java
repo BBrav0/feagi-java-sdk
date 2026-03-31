@@ -11,7 +11,7 @@ package io.feagi.sdk.core.pns;
  * <p>Implementations must provide deterministic binary payloads for each send cycle.
  */
 @FunctionalInterface
-public interface BrainInputInput {
+public interface BrainInputSource {
     /**
      * Return the encoded bytes for this input on the current tick.
      */

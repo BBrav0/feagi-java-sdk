@@ -13,7 +13,7 @@ public interface BrainInputTransport {
     /**
      * Connect to the FEAGI host/port using the selected transport.
      */
-    void connect(String host, int port, BrainInputTransportType transportType);
+    void connect(String host, int port, TransportMode transportMode);
 
     /**
      * Send a single encoded payload to FEAGI.

@@ -5,17 +5,12 @@
 
 package io.feagi.sdk.core.pns;
 
-import java.util.Objects;
-
 /**
  * Explicit configuration for {@link BrainInput}.
  *
  * <p>There are no implicit defaults: callers must provide all values required by the transport.
  */
-public final class BrainInputConfig {
-    private final String host;
-    private final int port;
-    private final BrainInputTransportType transport;
+public record BrainInputConfig(String host, int port, TransportMode transport) {
 
     /**
      * Create a transport configuration.
@@ -24,27 +19,15 @@ public final class BrainInputConfig {
      * @param port FEAGI input port
      * @param transport transport name
      */
-    public BrainInputConfig(String host, int port, BrainInputTransportType transport) {
+    public BrainInputConfig {
         if (host == null || host.isBlank()) {
             throw new IllegalArgumentException("host must not be null or blank");
         }
-        if (port <= 0) {
-            throw new IllegalArgumentException("port must be > 0");
+        if (port <= 0 || port > 65535) {
+            throw new IllegalArgumentException("port must be between 1 and 65535");
         }
-        this.host = host;
-        this.port = port;
-        this.transport = Objects.requireNonNull(transport, "transport must not be null");
-    }
-
-    public String host() {
-        return host;
-    }
-
-    public int port() {
-        return port;
-    }
-
-    public BrainInputTransportType transport() {
-        return transport;
+        if (transport == null) {
+            throw new IllegalArgumentException("transport must not be null");
+        }
     }
 }
