@@ -8,6 +8,10 @@ java {
     }
 }
 
+tasks.withType<JavaCompile> {
+    options.encoding = "UTF-8"
+}
+
 sourceSets {
     test {
         java.setSrcDirs(listOf("tests"))
@@ -16,5 +20,6 @@ sourceSets {
 
 dependencies {
     // Intentionally minimal for the skeleton.
+    implementation("org.zeromq:jeromq:0.6.0")
 }
 

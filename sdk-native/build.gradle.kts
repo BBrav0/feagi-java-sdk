@@ -10,8 +10,13 @@ java {
 
 dependencies {
     api(project(":sdk-core"))
+
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
 }
 
+tasks.test {
+    useJUnitPlatform()
+}
 val nativeBuildDir = layout.buildDirectory.dir("native")
 val cmakeSourceDir = file("src/main/cpp")
 
