@@ -45,3 +45,4 @@ hs_err_pid*
 # Verification artifacts
 *.jsh
 feagi-discovery-verification-log.txt
+/python sdk for reference
