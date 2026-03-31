@@ -46,11 +46,20 @@ public final class XyzpDecoders {
             return motors;
         }
 
+        Set<String> corticalFilter = null;
+        if (corticalIds != null) {
+            corticalFilter = new HashSet<>(corticalIds);
+        }
+
         Set<Integer> groupsFound = new HashSet<>();
         Map<String, Integer> corticalGroupMap = new HashMap<>();
 
-        // Collect cortical group ids from all cortical IDs (Python does not filter here).
+        // Collect cortical group ids only from the cortical IDs that will be decoded.
+        // This avoids output key-shape changes driven by unrelated entries in xyzpData.
         for (String corticalId : xyzpData.keySet()) {
+            if (corticalFilter != null && !corticalFilter.contains(corticalId)) {
+                continue;
+            }
             Integer groupId = CorticalIdUtils.parseCorticalUnitIndex(corticalId);
             corticalGroupMap.put(corticalId, groupId);
             if (groupId != null) {
@@ -58,14 +67,9 @@ public final class XyzpDecoders {
             }
         }
 
-        // Match Python: when `include_groups` is enabled or any cortical_id parses to a
+        // Match Python: when `include_groups` is enabled or any decoded cortical_id parses to a
         // group/unit index, group-qualified keys are emitted.
         boolean useGroupKeys = includeGroups || !groupsFound.isEmpty();
-
-        Set<String> corticalFilter = null;
-        if (corticalIds != null) {
-            corticalFilter = new HashSet<>(corticalIds);
-        }
 
         for (Map.Entry<String, XyzpNeuronSoA> entry : xyzpData.entrySet()) {
             String corticalId = entry.getKey();
