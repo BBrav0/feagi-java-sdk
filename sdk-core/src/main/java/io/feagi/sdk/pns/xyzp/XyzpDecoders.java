@@ -58,6 +58,8 @@ public final class XyzpDecoders {
             }
         }
 
+        // Match Python: when `include_groups` is enabled or any cortical_id parses to a
+        // group/unit index, group-qualified keys are emitted.
         boolean useGroupKeys = includeGroups || !groupsFound.isEmpty();
 
         Set<String> corticalFilter = null;
@@ -335,11 +337,11 @@ public final class XyzpDecoders {
                 if (positioningFractional) {
                     float pos = (float) decodeUnsignedPercentageFractional(zPos);
                     float neg = (float) decodeUnsignedPercentageFractional(zNeg);
-                    decoded = clamp(-1.0f, 1.0f, pos - neg);
+                    decoded = (float) clamp(-1.0, 1.0, pos - neg);
                 } else {
                     float pos = (float) decodeUnsignedPercentageLinear(zPos, zDepth);
                     float neg = (float) decodeUnsignedPercentageLinear(zNeg, zDepth);
-                    decoded = clamp(-1.0f, 1.0f, pos - neg);
+                    decoded = (float) clamp(-1.0, 1.0, pos - neg);
                 }
 
                 String channelKey = String.valueOf(channelIdx);
@@ -401,7 +403,7 @@ public final class XyzpDecoders {
             }
         }
 
-        int zDepth = _resolveMotorLinearDepth(unitRef, maxZSeen + 1);
+        int zDepth = resolveMotorLinearDepth(unitRef, maxZSeen + 1);
         Set<Integer> channelIds = new HashSet<>();
         channelIds.addAll(positiveByChannel.keySet());
         channelIds.addAll(negativeByChannel.keySet());
@@ -427,7 +429,7 @@ public final class XyzpDecoders {
                     positive = (float) decodeUnsignedPercentageLinear(zPos, zDepth);
                     negative = (float) decodeUnsignedPercentageLinear(zNeg, zDepth);
                 }
-                decoded = clamp(-1.0f, 1.0f, positive - negative);
+                decoded = (float) clamp(-1.0, 1.0, positive - negative);
             }
 
             String channelKey = String.valueOf(channelIdx) + ":" + commandMode;
@@ -465,7 +467,7 @@ public final class XyzpDecoders {
             zByChannel.computeIfAbsent(channelIdx, k -> new ArrayList<>()).add(zInt);
         }
 
-        int zDepth = _resolveMotorLinearDepth(unitRef, maxZSeen + 1);
+        int zDepth = resolveMotorLinearDepth(unitRef, maxZSeen + 1);
         for (Map.Entry<Integer, List<Integer>> e : zByChannel.entrySet()) {
             int channelIdx = e.getKey();
             List<Integer> zValues = e.getValue();
@@ -476,7 +478,7 @@ public final class XyzpDecoders {
             } else {
                 decodedUnsigned = (float) decodeUnsignedPercentageLinear(zValues, zDepth);
             }
-            float decoded = (float) _normalizeUnsignedToSigned(decodedUnsigned);
+            float decoded = (float) normalizeUnsignedToSigned(decodedUnsigned);
 
             String channelKey = String.valueOf(channelIdx) + ":" + commandMode;
             if (useGroupKeys && groupId != null) {
@@ -486,17 +488,7 @@ public final class XyzpDecoders {
         }
     }
 
-    private static float clamp(float min, float max, float value) {
-        if (value < min) {
-            return min;
-        }
-        if (value > max) {
-            return max;
-        }
-        return value;
-    }
-
-    private static double _decodeSignedPercentageLinear(
+    private static double decodeSignedPercentageLinear(
             List<Integer> zPositive,
             List<Integer> zNegative,
             int zDepth) {
@@ -524,17 +516,10 @@ public final class XyzpDecoders {
             negative = 1.0 - (sum / (zSpan * (double) zNegative.size()));
         }
 
-        double decoded = positive - negative;
-        if (decoded < -1.0) {
-            return -1.0;
-        }
-        if (decoded > 1.0) {
-            return 1.0;
-        }
-        return decoded;
+        return clamp(-1.0, 1.0, positive - negative);
     }
 
-    private static double _decodeSignedPercentageFractional(
+    private static double decodeSignedPercentageFractional(
             List<Integer> zPositive,
             List<Integer> zNegative) {
         double positive = 0.0;
@@ -545,11 +530,10 @@ public final class XyzpDecoders {
         for (int z : zNegative) {
             negative += Math.pow(0.5, z);
         }
-        double decoded = positive - negative;
-        return clamp(-1.0, 1.0, decoded);
+        return clamp(-1.0, 1.0, positive - negative);
     }
 
-    private static double _decodeUnsignedPercentageLinear(
+    private static double decodeUnsignedPercentageLinear(
             List<Integer> zValues,
             int zDepth) {
         if (zDepth <= 0 || zValues.isEmpty()) {
@@ -562,16 +546,10 @@ public final class XyzpDecoders {
             sum += z;
         }
         double decodedUnsigned = 1.0 - (sum / (zSpan * (double) zValues.size()));
-        if (decodedUnsigned < 0.0) {
-            return 0.0;
-        }
-        if (decodedUnsigned > 1.0) {
-            return 1.0;
-        }
-        return decodedUnsigned;
+        return clamp(0.0, 1.0, decodedUnsigned);
     }
 
-    private static double _decodeUnsignedPercentageFractional(List<Integer> zValues) {
+    private static double decodeUnsignedPercentageFractional(List<Integer> zValues) {
         if (zValues.isEmpty()) {
             return 0.0;
         }
@@ -579,52 +557,19 @@ public final class XyzpDecoders {
         for (int z : zValues) {
             decodedUnsigned += Math.pow(0.5, z);
         }
-        if (decodedUnsigned < 0.0) {
-            return 0.0;
-        }
-        if (decodedUnsigned > 1.0) {
-            return 1.0;
-        }
-        return decodedUnsigned;
+        return clamp(0.0, 1.0, decodedUnsigned);
     }
 
-    private static double _normalizeUnsignedToSigned(double value0to1) {
+    private static double normalizeUnsignedToSigned(double value0to1) {
         double decoded = (value0to1 * 2.0) - 1.0;
-        if (decoded < -1.0) {
-            return -1.0;
-        }
-        if (decoded > 1.0) {
-            return 1.0;
-        }
-        return decoded;
+        return clamp(-1.0, 1.0, decoded);
     }
 
-    private static int _resolveMotorLinearDepth(String unitRef, int observedDepth) {
+    private static int resolveMotorLinearDepth(String unitRef, int observedDepth) {
         if ("pse".equals(unitRef) || "mot".equals(unitRef)) {
             return Math.max(10, observedDepth);
         }
         return Math.max(1, observedDepth);
-    }
-
-    private static double decodeSignedPercentageLinear(
-            List<Integer> zPositive,
-            List<Integer> zNegative,
-            int zDepth) {
-        return _decodeSignedPercentageLinear(zPositive, zNegative, zDepth);
-    }
-
-    private static double decodeSignedPercentageFractional(
-            List<Integer> zPositive,
-            List<Integer> zNegative) {
-        return _decodeSignedPercentageFractional(zPositive, zNegative);
-    }
-
-    private static double decodeUnsignedPercentageLinear(List<Integer> zValues, int zDepth) {
-        return _decodeUnsignedPercentageLinear(zValues, zDepth);
-    }
-
-    private static double decodeUnsignedPercentageFractional(List<Integer> zValues) {
-        return _decodeUnsignedPercentageFractional(zValues);
     }
 
     private static double clamp(double min, double max, double value) {

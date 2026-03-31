@@ -20,10 +20,6 @@ public record XyzpNeuronSoA(
         List<Float> p) {
 
     public XyzpNeuronSoA {
-        x = x == null ? List.of() : x;
-        y = y == null ? List.of() : y;
-        z = z == null ? List.of() : z;
-        p = p == null ? List.of() : p;
         Objects.requireNonNull(x, "x must not be null");
         Objects.requireNonNull(y, "y must not be null");
         Objects.requireNonNull(z, "z must not be null");

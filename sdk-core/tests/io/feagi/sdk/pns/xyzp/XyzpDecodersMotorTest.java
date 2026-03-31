@@ -6,6 +6,7 @@ package io.feagi.sdk.pns.xyzp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,22 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 public class XyzpDecodersMotorTest {
+    private static List<Integer> toIntList(int[] arr) {
+        List<Integer> out = new ArrayList<>(arr.length);
+        for (int v : arr) {
+            out.add(v);
+        }
+        return out;
+    }
+
+    private static List<Float> toFloatList(float[] arr) {
+        List<Float> out = new ArrayList<>(arr.length);
+        for (float v : arr) {
+            out.add(v);
+        }
+        return out;
+    }
+
     private static String makeCorticalId(byte[] unit, int dataTypeFlag, int group) {
         if (unit == null || unit.length != 3) {
             throw new IllegalArgumentException("unit must be length 3");
@@ -32,18 +49,14 @@ public class XyzpDecodersMotorTest {
 
     private static XyzpNeuronSoA soa(int[] x, int[] y, int[] z, float[] p) {
         return new XyzpNeuronSoA(
-                List.of(x[0]),
-                List.of(y[0]),
-                List.of(z[0]),
-                List.of(p[0]));
+                toIntList(x),
+                toIntList(y),
+                toIntList(z),
+                toFloatList(p));
     }
 
     private static XyzpNeuronSoA soa2(int[] x, int[] y, int[] z, float[] p) {
-        return new XyzpNeuronSoA(
-                List.of(x[0], x[1]),
-                List.of(y[0], y[1]),
-                List.of(z[0], z[1]),
-                List.of(p[0], p[1]));
+        return soa(x, y, z, p);
     }
 
     @Test
