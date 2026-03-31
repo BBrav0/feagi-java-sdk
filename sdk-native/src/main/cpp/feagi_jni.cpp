@@ -598,7 +598,7 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
         return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
     }
     if (h == 0) {
-        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
+        return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
     }
     if (env->GetArrayLength(outBufHandle) < 1 || env->GetArrayLength(outHasData) < 1) {
         return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
@@ -614,12 +614,12 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
         jlong jl = PTR_TO_JLONG(buf);
         env->SetLongArrayRegion(outBufHandle, 0, 1, &jl);
         if (env->ExceptionCheck()) {
-            return static_cast<jint>(r);
+            return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
         }
         jboolean jd = static_cast<jboolean>(hasData);
         env->SetBooleanArrayRegion(outHasData, 0, 1, &jd);
         if (env->ExceptionCheck()) {
-            return static_cast<jint>(r);
+            return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
         }
     } else {
         // On non-OK, the ABI does not guarantee ownership/validity of out_buf.
@@ -629,11 +629,11 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
         jboolean jfalse = JNI_FALSE;
         env->SetLongArrayRegion(outBufHandle, 0, 1, &zero);
         if (env->ExceptionCheck()) {
-            return static_cast<jint>(r);
+            return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
         }
         env->SetBooleanArrayRegion(outHasData, 0, 1, &jfalse);
         if (env->ExceptionCheck()) {
-            return static_cast<jint>(r);
+            return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
         }
     }
     return static_cast<jint>(r);
