@@ -138,7 +138,9 @@ class BaseAgentTest {
             return new AgentConfig(
                     "test-agent", AgentType.BOTH, ep, caps,
                     Duration.ZERO, Duration.ofSeconds(5), 3,
-                    Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true));
+                    Duration.ofMillis(500),
+                    new SensorySocketConfig(1000, 0, true),
+                    new MotorSocketConfig(1000, 0));
         }
     }
 
@@ -367,6 +369,7 @@ class BaseAgentTest {
     }
 
     @Test
+    @SuppressWarnings("resource")
     void run_resetsConsecutiveErrorCountAfterSuccess() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         BaseAgent resilient = new BaseAgent("r", RecordingAgent.makeConfig(), stub) {

@@ -16,7 +16,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -124,7 +123,9 @@ class VideoStreamAgentTest {
         return new AgentConfig(
                 "video-agent", AgentType.SENSORY, ep, caps,
                 Duration.ZERO, Duration.ofSeconds(5), 3,
-                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true));
+                Duration.ofMillis(500),
+                new SensorySocketConfig(1000, 0, true),
+                null);
     }
 
     // ── Construction ───────────────────────────────────────────────────────────
@@ -193,7 +194,12 @@ class VideoStreamAgentTest {
 
         // Drain all frames — must not throw NoSuchElementException or anything else
         assertDoesNotThrow(() -> {
-            for (VideoStreamAgent.Frame f : a.stream(0, false, 0)) { /* consume */ }
+            int drained = 0;
+            for (VideoStreamAgent.Frame f : a.stream(0, false, 0)) {
+                drained++;
+                f.frameNumber(); // use f to avoid unused warnings
+            }
+            assertEquals(5, drained, "must drain all frames until EOF");
         });
     }
 
@@ -222,8 +228,14 @@ class VideoStreamAgentTest {
         VideoStreamAgent a = agent();
         a.connect();
 
-        for (VideoStreamAgent.Frame f : a.stream(0, false, 0)) { /* consume */ }
+        int drained = 0;
+        for (VideoStreamAgent.Frame f : a.stream(0, false, 0)) {
+            drained++;
+            f.frameNumber(); // use f to avoid unused warnings
+        }
 
+        assertEquals(5, drained,
+                "must iterate exactly totalFrames frames");
         assertEquals(5, stub.sentPayloads.size(),
                 "one sendSensoryBytes call per frame");
     }
@@ -262,7 +274,12 @@ class VideoStreamAgentTest {
         VideoStreamAgent a = agent();
         a.connect();
 
-        for (VideoStreamAgent.Frame f : a.stream(0, false, 0)) break; // just first frame
+        VideoStreamAgent.Frame first = null;
+        for (VideoStreamAgent.Frame f : a.stream(0, false, 0)) {
+            first = f;
+            break; // just first frame
+        }
+        assertNotNull(first, "must yield at least one frame");
 
         byte[] payload = stub.sentPayloads.get(0);
         int kLen = toInt(payload, 0);
@@ -280,6 +297,7 @@ class VideoStreamAgentTest {
         int count = 0;
         for (VideoStreamAgent.Frame f : a.stream(3, false, 0)) {
             count++;
+            f.frameNumber(); // use f to avoid unused warnings
         }
         assertEquals(3, count, "must stop after maxFrames");
         assertEquals(3, stub.sentPayloads.size());
@@ -293,6 +311,7 @@ class VideoStreamAgentTest {
         int count = 0;
         for (VideoStreamAgent.Frame f : a.stream(999, false, 0)) {
             count++;
+            f.frameNumber(); // use f to avoid unused warnings
         }
         assertEquals(5, count, "must yield all frames when maxFrames > total");
     }
@@ -348,6 +367,7 @@ class VideoStreamAgentTest {
 
         // Break after first frame
         for (VideoStreamAgent.Frame f : a.stream(0, false, 0)) {
+            f.frameNumber(); // use f to avoid unused warnings
             break;
         }
 
@@ -366,7 +386,10 @@ class VideoStreamAgentTest {
         a.connect();
 
         // Consume one frame to trigger open
-        for (VideoStreamAgent.Frame f : a.stream(1, false, 0)) break;
+        for (VideoStreamAgent.Frame f : a.stream(1, false, 0)) {
+            f.frameNumber(); // use f to avoid unused warnings
+            break;
+        }
 
         VideoStreamAgent.VideoProperties p = a.videoProperties();
         assertNotNull(p);
@@ -416,6 +439,7 @@ class VideoStreamAgentTest {
         int count = 0;
         for (VideoStreamAgent.Frame f : a.stream(0, false, 0)) {
             count++;
+            f.frameNumber(); // use f to avoid unused warnings
         }
         assertEquals(0, count, "no frames should be yielded on immediate read error");
     }
