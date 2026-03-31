@@ -15,6 +15,23 @@ public enum AgentType {
     MOTOR,
     BOTH,
     VISUALIZATION,
-    INFRASTRUCTURE
+    INFRASTRUCTURE;
+
+    /**
+     * Whether this role uses sensory (agent-to-FEAGI) byte transport.
+     *
+     * <p>Kept in sync with {@link io.feagi.sdk.core.AgentConfig} and
+     * {@link io.feagi.sdk.core.transport.ZmqTransport} socket setup.
+     */
+    public boolean needsSensory() {
+        return this == SENSORY || this == BOTH;
+    }
+
+    /**
+     * Whether this role uses motor (FEAGI-to-agent) byte transport.
+     */
+    public boolean needsMotor() {
+        return this == MOTOR || this == BOTH;
+    }
 }
 
