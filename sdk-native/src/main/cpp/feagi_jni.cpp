@@ -14,45 +14,6 @@
 
 #include <jni.h>
 #include <cstdint>
-#include "feagi_java_ffi.h"
-
-#define PTR_TO_JLONG(ptr)      (static_cast<jlong>(reinterpret_cast<intptr_t>(ptr)))
-#define JLONG_TO_PTR(type, jl) (reinterpret_cast<type*>(static_cast<intptr_t>(jl)))
-
-extern "C" JNIEXPORT jint JNICALL
-Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiAbiVersion(JNIEnv*, jclass) {
-    return (jint)feagi_abi_version();
-}
-
-extern "C" JNIEXPORT jint JNICALL
-Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
-        JNIEnv* env, jclass, jlong clientHandle,
-        jlongArray outBufferHandle, jbooleanArray outHasData) {
-    if (outBufferHandle == nullptr || outHasData == nullptr) {
-        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
-    }
-
-    FeagiByteBufferHandle* buf = nullptr;
-    bool hasData = false;
-    FeagiStatus status = feagi_client_receive_motor_buffer(
-            JLONG_TO_PTR(FeagiAgentClientHandle, clientHandle), &buf, &hasData);
-
-    if (status == FEAGI_STATUS_OK) {
-        jlong handle = PTR_TO_JLONG(buf);
-        jboolean jHasData = static_cast<jboolean>(hasData);
-        env->SetLongArrayRegion(outBufferHandle, 0, 1, &handle);
-        env->SetBooleanArrayRegion(outHasData, 0, 1, &jHasData);
-        return static_cast<jint>(status);
-    }
-
-    // On non-OK, the ABI does not guarantee ownership/validity of out_buf.
-    // Never free buf on this path to avoid invalid-free/double-free UB.
-    jlong zero = 0L;
-    jboolean jFalse = JNI_FALSE;
-    env->SetLongArrayRegion(outBufferHandle, 0, 1, &zero);
-    env->SetBooleanArrayRegion(outHasData, 0, 1, &jFalse);
-    return static_cast<jint>(status);
-}
 #include <cstring>
 #include "feagi_java_ffi.h"
 
@@ -636,6 +597,12 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
                 "outBufHandle and outHasData must not be null");
         return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
     }
+    if (h == 0) {
+        return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
+    }
+    if (env->GetArrayLength(outBufHandle) < 1 || env->GetArrayLength(outHasData) < 1) {
+        return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
+    }
     FeagiByteBufferHandle* buf = nullptr;
     bool hasData = false;
     FeagiStatus r = feagi_client_receive_motor_buffer(
@@ -646,26 +613,28 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
         // to Java as a valid handle (it may be dangling or partially initialised).
         jlong jl = PTR_TO_JLONG(buf);
         env->SetLongArrayRegion(outBufHandle, 0, 1, &jl);
+        if (env->ExceptionCheck()) {
+            return static_cast<jint>(r);
+        }
         jboolean jd = static_cast<jboolean>(hasData);
         env->SetBooleanArrayRegion(outHasData, 0, 1, &jd);
+        if (env->ExceptionCheck()) {
+            return static_cast<jint>(r);
+        }
     } else {
-        // Defensive free on error path.
-        //
-        // feagi_java_ffi.h does not document whether out_buf is null or a valid
-        // allocated pointer when the function returns a non-OK status. We treat it
-        // defensively: if buf is non-null we free it to avoid a leak, on the assumption
-        // that a non-null pointer from the Rust side is always safe to free.
-        //
-        // If the ABI is ever clarified to guarantee "out_buf is always null on error",
-        // this free can be removed. If it is clarified to "out_buf is always garbage on
-        // error", this free must be removed to avoid UB — update this comment and remove
-        // the free in that case.
-        if (buf) feagi_buffer_free(buf);
+        // On non-OK, the ABI does not guarantee ownership/validity of out_buf.
+        // Never free buf on this path to avoid invalid-free/double-free UB.
         // Zero out the output arrays so Java callers never see a stale or dangling value.
         jlong zero = 0L;
         jboolean jfalse = JNI_FALSE;
         env->SetLongArrayRegion(outBufHandle, 0, 1, &zero);
+        if (env->ExceptionCheck()) {
+            return static_cast<jint>(r);
+        }
         env->SetBooleanArrayRegion(outHasData, 0, 1, &jfalse);
+        if (env->ExceptionCheck()) {
+            return static_cast<jint>(r);
+        }
     }
     return static_cast<jint>(r);
 }
