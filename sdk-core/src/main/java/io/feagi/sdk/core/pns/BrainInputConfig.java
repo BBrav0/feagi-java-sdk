@@ -5,6 +5,8 @@
 
 package io.feagi.sdk.core.pns;
 
+import io.feagi.sdk.core.TransportMode;
+
 /**
  * Explicit configuration for {@link BrainInput}.
  *

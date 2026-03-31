@@ -5,6 +5,7 @@
 
 package io.feagi.sdk.core.pns;
 
+import io.feagi.sdk.core.TransportMode;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
@@ -32,6 +33,7 @@ class BrainInputTest {
     void transportModeParsesSupportedValues() {
         assertEquals(TransportMode.ZMQ, TransportMode.from("zmq"));
         assertEquals(TransportMode.WEBSOCKET, TransportMode.from("ws"));
+        assertEquals("websocket", TransportMode.WEBSOCKET.toPreferenceString());
         assertThrows(IllegalArgumentException.class, () -> TransportMode.from(" "));
     }
 
@@ -96,7 +98,7 @@ class BrainInputTest {
     }
 
     @Test
-    void closeClearsSingletonState() {
+    void closeResetsInstanceStateAndDropsTransport() {
         RecordingTransport transport = new RecordingTransport();
         BrainInput brainInput = BrainInput.create(transport)
                 .configure("localhost", 5558, TransportMode.ZMQ)
@@ -109,6 +111,27 @@ class BrainInputTest {
         assertFalse(brainInput.connected());
         assertNull(brainInput.config());
         assertEquals(List.of(), brainInput.registeredInputs());
+        assertThrows(IllegalStateException.class, brainInput::connect);
+    }
+
+    @Test
+    void closeOnGlobalRetainsSharedStateButDisconnects() {
+        BrainInput global = BrainInput.global();
+        RecordingTransport transport = new RecordingTransport();
+        global.useTransport(transport)
+                .configure("localhost", 5558, TransportMode.ZMQ)
+                .registerInput("global", () -> new byte[]{7});
+
+        global.connect();
+        global.close();
+
+        assertTrue(transport.closed);
+        assertFalse(global.connected());
+        assertEquals("localhost", global.config().host());
+        assertEquals(1, global.registeredInputs().size());
+
+        global.useTransport(new RecordingTransport());
+        global.close();
     }
 
     private static String readString(ByteBuffer buffer) {

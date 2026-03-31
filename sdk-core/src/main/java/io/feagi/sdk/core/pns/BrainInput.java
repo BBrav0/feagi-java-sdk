@@ -5,6 +5,8 @@
 
 package io.feagi.sdk.core.pns;
 
+import io.feagi.sdk.core.TransportMode;
+
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -21,8 +23,9 @@ import java.util.Objects;
 public final class BrainInput implements AutoCloseable {
     private static final byte[] MAGIC = new byte[]{'F', 'B', 'I', 'N'};
     private static final byte VERSION = 1;
-    private static final BrainInput GLOBAL = new BrainInput();
+    private static final BrainInput GLOBAL = new BrainInput(true);
 
+    private final boolean globalInstance;
     private final List<RegisteredInput> inputs = new ArrayList<>();
     private BrainInputConfig config;
     private BrainInputTransport transport;
@@ -42,20 +45,22 @@ public final class BrainInput implements AutoCloseable {
         if (transport == null) {
             throw new IllegalArgumentException("transport must not be null");
         }
-        return new BrainInput(transport);
+        return new BrainInput(false, transport);
     }
 
     /**
      * Create a fresh BrainInput instance with no transport yet attached.
      */
     public static BrainInput create() {
-        return new BrainInput();
+        return new BrainInput(false);
     }
 
-    private BrainInput() {
+    private BrainInput(boolean globalInstance) {
+        this(globalInstance, null);
     }
 
-    private BrainInput(BrainInputTransport transport) {
+    private BrainInput(boolean globalInstance, BrainInputTransport transport) {
+        this.globalInstance = globalInstance;
         this.transport = transport;
     }
 
@@ -98,21 +103,7 @@ public final class BrainInput implements AutoCloseable {
      * Register a named input source.
      */
     public synchronized BrainInput registerInput(String name, BrainInputSource input) {
-        if (name == null) {
-            throw new IllegalArgumentException("name must not be null");
-        }
-        if (name.isBlank()) {
-            throw new IllegalArgumentException("name must not be blank");
-        }
-        if (input == null) {
-            throw new IllegalArgumentException("input must not be null");
-        }
-        boolean duplicateName = inputs.stream().anyMatch(existing -> existing.name().equals(name));
-        if (duplicateName) {
-            throw new IllegalArgumentException("input name already registered: " + name);
-        }
-        inputs.add(new RegisteredInput(name, input));
-        return this;
+        return registerInputInternal(name, input);
     }
 
     /**
@@ -126,7 +117,7 @@ public final class BrainInput implements AutoCloseable {
             if (input == null) {
                 throw new IllegalArgumentException("registered input must not be null");
             }
-            registerInput(input.name(), input.input());
+            registerInputInternal(input.name(), input.input());
         }
         return this;
     }
@@ -180,8 +171,8 @@ public final class BrainInput implements AutoCloseable {
     /**
      * Disconnect and release transport resources.
      *
-     * <p>Closing also clears configuration and inputs so the global singleton cannot retain stale
-     * state across independent callers.
+     * <p>Caller-owned instances are fully reset. The global singleton intentionally keeps its
+     * registration state to avoid one caller breaking another shared reference.
      */
     @Override
     public synchronized void close() {
@@ -189,8 +180,29 @@ public final class BrainInput implements AutoCloseable {
             transport.close();
         }
         connected = false;
-        config = null;
-        inputs.clear();
+        if (!globalInstance) {
+            config = null;
+            transport = null;
+            inputs.clear();
+        }
+    }
+
+    private BrainInput registerInputInternal(String name, BrainInputSource input) {
+        if (name == null) {
+            throw new IllegalArgumentException("name must not be null");
+        }
+        if (name.isBlank()) {
+            throw new IllegalArgumentException("name must not be blank");
+        }
+        if (input == null) {
+            throw new IllegalArgumentException("input must not be null");
+        }
+        boolean duplicateName = inputs.stream().anyMatch(existing -> existing.name().equals(name));
+        if (duplicateName) {
+            throw new IllegalArgumentException("input name already registered: " + name);
+        }
+        inputs.add(new RegisteredInput(name, input));
+        return this;
     }
 
     private void requireConfigured() {
@@ -201,20 +213,27 @@ public final class BrainInput implements AutoCloseable {
 
     private byte[] encodePayload() {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ByteBuffer intBuffer = ByteBuffer.allocate(Integer.BYTES);
         output.writeBytes(MAGIC);
         output.write(VERSION);
-        output.writeBytes(ByteBuffer.allocate(4).putInt(inputs.size()).array());
+        writeInt(output, intBuffer, inputs.size());
         for (RegisteredInput input : inputs) {
             byte[] nameBytes = input.name().getBytes(StandardCharsets.UTF_8);
             byte[] payload = Objects.requireNonNull(
                     input.input().encode(),
                     "input encode() must not return null");
-            output.writeBytes(ByteBuffer.allocate(4).putInt(nameBytes.length).array());
+            writeInt(output, intBuffer, nameBytes.length);
             output.writeBytes(nameBytes);
-            output.writeBytes(ByteBuffer.allocate(4).putInt(payload.length).array());
+            writeInt(output, intBuffer, payload.length);
             output.writeBytes(payload);
         }
         return output.toByteArray();
+    }
+
+    private static void writeInt(ByteArrayOutputStream output, ByteBuffer intBuffer, int value) {
+        intBuffer.clear();
+        intBuffer.putInt(value);
+        output.writeBytes(intBuffer.array());
     }
 
     /**

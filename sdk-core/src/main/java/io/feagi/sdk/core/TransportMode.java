@@ -3,23 +3,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package io.feagi.sdk.core.pns;
+package io.feagi.sdk.core;
 
 /**
- * Supported BrainInput transport backends.
- *
- * <p>Transport names are intentionally explicit so that callers cannot rely on hidden defaults.
+ * Supported transport backends.
  */
 public enum TransportMode {
     ZMQ,
     WEBSOCKET;
 
     /**
-     * Parse transport type from caller input.
+     * Parse a transport mode from caller input.
      *
      * @param value transport name (e.g. "zmq" or "websocket")
-     * @return resolved transport type
-     * @throws IllegalArgumentException if transport is not supported
+     * @return resolved mode
      */
     public static TransportMode from(String value) {
         if (value == null || value.isBlank()) {
@@ -29,6 +26,16 @@ public enum TransportMode {
             case "zmq" -> ZMQ;
             case "websocket", "ws", "wss" -> WEBSOCKET;
             default -> throw new IllegalArgumentException("Unsupported transport: " + value);
+        };
+    }
+
+    /**
+     * Return FEAGI registration preference string.
+     */
+    public String toPreferenceString() {
+        return switch (this) {
+            case ZMQ -> "zmq";
+            case WEBSOCKET -> "websocket";
         };
     }
 }

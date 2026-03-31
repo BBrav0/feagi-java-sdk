@@ -5,6 +5,8 @@
 
 package io.feagi.sdk.core.pns;
 
+import io.feagi.sdk.core.TransportMode;
+
 /**
  * Transport contract for {@link BrainInput}.
  */
@@ -23,6 +25,5 @@ public interface BrainInputTransport {
     /**
      * Release transport-specific resources.
      */
-    default void close() {
-    }
+    void close();
 }
