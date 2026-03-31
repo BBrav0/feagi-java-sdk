@@ -13,6 +13,7 @@ import io.feagi.sdk.core.FeagiEndpoints;
 import io.feagi.sdk.core.MotorCapability;
 import io.feagi.sdk.core.MotorUnit;
 import io.feagi.sdk.core.MotorUnitSpec;
+import io.feagi.sdk.core.MotorSocketConfig;
 import io.feagi.sdk.core.SensorySocketConfig;
 import io.feagi.sdk.core.SensoryUnit;
 import io.feagi.sdk.core.VisionCapability;
@@ -79,7 +80,8 @@ class NativeFeagiAgentClientTest {
                 Duration.ofSeconds(10),
                 3,
                 Duration.ofMillis(500),
-                new SensorySocketConfig(1000, 0, true)
+                new SensorySocketConfig(1000, 0, true),
+                new MotorSocketConfig(1000, 0)
         );
     }
 
@@ -363,7 +365,7 @@ class NativeFeagiAgentClientTest {
                 "vision-agent", AgentType.SENSORY, endpoints,
                 AgentCapabilities.builder().vision(vision).build(),
                 Duration.ofSeconds(5), Duration.ofSeconds(10), 3,
-                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true));
+                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true), new MotorSocketConfig(1000, 0));
 
         assertDoesNotThrow(() -> new NativeFeagiAgentClient(config));
     }
@@ -380,7 +382,7 @@ class NativeFeagiAgentClientTest {
                 "motor-agent", AgentType.MOTOR, endpoints,
                 AgentCapabilities.builder().motor(motor).build(),
                 Duration.ofSeconds(5), Duration.ofSeconds(10), 3,
-                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true));
+                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true), new MotorSocketConfig(1000, 0));
 
         assertDoesNotThrow(() -> new NativeFeagiAgentClient(config));
     }
@@ -399,7 +401,7 @@ class NativeFeagiAgentClientTest {
                 "multi-motor-agent", AgentType.MOTOR, endpoints,
                 AgentCapabilities.builder().motor(motor).build(),
                 Duration.ofSeconds(5), Duration.ofSeconds(10), 3,
-                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true));
+                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true), new MotorSocketConfig(1000, 0));
 
         assertDoesNotThrow(() -> new NativeFeagiAgentClient(config));
     }

@@ -32,7 +32,9 @@ class BrainInputTest {
     @Test
     void transportModeParsesSupportedValues() {
         assertEquals(TransportMode.ZMQ, TransportMode.from("zmq"));
+        assertEquals(TransportMode.ZMQ, TransportMode.from(" ZMQ "));
         assertEquals(TransportMode.WEBSOCKET, TransportMode.from("ws"));
+        assertEquals(TransportMode.WEBSOCKET, TransportMode.from("WebSocket"));
         assertEquals("websocket", TransportMode.WEBSOCKET.toPreferenceString());
         assertThrows(IllegalArgumentException.class, () -> TransportMode.from(" "));
     }
@@ -139,7 +141,7 @@ class BrainInputTest {
     }
 
     @Test
-    void closeResetsInstanceStateAndDropsTransport() {
+    void closeResetsInstanceStateAndPermanentlyClosesInstance() {
         RecordingTransport transport = new RecordingTransport();
         BrainInput brainInput = BrainInput.create(transport)
                 .configure("localhost", 5558, TransportMode.ZMQ)
@@ -152,7 +154,17 @@ class BrainInputTest {
         assertFalse(brainInput.connected());
         assertNull(brainInput.config());
         assertEquals(List.of(), brainInput.registeredInputs());
+        assertThrows(IllegalStateException.class, () -> brainInput.configure("localhost", 5558, TransportMode.ZMQ));
         assertThrows(IllegalStateException.class, brainInput::connect);
+    }
+
+    @Test
+    void closeOnGlobalIsNoOp() {
+        BrainInput global = BrainInput.global();
+        global.close();
+
+        assertFalse(global.connected());
+        assertEquals(List.of(), global.registeredInputs());
     }
 
     private static String readString(ByteBuffer buffer) {

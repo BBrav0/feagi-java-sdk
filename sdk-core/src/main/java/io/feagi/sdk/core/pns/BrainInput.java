@@ -26,6 +26,12 @@ import java.util.Objects;
  *       length, payload bytes</li>
  * </ul>
  *
+ * <p>Leading and trailing whitespace in transport strings is tolerated by
+ * {@link TransportMode#from(String)}.
+ *
+ * <p>Inputs remain registered for the lifetime of the instance; this first pass does not yet
+ * expose a deregistration API.
+ *
  * <p>Callers explicitly configure host, port, and transport, then register inputs and invoke
  * {@link #send()} to encode and flush all inputs as one payload.
  */
@@ -39,6 +45,7 @@ public final class BrainInput implements AutoCloseable {
     private BrainInputConfig config;
     private BrainInputTransport transport;
     private boolean connected;
+    private boolean closed;
 
     /**
      * Return the global singleton instance.
@@ -84,6 +91,7 @@ public final class BrainInput implements AutoCloseable {
      * Configure the input manager.
      */
     public synchronized BrainInput configure(BrainInputConfig config) {
+        requireOpen();
         if (connected) {
             throw new IllegalStateException("cannot reconfigure while connected");
         }
@@ -98,6 +106,7 @@ public final class BrainInput implements AutoCloseable {
      * Attach a concrete transport implementation.
      */
     public synchronized BrainInput useTransport(BrainInputTransport transport) {
+        requireOpen();
         if (connected) {
             throw new IllegalStateException("cannot replace transport while connected");
         }
@@ -112,6 +121,7 @@ public final class BrainInput implements AutoCloseable {
      * Register a named input source.
      */
     public synchronized BrainInput registerInput(String name, BrainInputSource input) {
+        requireOpen();
         return registerInputInternal(name, input);
     }
 
@@ -119,6 +129,7 @@ public final class BrainInput implements AutoCloseable {
      * Register multiple input sources in order.
      */
     public synchronized BrainInput registerInputs(RegisteredInput... registrations) {
+        requireOpen();
         if (registrations == null) {
             throw new IllegalArgumentException("registrations must not be null");
         }
@@ -135,6 +146,7 @@ public final class BrainInput implements AutoCloseable {
      * Connect the configured transport.
      */
     public synchronized void connect() {
+        requireOpen();
         requireConfigured();
         if (transport == null) {
             throw new IllegalStateException("transport implementation must be attached before connect()");
@@ -147,6 +159,7 @@ public final class BrainInput implements AutoCloseable {
      * Encode all registered inputs into one payload and send it.
      */
     public synchronized void send() {
+        requireOpen();
         if (!connected) {
             throw new IllegalStateException("connect() must be called before send()");
         }
@@ -180,20 +193,25 @@ public final class BrainInput implements AutoCloseable {
     /**
      * Disconnect and release transport resources.
      *
-     * <p>Caller-owned instances are fully reset. The global singleton intentionally keeps its
-     * registration state to avoid one caller breaking another shared reference.
+     * <p>Caller-owned instances are permanently closed and reset. The global singleton treats
+     * {@code close()} as a no-op to avoid shared-caller disconnect surprises.
      */
     @Override
     public synchronized void close() {
+        if (globalInstance) {
+            return;
+        }
+        if (closed) {
+            return;
+        }
         if (transport != null) {
             transport.close();
         }
         connected = false;
-        if (!globalInstance) {
-            config = null;
-            transport = null;
-            inputs.clear();
-        }
+        config = null;
+        transport = null;
+        inputs.clear();
+        closed = true;
     }
 
     private BrainInput registerInputInternal(String name, BrainInputSource input) {
@@ -212,6 +230,12 @@ public final class BrainInput implements AutoCloseable {
         }
         inputs.add(new RegisteredInput(name, input));
         return this;
+    }
+
+    private void requireOpen() {
+        if (closed) {
+            throw new IllegalStateException("BrainInput instance is closed");
+        }
     }
 
     private void requireConfigured() {
