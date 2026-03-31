@@ -17,12 +17,21 @@ import java.util.Objects;
 /**
  * BrainInput-style global input manager.
  *
+ * <p>Wire format:
+ * <ul>
+ *   <li>4 ASCII magic bytes: {@code FBIN}</li>
+ *   <li>1 protocol version byte: {@value #PROTOCOL_VERSION}</li>
+ *   <li>32-bit big-endian input count</li>
+ *   <li>Per input: 32-bit big-endian UTF-8 name length, name bytes, 32-bit big-endian payload
+ *       length, payload bytes</li>
+ * </ul>
+ *
  * <p>Callers explicitly configure host, port, and transport, then register inputs and invoke
  * {@link #send()} to encode and flush all inputs as one payload.
  */
 public final class BrainInput implements AutoCloseable {
+    public static final int PROTOCOL_VERSION = 1;
     private static final byte[] MAGIC = new byte[]{'F', 'B', 'I', 'N'};
-    private static final byte VERSION = 1;
     private static final BrainInput GLOBAL = new BrainInput(true);
 
     private final boolean globalInstance;
@@ -109,15 +118,15 @@ public final class BrainInput implements AutoCloseable {
     /**
      * Register multiple input sources in order.
      */
-    public synchronized BrainInput registerInputs(RegisteredInput... inputs) {
-        if (inputs == null) {
-            throw new IllegalArgumentException("inputs must not be null");
+    public synchronized BrainInput registerInputs(RegisteredInput... registrations) {
+        if (registrations == null) {
+            throw new IllegalArgumentException("registrations must not be null");
         }
-        for (RegisteredInput input : inputs) {
-            if (input == null) {
+        for (RegisteredInput registration : registrations) {
+            if (registration == null) {
                 throw new IllegalArgumentException("registered input must not be null");
             }
-            registerInputInternal(input.name(), input.input());
+            registerInputInternal(registration.name(), registration.input());
         }
         return this;
     }
@@ -215,7 +224,7 @@ public final class BrainInput implements AutoCloseable {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         ByteBuffer intBuffer = ByteBuffer.allocate(Integer.BYTES);
         output.writeBytes(MAGIC);
-        output.write(VERSION);
+        output.write(PROTOCOL_VERSION);
         writeInt(output, intBuffer, inputs.size());
         for (RegisteredInput input : inputs) {
             byte[] nameBytes = input.name().getBytes(StandardCharsets.UTF_8);

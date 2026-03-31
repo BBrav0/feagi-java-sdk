@@ -10,7 +10,7 @@ import io.feagi.sdk.core.TransportMode;
 /**
  * Transport contract for {@link BrainInput}.
  */
-public interface BrainInputTransport {
+public interface BrainInputTransport extends AutoCloseable {
 
     /**
      * Connect to the FEAGI host/port using the selected transport.
@@ -25,5 +25,6 @@ public interface BrainInputTransport {
     /**
      * Release transport-specific resources.
      */
+    @Override
     void close();
 }

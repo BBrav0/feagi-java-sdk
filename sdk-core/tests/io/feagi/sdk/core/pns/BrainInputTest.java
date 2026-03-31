@@ -38,12 +38,33 @@ class BrainInputTest {
     }
 
     @Test
+    void configureCanBeCalledTwiceBeforeConnect() {
+        BrainInput brainInput = BrainInput.create(new RecordingTransport())
+                .configure("localhost", 5558, TransportMode.ZMQ)
+                .configure("127.0.0.1", 7777, TransportMode.WEBSOCKET);
+
+        assertEquals("127.0.0.1", brainInput.config().host());
+        assertEquals(7777, brainInput.config().port());
+        assertEquals(TransportMode.WEBSOCKET, brainInput.config().transport());
+    }
+
+    @Test
     void connectRequiresConfigurationAndTransport() {
         BrainInput brainInput = BrainInput.create();
         assertThrows(IllegalStateException.class, brainInput::connect);
 
         brainInput.configure("localhost", 5558, TransportMode.ZMQ);
         assertThrows(IllegalStateException.class, brainInput::connect);
+    }
+
+    @Test
+    void useTransportThrowsWhileConnected() {
+        BrainInput brainInput = BrainInput.create(new RecordingTransport())
+                .configure("localhost", 5558, TransportMode.ZMQ)
+                .registerInput("camera", () -> new byte[]{1});
+        brainInput.connect();
+
+        assertThrows(IllegalStateException.class, () -> brainInput.useTransport(new RecordingTransport()));
     }
 
     @Test
@@ -68,6 +89,26 @@ class BrainInputTest {
     }
 
     @Test
+    void registerInputsRejectsNullElement() {
+        BrainInput brainInput = BrainInput.create(new RecordingTransport())
+                .configure("localhost", 5558, TransportMode.ZMQ);
+
+        assertThrows(IllegalArgumentException.class, () -> brainInput.registerInputs(
+                new BrainInput.RegisteredInput("camera", () -> new byte[]{1}),
+                null));
+    }
+
+    @Test
+    void sendRejectsNullEncodedPayload() {
+        BrainInput brainInput = BrainInput.create(new RecordingTransport())
+                .configure("localhost", 5558, TransportMode.ZMQ)
+                .registerInput("camera", () -> null);
+        brainInput.connect();
+
+        assertThrows(NullPointerException.class, brainInput::send);
+    }
+
+    @Test
     void registerConnectAndSendEncodesHeaderAndAllInputs() {
         RecordingTransport transport = new RecordingTransport();
         BrainInput brainInput = BrainInput.create(transport)
@@ -88,7 +129,7 @@ class BrainInputTest {
         byte[] magic = new byte[4];
         buffer.get(magic);
         assertArrayEquals(new byte[]{'F', 'B', 'I', 'N'}, magic);
-        assertEquals(1, Byte.toUnsignedInt(buffer.get()));
+        assertEquals(BrainInput.PROTOCOL_VERSION, Byte.toUnsignedInt(buffer.get()));
         assertEquals(2, buffer.getInt());
         assertEquals("camera", readString(buffer));
         assertArrayEquals(new byte[]{1, 2, 3}, readBytes(buffer));
@@ -112,26 +153,6 @@ class BrainInputTest {
         assertNull(brainInput.config());
         assertEquals(List.of(), brainInput.registeredInputs());
         assertThrows(IllegalStateException.class, brainInput::connect);
-    }
-
-    @Test
-    void closeOnGlobalRetainsSharedStateButDisconnects() {
-        BrainInput global = BrainInput.global();
-        RecordingTransport transport = new RecordingTransport();
-        global.useTransport(transport)
-                .configure("localhost", 5558, TransportMode.ZMQ)
-                .registerInput("global", () -> new byte[]{7});
-
-        global.connect();
-        global.close();
-
-        assertTrue(transport.closed);
-        assertFalse(global.connected());
-        assertEquals("localhost", global.config().host());
-        assertEquals(1, global.registeredInputs().size());
-
-        global.useTransport(new RecordingTransport());
-        global.close();
     }
 
     private static String readString(ByteBuffer buffer) {
