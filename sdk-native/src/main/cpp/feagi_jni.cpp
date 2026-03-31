@@ -608,17 +608,18 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
     FeagiStatus r = feagi_client_receive_motor_buffer(
             JLONG_TO_PTR(FeagiAgentClientHandle, h), &buf, &hasData);
     if (r == FEAGI_STATUS_OK) {
-        // Write back the handle and flag only on success — on failure, buf may be
-        // non-null depending on the ABI's error contract and should not be surfaced
-        // to Java as a valid handle (it may be dangling or partially initialised).
-        jlong jl = PTR_TO_JLONG(buf);
-        env->SetLongArrayRegion(outBufHandle, 0, 1, &jl);
-        if (env->ExceptionCheck()) {
-            return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
-        }
+        // On OK, ownership of buf transfers to JNI/Java. Publish hasData first so
+        // the native handle is only surfaced after both JNI writes succeed.
         jboolean jd = static_cast<jboolean>(hasData);
         env->SetBooleanArrayRegion(outHasData, 0, 1, &jd);
         if (env->ExceptionCheck()) {
+            feagi_buffer_free(buf);
+            return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+        }
+        jlong jl = PTR_TO_JLONG(buf);
+        env->SetLongArrayRegion(outBufHandle, 0, 1, &jl);
+        if (env->ExceptionCheck()) {
+            feagi_buffer_free(buf);
             return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
         }
     } else {
