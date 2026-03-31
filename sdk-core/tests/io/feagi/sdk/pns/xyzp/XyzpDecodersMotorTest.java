@@ -55,10 +55,6 @@ public class XyzpDecodersMotorTest {
                 toFloatList(p));
     }
 
-    private static XyzpNeuronSoA soa2(int[] x, int[] y, int[] z, float[] p) {
-        return soa(x, y, z, p);
-    }
-
     @Test
     public void testDecodeMotorXyzpSignedLinearEndpoints() {
         // SignedPercentage + absolute + linear => variant=5, frame=0, pos=0
@@ -97,7 +93,7 @@ public class XyzpDecodersMotorTest {
         String cid = makeCorticalId(new byte[] {'p', 's', 'e'}, (1 | (1 << 8)), 4);
         Map<String, XyzpNeuronSoA> xyzp = new HashMap<>();
         // even X forward lane: x=0, p=1.0 ; odd X backward lane: x=1, p=0.0 (skipped)
-        xyzp.put(cid, soa2(
+        xyzp.put(cid, soa(
                 new int[] {0, 1},
                 new int[] {0, 0},
                 new int[] {0, 0},
@@ -152,6 +148,45 @@ public class XyzpDecodersMotorTest {
         Map<String, Float> out = XyzpDecoders.decodeMotorXyzp(xyzp, List.of(cid), true);
         assertEquals(0.5f, out.get("2:0"), 1e-6f);
         assertEquals(-1.0f, out.get("2:1"), 1e-6f);
+    }
+
+    @Test
+    public void testDecodeMotorXyzpNullOrEmptyInputs() {
+        assertEquals(0, XyzpDecoders.decodeMotorXyzp(null, List.of(), false).size());
+        assertEquals(0, XyzpDecoders.decodeMotorXyzp(Map.of(), List.of(), false).size());
+    }
+
+    @Test
+    public void testDecodeMotorXyzpMismatchedCoordinateLengthsReturnsEmpty() {
+        String cid = makeCorticalId(new byte[] {'p', 's', 'e'}, 1, 0);
+        Map<String, XyzpNeuronSoA> xyzp = new HashMap<>();
+        // x has 2 entries, but y/z/p have only 1 entry -> should be skipped.
+        xyzp.put(cid, new XyzpNeuronSoA(
+                List.of(0, 1),
+                List.of(0),
+                List.of(0),
+                List.of(1.0f)));
+
+        Map<String, Float> out = XyzpDecoders.decodeMotorXyzp(xyzp, List.of(cid), true);
+        assertEquals(0, out.size());
+    }
+
+    @Test
+    public void testDecodeMotorXyzpCidParseFailureUsesLastResortIncrementalKeys() {
+        // CID is intentionally invalid (not base64, not 8-char legacy) => CID parsing fails.
+        // Provide all p==0.0 so the Python fallback's lane-decode branch isn't executed.
+        String invalidCid = "not-a-valid-cid";
+
+        Map<String, XyzpNeuronSoA> xyzp = new HashMap<>();
+        xyzp.put(invalidCid, new XyzpNeuronSoA(
+                List.of(0, 1),
+                List.of(0, 0),
+                List.of(0, 0),
+                List.of(0.0f, 0.0f)));
+
+        Map<String, Float> out = XyzpDecoders.decodeMotorXyzp(xyzp, List.of(invalidCid), true);
+        assertEquals(0.0f, out.get("0:incremental"), 1e-6f);
+        assertEquals(0.0f, out.get("1:incremental"), 1e-6f);
     }
 }
 

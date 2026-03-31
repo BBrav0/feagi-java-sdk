@@ -89,7 +89,7 @@ public final class XyzpDecoders {
                 int zLen = zCoords.size();
                 int pLen = pValues.size();
                 if (xLen != yLen || xLen != zLen || xLen != pLen) {
-                    LOG.warning("Mismatched x/y/z/p lengths in " + corticalId);
+                    LOG.log(Level.WARNING, "Mismatched x/y/z/p lengths in {0}", corticalId);
                     continue;
                 }
 
@@ -101,7 +101,7 @@ public final class XyzpDecoders {
                     // Note: Python reference's fallback includes a bug where
                     // `positioning_fractional` is referenced before assignment.
                     // Real-world cortical IDs are expected to parse correctly;
-                    // we conservatively default positioningFractional to false.
+                    // for this Java fallback, we mirror the "defaulted to false" behavior.
                     decodeMotorFallbackByXYZ(
                             motors,
                             xCoords,
@@ -109,8 +109,7 @@ public final class XyzpDecoders {
                             zCoords,
                             pValues,
                             groupId,
-                            useGroupKeys,
-                            false);
+                            useGroupKeys);
                     continue;
                 }
 
@@ -173,7 +172,13 @@ public final class XyzpDecoders {
                     motors.put(channelKey, power / 100.0f);
                 }
             } catch (RuntimeException e) {
-                LOG.log(Level.WARNING, "Error decoding motor data from " + corticalId + ": " + e.getMessage(), e);
+                // Avoid eager string concatenation by using parameterized logging.
+                LOG.log(
+                        Level.WARNING,
+                        "Error decoding motor data from {0}: {1}",
+                        new Object[] {corticalId, e.getMessage()}
+                );
+                LOG.log(Level.FINE, "Motor decode stack trace", e);
             }
         }
 
@@ -220,7 +225,7 @@ public final class XyzpDecoders {
         if (!(xCoords.size() == yCoords.size()
                 && xCoords.size() == zCoords.size()
                 && xCoords.size() == pValues.size())) {
-            LOG.warning("Mismatched coordinate lengths in " + corticalId);
+            LOG.log(Level.WARNING, "Mismatched coordinate lengths in {0}", corticalId);
             return grids;
         }
 
@@ -268,7 +273,7 @@ public final class XyzpDecoders {
         List<Float> pValues = neuronData.p();
 
         if (xCoords.size() != pValues.size()) {
-            LOG.warning("Mismatched x/p lengths in " + corticalId);
+            LOG.log(Level.WARNING, "Mismatched x/p lengths in {0}", corticalId);
             return array;
         }
 
@@ -294,8 +299,7 @@ public final class XyzpDecoders {
             List<Integer> zCoords,
             List<Float> pValues,
             Integer groupId,
-            boolean useGroupKeys,
-            boolean positioningFractional /* currently defaulted to false in caller */) {
+            boolean useGroupKeys) {
 
         // This fallback branch mirrors Python's structure-of-arrays lane decode:
         // even/odd X lanes => forward/backward, and Z depth stabilizes scaling.
@@ -333,16 +337,10 @@ public final class XyzpDecoders {
                 List<Integer> zPos = positiveByChannel.getOrDefault(channelIdx, List.of());
                 List<Integer> zNeg = negativeByChannel.getOrDefault(channelIdx, List.of());
 
-                float decoded;
-                if (positioningFractional) {
-                    float pos = (float) decodeUnsignedPercentageFractional(zPos);
-                    float neg = (float) decodeUnsignedPercentageFractional(zNeg);
-                    decoded = (float) clamp(-1.0, 1.0, pos - neg);
-                } else {
-                    float pos = (float) decodeUnsignedPercentageLinear(zPos, zDepth);
-                    float neg = (float) decodeUnsignedPercentageLinear(zNeg, zDepth);
-                    decoded = (float) clamp(-1.0, 1.0, pos - neg);
-                }
+                // Java parity: caller behavior always uses the non-fractional path here.
+                float pos = (float) decodeUnsignedPercentageLinear(zPos, zDepth);
+                float neg = (float) decodeUnsignedPercentageLinear(zNeg, zDepth);
+                float decoded = (float) clamp(-1.0, 1.0, pos - neg);
 
                 String channelKey = String.valueOf(channelIdx);
                 channelKey = channelKey + ":incremental";

@@ -4,7 +4,6 @@
  */
 package io.feagi.sdk.pns.xyzp;
 
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
@@ -20,7 +19,7 @@ import java.util.Base64;
  * </ul>
  */
 public final class CorticalIdUtils {
-    private static final Charset LEGACY_CHARSET = StandardCharsets.ISO_8859_1;
+    private static final java.nio.charset.Charset LEGACY_CHARSET = StandardCharsets.ISO_8859_1;
     private static final int RAW_LEN_BYTES = 8;
 
     private CorticalIdUtils() {}

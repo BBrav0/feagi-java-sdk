@@ -24,6 +24,12 @@ public record XyzpNeuronSoA(
         Objects.requireNonNull(y, "y must not be null");
         Objects.requireNonNull(z, "z must not be null");
         Objects.requireNonNull(p, "p must not be null");
+
+        // Defensive copy: decoders should not observe caller mutations after construction.
+        x = List.copyOf(x);
+        y = List.copyOf(y);
+        z = List.copyOf(z);
+        p = List.copyOf(p);
     }
 }
 
