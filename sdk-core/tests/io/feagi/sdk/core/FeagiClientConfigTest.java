@@ -103,8 +103,32 @@ class FeagiClientConfigTest {
     }
 
     @Test
+    void retryBackoff_zero_acceptedWhenRetriesAreZero() {
+        // Duration.ZERO is a valid explicit "no backoff" when retries are disabled
+        assertDoesNotThrow(() -> FeagiClientConfig.builder()
+                .registrationEndpoint("tcp://localhost:30001")
+                .connectionTimeout(Duration.ofSeconds(5))
+                .heartbeatInterval(Duration.ofSeconds(1))
+                .registrationRetries(0)
+                .retryBackoff(Duration.ZERO)
+                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true))
+                .build());
+    }
+
+    @Test
+    void retryBackoff_zero_rejectedWhenRetriesArePositive() {
+        var b = FeagiClientConfig.builder()
+                .registrationEndpoint("tcp://localhost:30001")
+                .connectionTimeout(Duration.ofSeconds(5))
+                .heartbeatInterval(Duration.ofSeconds(1))
+                .registrationRetries(3)
+                .retryBackoff(Duration.ZERO)
+                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true));
+        assertThrows(IllegalStateException.class, b::build);
+    }
+
+    @Test
     void build_retryBackoffNotRequired_whenRetriesAreZero() {
-        // retryBackoff is never consulted when registrationRetries = 0, so omitting it is valid
         FeagiClientConfig cfg = FeagiClientConfig.builder()
                 .registrationEndpoint("tcp://localhost:30001")
                 .connectionTimeout(Duration.ofSeconds(5))
@@ -112,7 +136,6 @@ class FeagiClientConfigTest {
                 .registrationRetries(0)
                 .sensorySocketConfig(new SensorySocketConfig(1000, 0, true))
                 .build();
-        // accessor must not return null — returns Duration.ZERO as a safe sentinel
         assertEquals(Duration.ZERO, cfg.retryBackoff(),
                 "retryBackoff() must return Duration.ZERO (not null) when retries=0");
     }

@@ -284,10 +284,19 @@ public final class FeagiClientConfig {
         /**
          * Set the backoff duration between registration retry attempts.
          *
-         * @param backoff must be positive; must not be null
+         * <p>Must be positive when {@link #registrationRetries(int)} is {@code > 0}.
+         * {@link Duration#ZERO} is accepted and treated as "no backoff" — useful when
+         * explicitly setting {@code registrationRetries(0)} to document intent, even
+         * though the value is never consulted in that case.
+         *
+         * @param backoff must be non-negative; must not be null
          */
         public Builder retryBackoff(Duration backoff) {
-            this.retryBackoff = requirePositive(backoff, "retryBackoff");
+            Objects.requireNonNull(backoff, "retryBackoff must not be null");
+            if (backoff.isNegative()) {
+                throw new IllegalArgumentException("retryBackoff must not be negative");
+            }
+            this.retryBackoff = backoff;
             return this;
         }
 
@@ -425,10 +434,10 @@ public final class FeagiClientConfig {
                         "registrationRetries must be set — no SDK default. "
                         + "Call .registrationRetries(n) where n >= 0.");
             }
-            if (registrationRetries > 0 && retryBackoff == null) {
+            if (registrationRetries > 0 && (retryBackoff == null || retryBackoff.isZero())) {
                 throw new IllegalStateException(
-                        "retryBackoff must be set when registrationRetries > 0 — no SDK default. "
-                        + "Call .retryBackoff(Duration).");
+                        "retryBackoff must be set to a positive duration when registrationRetries > 0 — "
+                        + "no SDK default. Call .retryBackoff(Duration).");
             }
             return new FeagiClientConfig(this);
         }
