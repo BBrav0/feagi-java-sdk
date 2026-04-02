@@ -108,8 +108,7 @@ public final class FeagiClientConfig {
      * <p><b>Note:</b> auth and descriptor fields ({@code authTokenBase64},
      * {@code manufacturer}, {@code agentName}, {@code agentVersion}) are <em>not</em>
      * copied because {@link AgentConfig} does not currently carry them. If those fields
-     * are needed, set them on the returned config via a builder derived from this call,
-     * or use {@link #builder()} directly.
+     * are needed, use {@link #builder()} directly instead of this factory.
      *
      * @param config source agent configuration; must not be null
      */
@@ -159,8 +158,16 @@ public final class FeagiClientConfig {
     /** Number of registration retries before failing. Always {@code >= 0}. */
     public int registrationRetries()      { return registrationRetries; }
 
-    /** Backoff duration between registration retry attempts. Always positive. */
-    public Duration retryBackoff()        { return retryBackoff; }
+    /**
+     * Backoff duration between registration retry attempts.
+     *
+     * <p>Returns {@link Duration#ZERO} when {@link #registrationRetries()} is zero,
+     * because no retries means no backoff is ever needed. When retries are enabled
+     * ({@code > 0}), this is always positive — the builder requires it.
+     */
+    public Duration retryBackoff() {
+        return retryBackoff != null ? retryBackoff : Duration.ZERO;
+    }
 
     /** ZMQ sensory socket configuration. Never {@code null}. */
     public SensorySocketConfig sensorySocketConfig() { return sensorySocketConfig; }
@@ -494,7 +501,12 @@ public final class FeagiClientConfig {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof FeagiClientConfig that)) return false;
+        // When registrationRetries == 0 in both configs, retryBackoff is irrelevant
+        // (it is never consulted) and must not affect equality.
+        boolean backoffEqual = (registrationRetries == 0 && that.registrationRetries == 0)
+                || Objects.equals(retryBackoff(), that.retryBackoff());
         return registrationRetries == that.registrationRetries
+            && backoffEqual
             && Objects.equals(agentVersion,          that.agentVersion)
             && Objects.equals(registrationEndpoint,  that.registrationEndpoint)
             && Objects.equals(sensoryEndpoint,        that.sensoryEndpoint)
@@ -503,7 +515,6 @@ public final class FeagiClientConfig {
             && Objects.equals(controlEndpoint,        that.controlEndpoint)
             && Objects.equals(connectionTimeout,      that.connectionTimeout)
             && Objects.equals(heartbeatInterval,      that.heartbeatInterval)
-            && Objects.equals(retryBackoff,           that.retryBackoff)
             && Objects.equals(sensorySocketConfig,    that.sensorySocketConfig)
             && Objects.equals(authTokenBase64,        that.authTokenBase64)
             && Objects.equals(manufacturer,           that.manufacturer)
@@ -512,12 +523,14 @@ public final class FeagiClientConfig {
 
     @Override
     public int hashCode() {
-        // SensorySocketConfig.hashCode() now exists — no need to hash its fields separately.
+        // When registrationRetries == 0, retryBackoff is irrelevant — hash 0 for it
+        // so equal configs (per equals()) produce the same hash code.
+        Object effectiveBackoff = registrationRetries == 0 ? null : retryBackoff();
         return Objects.hash(
                 registrationEndpoint, sensoryEndpoint, motorEndpoint,
                 visualizationEndpoint, controlEndpoint,
                 connectionTimeout, heartbeatInterval,
-                registrationRetries, retryBackoff,
+                registrationRetries, effectiveBackoff,
                 sensorySocketConfig, authTokenBase64,
                 manufacturer, agentName, agentVersion);
     }
@@ -537,7 +550,7 @@ public final class FeagiClientConfig {
                 + ", connectionTimeout=" + connectionTimeout
                 + ", heartbeatInterval=" + heartbeatInterval
                 + ", registrationRetries=" + registrationRetries
-                + ", retryBackoff=" + retryBackoff
+                + ", retryBackoff=" + (registrationRetries == 0 ? "N/A" : retryBackoff())
                 + ", sensorySocketConfig=" + sensorySocketConfig
                 + ", manufacturer=" + manufacturer
                 + ", agentName=" + agentName

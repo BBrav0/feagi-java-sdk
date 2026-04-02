@@ -105,13 +105,39 @@ class FeagiClientConfigTest {
     @Test
     void build_retryBackoffNotRequired_whenRetriesAreZero() {
         // retryBackoff is never consulted when registrationRetries = 0, so omitting it is valid
-        assertDoesNotThrow(() -> FeagiClientConfig.builder()
+        FeagiClientConfig cfg = FeagiClientConfig.builder()
                 .registrationEndpoint("tcp://localhost:30001")
                 .connectionTimeout(Duration.ofSeconds(5))
                 .heartbeatInterval(Duration.ofSeconds(1))
                 .registrationRetries(0)
                 .sensorySocketConfig(new SensorySocketConfig(1000, 0, true))
-                .build());
+                .build();
+        // accessor must not return null — returns Duration.ZERO as a safe sentinel
+        assertEquals(Duration.ZERO, cfg.retryBackoff(),
+                "retryBackoff() must return Duration.ZERO (not null) when retries=0");
+    }
+
+    @Test
+    void equals_twoZeroRetryConfigs_areEqualRegardlessOfBackoff() {
+        // Two configs with retries=0 that differ only in retryBackoff must compare equal
+        // because the backoff value is irrelevant when retries are disabled.
+        FeagiClientConfig withBackoff = FeagiClientConfig.builder()
+                .registrationEndpoint("tcp://localhost:30001")
+                .connectionTimeout(Duration.ofSeconds(5))
+                .heartbeatInterval(Duration.ofSeconds(1))
+                .registrationRetries(0)
+                .retryBackoff(Duration.ofMillis(500))
+                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true))
+                .build();
+        FeagiClientConfig withoutBackoff = FeagiClientConfig.builder()
+                .registrationEndpoint("tcp://localhost:30001")
+                .connectionTimeout(Duration.ofSeconds(5))
+                .heartbeatInterval(Duration.ofSeconds(1))
+                .registrationRetries(0)
+                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true))
+                .build();
+        assertEquals(withBackoff, withoutBackoff,
+                "zero-retry configs must compare equal regardless of retryBackoff");
     }
 
     @Test
