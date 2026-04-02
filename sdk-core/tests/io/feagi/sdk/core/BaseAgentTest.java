@@ -70,9 +70,12 @@ class BaseAgentTest {
         int closeHwCalls;
 
         // What hooks received / returned
-        final List<Object>      hwDataReceived   = new ArrayList<>();
-        final List<AgentFrame>  framesReceived   = new ArrayList<>();
-        final List<Object>      commandsReceived = new ArrayList<>();
+        // CopyOnWriteArrayList: run-loop thread writes, test thread reads after f.get() —
+        // happens-before from f.get() is sufficient for correctness but the plain ArrayList
+        // has no internal memory barrier on iteration, so use COWAL to be safe.
+        final List<Object>      hwDataReceived   = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final List<AgentFrame>  framesReceived   = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final List<Object>      commandsReceived = new java.util.concurrent.CopyOnWriteArrayList<>();
 
         // Configuration
         boolean throwOnReadSensors   = false;

@@ -6,6 +6,7 @@
 package io.feagi.sdk.core;
 
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Objects;
 
 /**
@@ -98,8 +99,15 @@ public final class FeagiClientConfig {
     /**
      * Derive a {@code FeagiClientConfig} from an existing {@link AgentConfig}.
      *
-     * <p>Copies all connection parameters so callers do not have to re-specify them
-     * when constructing {@code NativeFeagiAgentClient} directly.
+     * <p>Copies all connection parameters (endpoints, timeouts, retries, socket config)
+     * so callers do not have to re-specify them when constructing
+     * {@code NativeFeagiAgentClient} directly.
+     *
+     * <p><b>Note:</b> auth and descriptor fields ({@code authTokenBase64},
+     * {@code manufacturer}, {@code agentName}, {@code agentVersion}) are <em>not</em>
+     * copied because {@link AgentConfig} does not currently carry them. If those fields
+     * are needed, set them on the returned config via a builder derived from this call,
+     * or use {@link #builder()} directly.
      *
      * @param config source agent configuration; must not be null
      */
@@ -169,9 +177,16 @@ public final class FeagiClientConfig {
 
     /**
      * Agent software version, or {@code -1} if not set.
+     * Use {@link #isAgentVersionSet()} to distinguish "not set" from a legitimate version 0.
      * When non-negative, passed to FEAGI as {@code uint32_t}.
      */
     public int agentVersion()             { return agentVersion; }
+
+    /**
+     * Return {@code true} if {@link #agentVersion()} was explicitly set on the builder.
+     * Prefer this over comparing {@code agentVersion() == -1} directly.
+     */
+    public boolean isAgentVersionSet()    { return agentVersion >= 0; }
 
     // ── Builder ───────────────────────────────────────────────────────────────
 
@@ -389,18 +404,28 @@ public final class FeagiClientConfig {
         /**
          * Build and return an immutable {@link FeagiClientConfig}.
          *
+         * <p>{@code retryBackoff} is only required when {@code registrationRetries > 0}.
+         * When retries are disabled ({@code registrationRetries = 0}) the backoff value
+         * is never consulted and may be omitted.
+         *
          * @throws IllegalStateException if any required field was not set
          */
         public FeagiClientConfig build() {
             requireSet(registrationEndpoint, "registrationEndpoint");
             requireSet(connectionTimeout,    "connectionTimeout");
             requireSet(heartbeatInterval,    "heartbeatInterval");
-            requireSet(retryBackoff,         "retryBackoff");
             requireSet(sensorySocketConfig,  "sensorySocketConfig");
             if (registrationRetries == Integer.MIN_VALUE) {
                 throw new IllegalStateException(
                         "registrationRetries must be set — no SDK default. "
                         + "Call .registrationRetries(n) where n >= 0.");
+            }
+            // retryBackoff is only meaningful when retries > 0; omitting it
+            // when registrationRetries == 0 is valid since it is never used.
+            if (registrationRetries > 0 && retryBackoff == null) {
+                throw new IllegalStateException(
+                        "retryBackoff must be set when registrationRetries > 0 — no SDK default. "
+                        + "Call .retryBackoff(Duration).");
             }
             return new FeagiClientConfig(this);
         }
@@ -448,7 +473,7 @@ public final class FeagiClientConfig {
             }
             byte[] decoded;
             try {
-                decoded = java.util.Base64.getDecoder().decode(token);
+                decoded = Base64.getDecoder().decode(token);
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException(
                         "authTokenBase64 is not valid Base64: " + e.getMessage(), e);
@@ -459,5 +484,72 @@ public final class FeagiClientConfig {
                         + decoded.length);
             }
         }
+    }
+
+    // ── Object ────────────────────────────────────────────────────────────────
+
+    /**
+     * Two {@code FeagiClientConfig} instances are equal if all fields are equal.
+     * Useful when asserting config round-trips in tests.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof FeagiClientConfig that)) return false;
+        // SensorySocketConfig has no equals() — compare its fields directly
+        boolean socketEqual = sensorySocketConfig == that.sensorySocketConfig
+                || (sensorySocketConfig != null && that.sensorySocketConfig != null
+                    && sensorySocketConfig.sendHwm()   == that.sensorySocketConfig.sendHwm()
+                    && sensorySocketConfig.lingerMs()  == that.sensorySocketConfig.lingerMs()
+                    && sensorySocketConfig.immediate() == that.sensorySocketConfig.immediate());
+        return registrationRetries   == that.registrationRetries
+            && agentVersion          == that.agentVersion
+            && socketEqual
+            && Objects.equals(registrationEndpoint,  that.registrationEndpoint)
+            && Objects.equals(sensoryEndpoint,        that.sensoryEndpoint)
+            && Objects.equals(motorEndpoint,          that.motorEndpoint)
+            && Objects.equals(visualizationEndpoint,  that.visualizationEndpoint)
+            && Objects.equals(controlEndpoint,        that.controlEndpoint)
+            && Objects.equals(connectionTimeout,      that.connectionTimeout)
+            && Objects.equals(heartbeatInterval,      that.heartbeatInterval)
+            && Objects.equals(retryBackoff,           that.retryBackoff)
+            && Objects.equals(authTokenBase64,        that.authTokenBase64)
+            && Objects.equals(manufacturer,           that.manufacturer)
+            && Objects.equals(agentName,              that.agentName);
+    }
+
+    @Override
+    public int hashCode() {
+        // SensorySocketConfig has no hashCode() — hash its fields directly
+        int socketHash = sensorySocketConfig == null ? 0
+                : Objects.hash(sensorySocketConfig.sendHwm(),
+                               sensorySocketConfig.lingerMs(),
+                               sensorySocketConfig.immediate());
+        return Objects.hash(
+                registrationEndpoint, sensoryEndpoint, motorEndpoint,
+                visualizationEndpoint, controlEndpoint,
+                connectionTimeout, heartbeatInterval,
+                registrationRetries, retryBackoff,
+                socketHash, authTokenBase64,
+                manufacturer, agentName, agentVersion);
+    }
+
+    /**
+     * Returns a human-readable summary. The auth token is masked to avoid
+     * accidentally logging a credential.
+     */
+    @Override
+    public String toString() {
+        return "FeagiClientConfig{"
+                + "registrationEndpoint='" + registrationEndpoint + '\''
+                + ", sensoryEndpoint='" + sensoryEndpoint + '\''
+                + ", motorEndpoint='" + motorEndpoint + '\''
+                + ", connectionTimeout=" + connectionTimeout
+                + ", heartbeatInterval=" + heartbeatInterval
+                + ", registrationRetries=" + registrationRetries
+                + ", retryBackoff=" + retryBackoff
+                + ", authTokenBase64=" + (authTokenBase64 != null ? "<set>" : "null")
+                + ", agentVersion=" + (isAgentVersionSet() ? agentVersion : "not set")
+                + '}';
     }
 }

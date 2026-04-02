@@ -92,13 +92,26 @@ class FeagiClientConfigTest {
 
     @Test
     void build_missingRetryBackoff_throws() {
+        // retryBackoff is required only when registrationRetries > 0
         var b = FeagiClientConfig.builder()
                 .registrationEndpoint("tcp://localhost:30001")
                 .connectionTimeout(Duration.ofSeconds(5))
                 .heartbeatInterval(Duration.ofSeconds(1))
-                .registrationRetries(3)
+                .registrationRetries(3) // > 0, so retryBackoff is required
                 .sensorySocketConfig(new SensorySocketConfig(1000, 0, true));
         assertThrows(IllegalStateException.class, b::build);
+    }
+
+    @Test
+    void build_retryBackoffNotRequired_whenRetriesAreZero() {
+        // retryBackoff is never consulted when registrationRetries = 0, so omitting it is valid
+        assertDoesNotThrow(() -> FeagiClientConfig.builder()
+                .registrationEndpoint("tcp://localhost:30001")
+                .connectionTimeout(Duration.ofSeconds(5))
+                .heartbeatInterval(Duration.ofSeconds(1))
+                .registrationRetries(0)
+                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true))
+                .build());
     }
 
     @Test
@@ -351,5 +364,59 @@ class FeagiClientConfigTest {
     void from_nullAgentConfig_throws() {
         assertThrows(NullPointerException.class,
                 () -> FeagiClientConfig.from(null));
+    }
+
+    // ── equals / hashCode ─────────────────────────────────────────────────────
+
+    @Test
+    void equals_identicalConfigs_areEqual() {
+        FeagiClientConfig a = minimalBuilder().build();
+        FeagiClientConfig b = minimalBuilder().build();
+        assertEquals(a, b);
+        assertEquals(a.hashCode(), b.hashCode());
+    }
+
+    @Test
+    void equals_differentEndpoint_areNotEqual() {
+        FeagiClientConfig a = minimalBuilder().build();
+        FeagiClientConfig b = minimalBuilder()
+                .registrationEndpoint("tcp://other-host:30001")
+                .build();
+        assertNotEquals(a, b);
+    }
+
+    // ── toString ──────────────────────────────────────────────────────────────
+
+    @Test
+    void toString_doesNotExposeAuthToken() {
+        FeagiClientConfig cfg = minimalBuilder()
+                .authTokenBase64(validAuthToken())
+                .build();
+        String s = cfg.toString();
+        assertFalse(s.contains(validAuthToken()),
+                "toString must not expose raw auth token");
+        assertTrue(s.contains("<set>"),
+                "toString must indicate auth token is set");
+    }
+
+    @Test
+    void toString_containsRegistrationEndpoint() {
+        FeagiClientConfig cfg = minimalBuilder().build();
+        assertTrue(cfg.toString().contains("tcp://localhost:30001"));
+    }
+
+    // ── isAgentVersionSet ─────────────────────────────────────────────────────
+
+    @Test
+    void isAgentVersionSet_falseByDefault() {
+        assertFalse(minimalBuilder().build().isAgentVersionSet());
+        assertEquals(-1, minimalBuilder().build().agentVersion());
+    }
+
+    @Test
+    void isAgentVersionSet_trueAfterSet() {
+        FeagiClientConfig cfg = minimalBuilder().agentVersion(0).build();
+        assertTrue(cfg.isAgentVersionSet());
+        assertEquals(0, cfg.agentVersion());
     }
 }
