@@ -174,7 +174,7 @@ class FeagiClientConfigTest {
         assertNull(cfg.authTokenBase64());
         assertNull(cfg.manufacturer());
         assertNull(cfg.agentName());
-        assertFalse(cfg.isAgentVersionSet());
+        assertFalse(cfg.agentVersion().isPresent());
         assertTrue(cfg.agentVersion().isEmpty());
     }
 
@@ -220,6 +220,13 @@ class FeagiClientConfigTest {
     void registrationEndpoint_nonTcp_throws() {
         assertThrows(IllegalArgumentException.class,
                 () -> FeagiClientConfig.builder().registrationEndpoint("http://localhost:30001"));
+    }
+
+    @Test
+    void registrationEndpoint_barePrefix_throws() {
+        // "tcp://" with nothing after it must be rejected
+        assertThrows(IllegalArgumentException.class,
+                () -> FeagiClientConfig.builder().registrationEndpoint("tcp://"));
     }
 
     // ── connectionTimeout validation ──────────────────────────────────────────
@@ -448,14 +455,14 @@ class FeagiClientConfigTest {
 
     @Test
     void isAgentVersionSet_falseByDefault() {
-        assertFalse(minimalBuilder().build().isAgentVersionSet());
+        assertFalse(minimalBuilder().build().agentVersion().isPresent());
         assertTrue(minimalBuilder().build().agentVersion().isEmpty());
     }
 
     @Test
     void isAgentVersionSet_trueAfterSet() {
         FeagiClientConfig cfg = minimalBuilder().agentVersion(0).build();
-        assertTrue(cfg.isAgentVersionSet());
+        assertTrue(cfg.agentVersion().isPresent());
         assertEquals(0, cfg.agentVersion().getAsInt());
     }
 }

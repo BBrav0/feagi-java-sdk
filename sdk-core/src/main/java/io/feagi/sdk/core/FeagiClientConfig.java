@@ -82,7 +82,7 @@ public final class FeagiClientConfig {
         this.connectionTimeout     = b.connectionTimeout;
         this.heartbeatInterval     = b.heartbeatInterval;
         this.registrationRetries   = b.registrationRetries;
-        this.retryBackoff          = b.retryBackoff;
+        this.retryBackoff          = b.retryBackoff != null ? b.retryBackoff : Duration.ZERO;
         this.sensorySocketConfig   = b.sensorySocketConfig;
         this.authTokenBase64       = b.authTokenBase64;
         this.manufacturer          = b.manufacturer;
@@ -165,9 +165,7 @@ public final class FeagiClientConfig {
      * because no retries means no backoff is ever needed. When retries are enabled
      * ({@code > 0}), this is always positive — the builder requires it.
      */
-    public Duration retryBackoff() {
-        return retryBackoff != null ? retryBackoff : Duration.ZERO;
-    }
+    public Duration retryBackoff()        { return retryBackoff; }
 
     /** ZMQ sensory socket configuration. Never {@code null}. */
     public SensorySocketConfig sensorySocketConfig() { return sensorySocketConfig; }
@@ -186,14 +184,10 @@ public final class FeagiClientConfig {
 
     /**
      * Agent software version, or {@link OptionalInt#empty()} if not set.
+     * Use {@code agentVersion().isPresent()} to check whether it was set.
      * When present, passed to FEAGI as {@code uint32_t}.
      */
     public OptionalInt agentVersion()     { return agentVersion; }
-
-    /**
-     * Return {@code true} if {@link #agentVersion()} was explicitly set on the builder.
-     */
-    public boolean isAgentVersionSet()    { return agentVersion.isPresent(); }
 
     // ── Builder ───────────────────────────────────────────────────────────────
 
@@ -450,6 +444,10 @@ public final class FeagiClientConfig {
                 throw new IllegalArgumentException(
                         name + " must start with tcp:// (got: '" + value + "')");
             }
+            if (value.length() <= "tcp://".length() || value.substring("tcp://".length()).isBlank()) {
+                throw new IllegalArgumentException(
+                        name + " must include a host after tcp:// (got: '" + value + "')");
+            }
             return value;
         }
 
@@ -504,7 +502,7 @@ public final class FeagiClientConfig {
         // When registrationRetries == 0 in both configs, retryBackoff is irrelevant
         // (it is never consulted) and must not affect equality.
         boolean backoffEqual = (registrationRetries == 0 && that.registrationRetries == 0)
-                || Objects.equals(retryBackoff(), that.retryBackoff());
+                || Objects.equals(retryBackoff, that.retryBackoff);
         return registrationRetries == that.registrationRetries
             && backoffEqual
             && Objects.equals(agentVersion,          that.agentVersion)
@@ -523,9 +521,9 @@ public final class FeagiClientConfig {
 
     @Override
     public int hashCode() {
-        // When registrationRetries == 0, retryBackoff is irrelevant — hash 0 for it
-        // so equal configs (per equals()) produce the same hash code.
-        Object effectiveBackoff = registrationRetries == 0 ? null : retryBackoff();
+        // When registrationRetries == 0, retryBackoff is irrelevant — exclude it from
+        // the hash so equal configs (per equals()) produce the same hash code.
+        Duration effectiveBackoff = registrationRetries == 0 ? null : retryBackoff;
         return Objects.hash(
                 registrationEndpoint, sensoryEndpoint, motorEndpoint,
                 visualizationEndpoint, controlEndpoint,
@@ -555,7 +553,7 @@ public final class FeagiClientConfig {
                 + ", manufacturer=" + manufacturer
                 + ", agentName=" + agentName
                 + ", authTokenBase64=" + (authTokenBase64 != null ? "<set>" : "null")
-                + ", agentVersion=" + (isAgentVersionSet() ? agentVersion.getAsInt() : "not set")
+                + ", agentVersion=" + (agentVersion.isPresent() ? agentVersion.getAsInt() : "not set")
                 + '}';
     }
 }
