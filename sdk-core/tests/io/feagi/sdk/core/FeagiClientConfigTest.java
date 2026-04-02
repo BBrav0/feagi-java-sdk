@@ -148,7 +148,8 @@ class FeagiClientConfigTest {
         assertNull(cfg.authTokenBase64());
         assertNull(cfg.manufacturer());
         assertNull(cfg.agentName());
-        assertEquals(-1, cfg.agentVersion());
+        assertFalse(cfg.isAgentVersionSet());
+        assertTrue(cfg.agentVersion().isEmpty());
     }
 
     @Test
@@ -172,7 +173,7 @@ class FeagiClientConfigTest {
         assertEquals(token, cfg.authTokenBase64());
         assertEquals("Neuraville", cfg.manufacturer());
         assertEquals("TestAgent", cfg.agentName());
-        assertEquals(2, cfg.agentVersion());
+        assertEquals(2, cfg.agentVersion().getAsInt());
     }
 
     // ── registrationEndpoint validation ───────────────────────────────────────
@@ -273,8 +274,10 @@ class FeagiClientConfigTest {
 
     @Test
     void authToken_invalidBase64_throws() {
+        // "not@valid@base64" has no - or _, so the URL-safe check does not fire.
+        // The @ chars are illegal Base64 characters, so the decoder path is exercised.
         assertThrows(IllegalArgumentException.class,
-                () -> FeagiClientConfig.builder().authTokenBase64("not-valid-base64!!!"));
+                () -> FeagiClientConfig.builder().authTokenBase64("not@valid@base64"));
     }
 
     @Test
@@ -307,8 +310,8 @@ class FeagiClientConfigTest {
 
     @Test
     void agentVersion_zero_isAllowed() {
-        assertDoesNotThrow(() -> minimalBuilder().agentVersion(0).build());
-        assertEquals(0, minimalBuilder().agentVersion(0).build().agentVersion());
+        FeagiClientConfig cfg = minimalBuilder().agentVersion(0).build();
+        assertEquals(0, cfg.agentVersion().getAsInt());
     }
 
     // ── manufacturer / agentName validation ──────────────────────────────────
@@ -401,8 +404,18 @@ class FeagiClientConfigTest {
 
     @Test
     void toString_containsRegistrationEndpoint() {
-        FeagiClientConfig cfg = minimalBuilder().build();
-        assertTrue(cfg.toString().contains("tcp://localhost:30001"));
+        FeagiClientConfig cfg = minimalBuilder()
+                .visualizationEndpoint("tcp://localhost:5570")
+                .controlEndpoint("tcp://localhost:5580")
+                .manufacturer("Neuraville")
+                .agentName("TestAgent")
+                .build();
+        String s = cfg.toString();
+        assertTrue(s.contains("tcp://localhost:30001"), "missing registrationEndpoint");
+        assertTrue(s.contains("tcp://localhost:5570"),  "missing visualizationEndpoint");
+        assertTrue(s.contains("tcp://localhost:5580"),  "missing controlEndpoint");
+        assertTrue(s.contains("Neuraville"),            "missing manufacturer");
+        assertTrue(s.contains("TestAgent"),             "missing agentName");
     }
 
     // ── isAgentVersionSet ─────────────────────────────────────────────────────
@@ -410,13 +423,13 @@ class FeagiClientConfigTest {
     @Test
     void isAgentVersionSet_falseByDefault() {
         assertFalse(minimalBuilder().build().isAgentVersionSet());
-        assertEquals(-1, minimalBuilder().build().agentVersion());
+        assertTrue(minimalBuilder().build().agentVersion().isEmpty());
     }
 
     @Test
     void isAgentVersionSet_trueAfterSet() {
         FeagiClientConfig cfg = minimalBuilder().agentVersion(0).build();
         assertTrue(cfg.isAgentVersionSet());
-        assertEquals(0, cfg.agentVersion());
+        assertEquals(0, cfg.agentVersion().getAsInt());
     }
 }

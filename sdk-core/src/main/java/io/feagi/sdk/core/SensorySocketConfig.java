@@ -52,4 +52,25 @@ public final class SensorySocketConfig {
     public boolean immediate() {
         return immediate;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof SensorySocketConfig that)) return false;
+        return sendHwm == that.sendHwm
+            && lingerMs == that.lingerMs
+            && immediate == that.immediate;
+    }
+
+    @Override
+    public int hashCode() {
+        return java.util.Objects.hash(sendHwm, lingerMs, immediate);
+    }
+
+    @Override
+    public String toString() {
+        return "SensorySocketConfig{sendHwm=" + sendHwm
+                + ", lingerMs=" + lingerMs
+                + ", immediate=" + immediate + '}';
+    }
 }
