@@ -141,26 +141,60 @@ class FeagiClientConfigTest {
     }
 
     @Test
-    void equals_twoZeroRetryConfigs_areEqualRegardlessOfBackoff() {
-        // Two configs with retries=0 that differ only in retryBackoff must compare equal
-        // because the backoff value is irrelevant when retries are disabled.
-        FeagiClientConfig withBackoff = FeagiClientConfig.builder()
-                .registrationEndpoint("tcp://localhost:30001")
-                .connectionTimeout(Duration.ofSeconds(5))
-                .heartbeatInterval(Duration.ofSeconds(1))
-                .registrationRetries(0)
-                .retryBackoff(Duration.ofMillis(500))
-                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true))
-                .build();
-        FeagiClientConfig withoutBackoff = FeagiClientConfig.builder()
+    void equals_twoZeroRetryConfigs_withSameBackoff_areEqual() {
+        // Without the special-case, two zero-retry configs are equal only if
+        // retryBackoff is also equal (both Duration.ZERO via normalization).
+        FeagiClientConfig a = FeagiClientConfig.builder()
                 .registrationEndpoint("tcp://localhost:30001")
                 .connectionTimeout(Duration.ofSeconds(5))
                 .heartbeatInterval(Duration.ofSeconds(1))
                 .registrationRetries(0)
                 .sensorySocketConfig(new SensorySocketConfig(1000, 0, true))
                 .build();
-        assertEquals(withBackoff, withoutBackoff,
-                "zero-retry configs must compare equal regardless of retryBackoff");
+        FeagiClientConfig b = FeagiClientConfig.builder()
+                .registrationEndpoint("tcp://localhost:30001")
+                .connectionTimeout(Duration.ofSeconds(5))
+                .heartbeatInterval(Duration.ofSeconds(1))
+                .registrationRetries(0)
+                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true))
+                .build();
+        assertEquals(a, b);
+    }
+
+    // ── endpoint scheme validation ─────────────────────────────────────────────
+
+    @Test
+    void registrationEndpoint_ipcScheme_isAccepted() {
+        // ipc:// is valid for local/test use
+        assertDoesNotThrow(() -> minimalBuilder()
+                .registrationEndpoint("ipc:///tmp/feagi-reg.sock")
+                .build());
+    }
+
+    @Test
+    void registrationEndpoint_inprocScheme_isRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> FeagiClientConfig.builder()
+                        .registrationEndpoint("inproc://feagi"));
+    }
+
+    // ── retryBackoff error message distinction ────────────────────────────────
+
+    @Test
+    void build_retryBackoffSetToZeroWithRetriesPositive_givesDistinctError() {
+        var b = FeagiClientConfig.builder()
+                .registrationEndpoint("tcp://localhost:30001")
+                .connectionTimeout(Duration.ofSeconds(5))
+                .heartbeatInterval(Duration.ofSeconds(1))
+                .registrationRetries(3)
+                .retryBackoff(Duration.ZERO)
+                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true));
+        IllegalStateException ex = assertThrows(IllegalStateException.class, b::build);
+        // Message must not say "no SDK default" — the caller DID set it, to zero
+        assertFalse(ex.getMessage().contains("no SDK default"),
+                "Error must distinguish 'set to zero' from 'not set'");
+        assertTrue(ex.getMessage().contains("Duration.ZERO"),
+                "Error must mention Duration.ZERO to explain what was wrong");
     }
 
     @Test

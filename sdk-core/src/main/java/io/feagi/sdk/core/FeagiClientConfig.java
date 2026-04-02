@@ -18,6 +18,11 @@ import java.util.OptionalInt;
  * SDK's {@code connect()} parameters and satisfies the requirement that all connection
  * params be required with no SDK defaults.
  *
+ * <h2>Endpoint schemes</h2>
+ * Endpoints accept {@code tcp://} (networked) and {@code ipc://} (local inter-process,
+ * useful for integration tests). {@code inproc://} is not supported because it requires
+ * sharing a ZMQ context with the FEAGI process, which this SDK does not do.
+ *
  * <h2>No defaults</h2>
  * Every required field must be supplied explicitly. The builder rejects {@link Builder#build()}
  * if any required field is missing. Validation runs eagerly so misconfiguration is caught
@@ -173,6 +178,11 @@ public final class FeagiClientConfig {
     /**
      * Base64-encoded auth token (standard Base64, decodes to 32 bytes),
      * or {@code null} if not set.
+     *
+     * <p><b>Security note:</b> The token is stored as a {@code String}, which cannot be
+     * explicitly zeroed after use. It will remain in memory until garbage collected.
+     * If zeroing credentials is required, prefer passing the decoded {@code byte[]} directly
+     * to the native layer and clearing it there — tracked as a future improvement.
      */
     public String authTokenBase64()       { return authTokenBase64; }
 
@@ -434,10 +444,18 @@ public final class FeagiClientConfig {
                         "registrationRetries must be set — no SDK default. "
                         + "Call .registrationRetries(n) where n >= 0.");
             }
-            if (registrationRetries > 0 && (retryBackoff == null || retryBackoff.isZero())) {
-                throw new IllegalStateException(
-                        "retryBackoff must be set to a positive duration when registrationRetries > 0 — "
-                        + "no SDK default. Call .retryBackoff(Duration).");
+            if (registrationRetries > 0) {
+                if (retryBackoff == null) {
+                    throw new IllegalStateException(
+                            "retryBackoff must be set when registrationRetries > 0 — no SDK default. "
+                            + "Call .retryBackoff(Duration).");
+                }
+                if (retryBackoff.isZero()) {
+                    throw new IllegalStateException(
+                            "retryBackoff must be positive when registrationRetries > 0, "
+                            + "but was set to Duration.ZERO. "
+                            + "Use a positive duration (e.g. Duration.ofMillis(500)).");
+                }
             }
             return new FeagiClientConfig(this);
         }
@@ -449,13 +467,15 @@ public final class FeagiClientConfig {
             if (value.isBlank()) {
                 throw new IllegalArgumentException(name + " must not be blank");
             }
-            if (!value.startsWith("tcp://")) {
+            // Accept tcp:// (networked) and ipc:// (local/test). inproc:// is not supported
+            // because it requires sharing a ZMQ context with FEAGI, which the SDK does not do.
+            if (!value.startsWith("tcp://") && !value.startsWith("ipc://")) {
                 throw new IllegalArgumentException(
-                        name + " must start with tcp:// (got: '" + value + "')");
+                        name + " must start with tcp:// or ipc:// (got: '" + value + "')");
             }
-            if (value.length() <= "tcp://".length() || value.substring("tcp://".length()).isBlank()) {
+            if (value.length() <= "tcp://".length() || value.substring(value.indexOf("//") + 2).isBlank()) {
                 throw new IllegalArgumentException(
-                        name + " must include a host after tcp:// (got: '" + value + "')");
+                        name + " must include an address after the scheme (got: '" + value + "')");
             }
             return value;
         }
@@ -508,12 +528,7 @@ public final class FeagiClientConfig {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof FeagiClientConfig that)) return false;
-        // When registrationRetries == 0 in both configs, retryBackoff is irrelevant
-        // (it is never consulted) and must not affect equality.
-        boolean backoffEqual = (registrationRetries == 0 && that.registrationRetries == 0)
-                || Objects.equals(retryBackoff, that.retryBackoff);
         return registrationRetries == that.registrationRetries
-            && backoffEqual
             && Objects.equals(agentVersion,          that.agentVersion)
             && Objects.equals(registrationEndpoint,  that.registrationEndpoint)
             && Objects.equals(sensoryEndpoint,        that.sensoryEndpoint)
@@ -522,6 +537,7 @@ public final class FeagiClientConfig {
             && Objects.equals(controlEndpoint,        that.controlEndpoint)
             && Objects.equals(connectionTimeout,      that.connectionTimeout)
             && Objects.equals(heartbeatInterval,      that.heartbeatInterval)
+            && Objects.equals(retryBackoff,           that.retryBackoff)
             && Objects.equals(sensorySocketConfig,    that.sensorySocketConfig)
             && Objects.equals(authTokenBase64,        that.authTokenBase64)
             && Objects.equals(manufacturer,           that.manufacturer)
@@ -530,14 +546,11 @@ public final class FeagiClientConfig {
 
     @Override
     public int hashCode() {
-        // When registrationRetries == 0, retryBackoff is irrelevant — exclude it from
-        // the hash so equal configs (per equals()) produce the same hash code.
-        Duration effectiveBackoff = registrationRetries == 0 ? null : retryBackoff;
         return Objects.hash(
                 registrationEndpoint, sensoryEndpoint, motorEndpoint,
                 visualizationEndpoint, controlEndpoint,
                 connectionTimeout, heartbeatInterval,
-                registrationRetries, effectiveBackoff,
+                registrationRetries, retryBackoff,
                 sensorySocketConfig, authTokenBase64,
                 manufacturer, agentName, agentVersion);
     }
