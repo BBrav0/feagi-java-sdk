@@ -138,17 +138,21 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * Scheduler for the background heartbeat. {@code null} when heartbeat is disabled
      * or the client is not connected.
      *
-     * <p>{@code volatile} is required here: {@link #shutdownHeartbeat()} reads this field
-     * in Phase 1 of {@link #close()} <em>without</em> holding the write lock (to avoid a
-     * deadlock with the heartbeat thread's read lock). Without {@code volatile}, the JMM
-     * provides no happens-before between the write in {@link #startHeartbeatIfConfigured()}
-     * (inside the write lock) and this lock-free read — Phase 1 could legally see a stale
-     * null. The double-shutdown pattern in Phase 2 makes the overall logic correct regardless,
-     * but {@code volatile} makes Phase 1 independently safe and removes reliance on Phase 2
-     * as a safety net.
+     * <p>{@code volatile} is required here: {@link #shutdownHeartbeat()} reads and writes
+     * this field in Phase 1 of {@link #close()} <em>without</em> holding the write lock
+     * (to avoid a deadlock with the heartbeat thread's read lock). Without {@code volatile},
+     * the JMM provides no happens-before between the write in {@link #startHeartbeatIfConfigured()}
+     * (inside the write lock) and this lock-free read — Phase 1 could legally see a stale null.
      */
     private volatile ScheduledExecutorService heartbeatExecutor;
-    private ScheduledFuture<?> heartbeatTask; // only accessed inside write lock; no volatile needed
+
+    /**
+     * The scheduled heartbeat future. Only read and written inside the write lock — either
+     * in {@link #startHeartbeatIfConfigured()} (which sets it) or in the Phase 2 block of
+     * {@link #close()} (which clears it via {@link #shutdownHeartbeat()}). Never touched
+     * in Phase 1 of {@code close()} to avoid a data race outside the lock.
+     */
+    private ScheduledFuture<?> heartbeatTask;
 
     // ── Construction ───────────────────────────────────────────────────────────
 
@@ -554,6 +558,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             //   3. close() acquires write lock here
             // Without this second shutdown, the new executor is orphaned and runs forever.
             // We do NOT call awaitTermination here — that happens in Phase 3, outside the lock.
+            // heartbeatTask is also cleared here (inside the lock) since shutdownHeartbeat()
+            // intentionally skips it to avoid a data race when called without the lock in Phase 1.
+            heartbeatTask = null;
             raceExecutor = shutdownHeartbeat();
         } finally {
             handleLock.writeLock().unlock();
@@ -634,18 +641,25 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     }
 
     /**
-     * Initiate heartbeat scheduler shutdown. Calls {@code shutdownNow()} and clears the
-     * fields, but does NOT wait for the thread to exit (no {@code awaitTermination}).
-     * Safe to call with or without the write lock held.
+     * Shut down the heartbeat executor and return it for later awaiting.
+     * Clears and calls {@code shutdownNow()} on {@code heartbeatExecutor}, but does NOT
+     * touch {@code heartbeatTask} and does NOT wait for the thread to exit.
+     *
+     * <p>{@code heartbeatTask} is intentionally left alone here: this method is called in
+     * Phase 1 of {@link #close()} without holding the write lock, and {@code heartbeatTask}
+     * is a plain (non-volatile) field that must only be written inside the write lock to
+     * avoid a JMM data race. It is cleared in Phase 2 (inside the write lock). Skipping
+     * the task clear in Phase 1 is safe because {@code shutdownNow()} on the executor
+     * already subsumes any {@code cancel()} on the task.
      *
      * @return the executor that was shut down, or {@code null} if none was running;
-     *         pass the return value to {@link #awaitHeartbeatTermination(ScheduledExecutorService)}
-     *         outside the write lock if you need a best-effort exit guarantee
+     *         pass to {@link #awaitHeartbeatTermination(ScheduledExecutorService)}
+     *         outside the write lock for a best-effort exit guarantee
      */
     private ScheduledExecutorService shutdownHeartbeat() {
-        heartbeatTask = null;
         ScheduledExecutorService executor = heartbeatExecutor;
         heartbeatExecutor = null;
+        // heartbeatTask intentionally NOT cleared here — see Javadoc above
         if (executor != null) {
             executor.shutdownNow();
         }
