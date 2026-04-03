@@ -44,10 +44,17 @@ import java.util.logging.Logger;
  * }</pre>
  *
  * <h2>Return contract</h2>
- * Returns {@link Optional#empty()} when the cortical area is not found (404) or when
- * the API is unreachable. Throws {@link FeagiSdkException} only for unambiguously
- * malformed responses (unexpected HTTP status, invalid JSON structure). This means
- * callers can use the empty-optional result to retry later or fall back gracefully.
+ * Returns {@link Optional#empty()} in two distinct cases:
+ * <ul>
+ *   <li><b>Area not found (404):</b> logged at {@code FINE}. The cortical area ID is
+ *       valid but not present in the current FEAGI genome.</li>
+ *   <li><b>Network error:</b> logged at {@code WARNING} with the full exception stack
+ *       trace. The host may be unreachable, the port wrong, or the connection timed out.</li>
+ * </ul>
+ * Both return {@code empty} so callers can retry or fall back without a try/catch.
+ * Callers who need to distinguish the two should enable {@code WARNING}-level logging
+ * or check connectivity separately. Throws {@link FeagiSdkException} only for
+ * unambiguously malformed responses (unexpected HTTP status, invalid JSON structure).
  *
  * <h2>No runtime dependencies</h2>
  * Uses only {@code java.net.HttpURLConnection} — no third-party HTTP library required.
@@ -290,14 +297,17 @@ public final class CorticalAreaResolver {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     static String buildUrl(String host, int port, String corticalAreaId) {
-        // Precondition: corticalAreaId must contain only [A-Za-z0-9_\-].
-        // The URI multi-arg constructor encodes '?' and '#' but NOT '/', so a path like
-        // "../../etc" would produce a traversable URL. resolve() enforces the character
-        // constraint before calling this method; direct test calls must respect the same
-        // invariant. If this method is ever called from a new code path, add the same
-        // regex guard there or call resolve() instead.
-        assert corticalAreaId.matches("[A-Za-z0-9_\\-]+")
-                : "corticalAreaId must be pre-validated before calling buildUrl: " + corticalAreaId;
+        // Internal precondition: corticalAreaId must contain only [A-Za-z0-9_\-].
+        // The URI multi-arg constructor encodes '?' and '#' but NOT '/', so an unvalidated
+        // ID like "../../etc" would produce a traversable URL. resolve() enforces this
+        // constraint before calling buildUrl. If buildUrl is ever called from a new code path,
+        // that path must apply the same regex guard — do not call buildUrl with unvalidated input.
+        if (!corticalAreaId.matches("[A-Za-z0-9_\\-]+")) {
+            throw new IllegalStateException(
+                    "buildUrl called with unvalidated corticalAreaId — "
+                    + "this is a programming error. Apply the [A-Za-z0-9_\\-]+ "
+                    + "guard before calling buildUrl. Got: '" + corticalAreaId + "'");
+        }
         try {
             URI uri = new URI(
                     "http",

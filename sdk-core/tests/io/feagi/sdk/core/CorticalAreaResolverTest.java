@@ -108,12 +108,34 @@ class CorticalAreaResolverTest {
     }
 
     @Test
-    void buildUrl_hostWithInjectedPath_isContained() {
-        // A host containing a path separator must not be able to inject extra path segments.
-        // URI construction should either encode or reject the offending character.
+    void resolve_hostWithInjectedPath_isRejectedByValidation() {
+        // resolve() validates corticalAreaId before calling buildUrl.
+        // A path-traversal cortical area ID must be caught at the validation step.
+        assertThrows(IllegalArgumentException.class,
+                () -> CorticalAreaResolver.resolve("../../etc", "real-host", 8000));
+    }
+
+    @Test
+    void resolve_corticalIdWithQueryChar_isRejectedByValidation() {
+        // '?' in the cortical area ID must be caught by the regex guard.
+        assertThrows(IllegalArgumentException.class,
+                () -> CorticalAreaResolver.resolve("id?inject=1", "real-host", 8000));
+    }
+
+    @Test
+    void buildUrl_cleanInput_correctFormat() {
+        // buildUrl is only called with pre-validated (safe) input from resolve().
+        // Verify the happy path produces the expected URL.
         String url = CorticalAreaResolver.buildUrl("real-host", 8000, "i__inf");
-        assertTrue(url.startsWith("http://real-host:8000/"),
-                "Host must be placed in the authority component only");
+        assertEquals("http://real-host:8000/v1/genome/cortical_area/i__inf", url);
+    }
+
+    @Test
+    void buildUrl_unvalidatedInput_throwsIllegalStateException() {
+        // buildUrl's own guard rejects invalid IDs so the programming error
+        // is caught even if called outside of resolve().
+        assertThrows(IllegalStateException.class,
+                () -> CorticalAreaResolver.buildUrl("host", 8000, "../../etc"));
     }
 
     // ── parseDimensions ───────────────────────────────────────────────────────
@@ -235,13 +257,20 @@ class CorticalAreaResolverTest {
     }
 
     @Test
-    void resolve_unreachableHost_returnsEmpty() {
-        // Port 1 is almost certainly refused — should return empty, not throw
+    void resolve_unreachableHost_returnsEmpty() throws Exception {
+        // Open a ServerSocket on an ephemeral port, close it immediately, then use that
+        // port. This guarantees ECONNREFUSED without relying on port 1 being refused,
+        // which can flake in some CI environments or with certain firewall configurations.
+        int refusedPort;
+        try (java.net.ServerSocket ss = new java.net.ServerSocket(0)) {
+            refusedPort = ss.getLocalPort();
+        } // port is now closed — any connect attempt will be refused immediately
+
         Optional<CorticalDimensions> result =
-                CorticalAreaResolver.resolve("i__inf", "127.0.0.1", 1,
-                        Duration.ofMillis(200));
+                CorticalAreaResolver.resolve("i__inf", "127.0.0.1", refusedPort,
+                        Duration.ofMillis(500));
         assertTrue(result.isEmpty(),
-                "Unreachable host must return Optional.empty(), not throw");
+                "Connection-refused must return Optional.empty(), not throw");
     }
 
     // ── Integration shape test (skipped without live FEAGI) ──────────────────
