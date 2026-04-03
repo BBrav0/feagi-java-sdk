@@ -23,7 +23,7 @@ package io.feagi.sdk.core;
  * NeuronPotential n = NeuronPotential.of(42, 0.75f);
  *
  * // Cortical-coordinate form — width=10, height=10 cortical area
- * int id = XyzpCodec.encode(3, 2, 0, 10, 10);
+ * int id = XyzpCodec.toFlatId(3, 2, 0, 10, 10);
  * NeuronPotential n = NeuronPotential.of(id, 0.75f);
  * }</pre>
  *
