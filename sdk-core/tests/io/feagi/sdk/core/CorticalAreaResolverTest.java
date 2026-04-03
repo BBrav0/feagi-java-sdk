@@ -268,11 +268,36 @@ class CorticalAreaResolverTest {
     }
 
     @Test
-    void resolve_invalidPort_throws() {
+    void resolve_portZero_throws() {
         assertThrows(IllegalArgumentException.class,
                 () -> CorticalAreaResolver.resolveOnce("i__inf", "localhost", 0));
+    }
+
+    @Test
+    void resolve_portClearlyOutOfRange_throws() {
         assertThrows(IllegalArgumentException.class,
                 () -> CorticalAreaResolver.resolveOnce("i__inf", "localhost", 70000));
+    }
+
+    @Test
+    void resolve_port65536_throws() {
+        // 65536 is the first value above the valid range [1, 65535]
+        assertThrows(IllegalArgumentException.class,
+                () -> CorticalAreaResolver.resolveOnce("i__inf", "localhost", 65536));
+    }
+
+    @Test
+    void resolve_port65535_isValid() {
+        // 65535 is the upper boundary of the valid range — must not throw on construction
+        CorticalAreaResolver resolver = CorticalAreaResolver.create("localhost", 65535);
+        assertNotNull(resolver);
+    }
+
+    @Test
+    void resolve_port1_isValid() {
+        // 1 is the lower boundary of the valid range — must not throw on construction
+        CorticalAreaResolver resolver = CorticalAreaResolver.create("localhost", 1);
+        assertNotNull(resolver);
     }
 
     @Test
