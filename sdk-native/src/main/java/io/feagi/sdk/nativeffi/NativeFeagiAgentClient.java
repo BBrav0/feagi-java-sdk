@@ -134,10 +134,12 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
     /**
      * Scheduler for the background heartbeat. {@code null} when heartbeat is disabled
-     * or the client is not connected. Volatile because it is written by {@code connect()}
-     * (outside the write lock, after the lock is released) and read by {@code close()}
-     * (via {@code stopHeartbeat()}, before acquiring the write lock). Without volatile,
-     * {@code close()} could see a stale null and skip the shutdown, leaking a daemon thread.
+     * or the client is not connected.
+     *
+     * <p>Both {@link #startHeartbeatIfConfigured()} and {@link #stopHeartbeat()} are
+     * called inside the write lock, so the write-lock happens-before guarantee is
+     * sufficient for visibility. The {@code volatile} modifier is redundant but retained
+     * as a belt-and-suspenders signal that this field is accessed from multiple threads.
      */
     private volatile ScheduledExecutorService heartbeatExecutor;
     private volatile ScheduledFuture<?> heartbeatTask;
@@ -465,15 +467,22 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     /**
      * {@inheritDoc}
      *
-     * <p>Stops the heartbeat scheduler, sets {@link #isConnected()} to {@code false},
-     * and frees the native client handle. Idempotent — safe to call multiple times.
-     * Holds the write lock so it cannot run concurrently with an in-progress send or poll.
+     * <p>Stops the heartbeat scheduler (waiting up to 2 seconds for any in-flight tick
+     * to complete), sets {@link #isConnected()} to {@code false}, and frees the native
+     * client handle. Idempotent — safe to call multiple times. Holds the write lock so
+     * it cannot run concurrently with an in-progress send or poll.
      */
     @Override
     public void close() {
         String closedAgentId = null;
         handleLock.writeLock().lock();
         try {
+            // stopHeartbeat() runs inside the write lock alongside connected=false and
+            // clientHandle.getAndSet(NULL_HANDLE). This serializes it with
+            // startHeartbeatIfConfigured() (also inside the write lock in connect()),
+            // so the two cannot interleave. If close() wins the lock first, the scheduler
+            // is stopped before connect() can start it. If connect() wins first, the
+            // scheduler is running by the time close() acquires the lock and stops it.
             stopHeartbeat();
             closed = true;
             connected = false;
@@ -533,8 +542,11 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             if (!connected) return; // re-check under lock
             long handle = clientHandle.get();
             if (handle == NULL_HANDLE) return;
-            // The native layer sends the actual heartbeat packet; we use an empty
-            // payload as the ping signal since there is no dedicated heartbeat ABI method.
+            // TODO(#issue): Replace with a dedicated feagiClientHeartbeat() ABI method once
+            // available. Sending an empty sensory payload risks being misinterpreted by FEAGI
+            // as "no sensory data this tick" rather than a keepalive ping. This is an ABI
+            // limitation — the current feagi_java_ffi.h has no dedicated heartbeat call.
+            // Tracked in: https://github.com/feagi/feagi-java-sdk/issues (file follow-up)
             int status = FeagiNativeBindings.feagiClientSendSensoryBytes(handle, EMPTY_HEARTBEAT);
             if (status != FeagiNativeBindings.FeagiStatus.OK.code()) {
                 LOG.warning("NativeFeagiAgentClient: heartbeat failed (status=" + status + "): "
@@ -549,7 +561,15 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
     /**
      * Stop and tear down the heartbeat scheduler.
-     * Safe to call multiple times — guards on null before acting.
+     *
+     * <p>Must be called inside the write lock. {@code shutdownNow()} interrupts the
+     * scheduler thread, but an in-flight tick blocked on the read lock (non-interruptible)
+     * will not be interrupted immediately. {@code awaitTermination} waits up to 2 seconds
+     * for the thread to exit; if it does not, the thread will still stop harmlessly because
+     * {@code sendHeartbeat()} checks {@code connected == false} before touching native state.
+     *
+     * <p>After this method returns, callers have a best-effort guarantee that the heartbeat
+     * thread has exited. The 2-second bound is chosen to exceed any realistic network round-trip.
      */
     private void stopHeartbeat() {
         if (heartbeatTask != null) {
@@ -557,8 +577,21 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             heartbeatTask = null;
         }
         if (heartbeatExecutor != null) {
-            heartbeatExecutor.shutdownNow();
+            ScheduledExecutorService executor = heartbeatExecutor;
             heartbeatExecutor = null;
+            executor.shutdownNow();
+            try {
+                // Best-effort wait — gives the heartbeat thread a chance to observe
+                // connected=false (set immediately after this method returns) and exit cleanly.
+                if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    LOG.warning("NativeFeagiAgentClient: heartbeat thread did not exit "
+                            + "within 2 seconds after shutdown");
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                LOG.warning("NativeFeagiAgentClient: interrupted while waiting for "
+                        + "heartbeat thread to stop");
+            }
         }
     }
 
