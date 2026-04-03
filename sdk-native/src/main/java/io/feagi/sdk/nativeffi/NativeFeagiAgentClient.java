@@ -19,6 +19,11 @@ import io.feagi.sdk.core.VisualizationCapability;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Level;
@@ -32,11 +37,24 @@ import java.util.logging.Logger;
  * AgentConfig config = new AgentConfig(...);
  *
  * try (NativeFeagiAgentClient client = new NativeFeagiAgentClient(config)) {
- *     client.connect();
+ *     client.connect();            // retries with backoff per config
  *     client.sendSensoryBytes(payload);
  *     byte[] motor = client.pollMotorBytes();
+ *     client.disconnect();         // graceful disconnect; close() also works
  * }
+ * // This object is permanently closed after close()/disconnect().
+ * // Construct a new instance if a new connection is needed.
  * }</pre>
+ *
+ * <h2>Retry</h2>
+ * {@link #connect()} attempts registration up to {@code registrationRetries + 1} times,
+ * sleeping {@code retryBackoff} between attempts. On each failed attempt the native
+ * client handle is freed before the next try to prevent handle leaks.
+ *
+ * <h2>Heartbeat</h2>
+ * When {@code heartbeatInterval} is positive, a background daemon thread sends a
+ * heartbeat to the native layer at that interval. When the interval is zero,
+ * heartbeating is disabled. The heartbeat stops automatically on {@link #close()}.
  *
  * <h2>Handle ownership</h2>
  * <ul>
@@ -50,8 +68,8 @@ import java.util.logging.Logger;
  * any thread after {@link #connect()} returns. A read-write lock guards the handle:
  * the read lock is held during send/poll native calls; the write lock is held during
  * {@link #connect()} and {@link #close()} to prevent concurrent double-connect or
- * use-after-free races. Logging in {@link #connect()} is deferred until after the write
- * lock is released to minimize lock hold time.
+ * use-after-free races. {@link #isConnected()} reads a {@code volatile} field and is
+ * safe from any thread without holding the lock.
  */
 public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
@@ -90,6 +108,47 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
     private volatile boolean connected = false;
 
+    /**
+     * Set permanently to {@code true} by {@link #close()}. Once set, {@link #connect()}
+     * throws {@link IllegalStateException} immediately — this object is not reusable after
+     * close. Construct a new instance for a new connection.
+     *
+     * <p>Also checked in the post-connect write-lock block to detect the race where
+     * {@code close()} ran while {@code attemptConnect()} was executing the blocking
+     * network call — in that case the freshly allocated handle is freed immediately.
+     */
+    private volatile boolean closed = false;
+
+    /**
+     * CAS guard that ensures only one thread can enter the retry loop at a time.
+     * {@code true} means a connect is in progress; the second caller sees this and throws
+     * immediately rather than racing into native allocation. Cleared on success or failure.
+     *
+     * <p>This is separate from {@code connected} because {@code connected} reflects
+     * "is fully connected", whereas {@code connecting} reflects "is mid-connect". Without
+     * this guard, two concurrent callers could both pass the {@code connected == false}
+     * check, both enter the retry loop, and the first thread's client handle would be
+     * silently overwritten by the second and never freed.
+     */
+    private final AtomicBoolean connecting = new AtomicBoolean(false);
+
+    // ── Heartbeat ──────────────────────────────────────────────────────────────
+
+    /**
+     * Scheduler for the background heartbeat. {@code null} when heartbeat is disabled
+     * or the client is not connected.
+     *
+     * <p>{@code volatile} is required here: {@link #shutdownHeartbeat()} reads and writes
+     * this field in Phase 1 of {@link #close()} <em>without</em> holding the write lock
+     * (to avoid a deadlock with the heartbeat thread's read lock). Without {@code volatile},
+     * the JMM provides no happens-before between the write in {@link #startHeartbeatIfConfigured()}
+     * (inside the write lock) and this lock-free read — Phase 1 could legally see a stale null.
+     */
+    private volatile ScheduledExecutorService heartbeatExecutor;
+    // heartbeatTask is intentionally not stored: shutdownNow() on the executor subsumes
+    // any per-task cancel(), so retaining the future would add no cancellation capability
+    // and would create a misleading impression that an explicit cancellation path exists.
+
     // ── Construction ───────────────────────────────────────────────────────────
 
     /**
@@ -108,83 +167,213 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     // ── FeagiAgentClient ───────────────────────────────────────────────────────
 
     /**
-     * Connect and register the agent with FEAGI.
+     * Connect and register the agent with FEAGI, retrying on failure.
      *
-     * <p>Holds the write lock for the entire native portion so that two concurrent callers
-     * cannot both pass the {@code connected == false} guard and race into native allocation.
-     * Logging is deferred until after the lock is released to minimize hold time.
+     * <p>Attempts up to {@code registrationRetries + 1} times total, sleeping
+     * {@code retryBackoff} between each attempt. On each failed attempt the native
+     * client handle is freed before the next try. After a successful connection,
+     * starts the background heartbeat if configured.
      *
-     * <p><b>Latency note:</b> The write lock is held across the {@code feagiClientConnect}
-     * native call, which performs real network I/O and may block for up to
-     * {@code connectionTimeout} milliseconds. Any concurrent {@link #sendSensoryBytes} or
-     * {@link #pollMotorBytes} call will block on the read lock for the same duration.
+     * <p>Thread safety: a {@code connecting} CAS guard ensures only one thread can
+     * enter the retry loop at a time. A second concurrent caller receives
+     * {@link IllegalStateException} immediately. The write lock is used only for the
+     * final {@code connected = true} and handle assignment so it is not held across
+     * the blocking network call.
      *
-     * @throws FeagiSdkException     if any native step fails
-     * @throws IllegalStateException if already connected
+     * @throws FeagiSdkException     if all connection attempts fail
+     * @throws IllegalStateException if already connected or a connect is already in progress
      */
     @Override
     public void connect() {
-        handleLock.writeLock().lock();
+        // Permanent-close guard: once close() has been called, this object cannot be reused.
+        // Native handles are freed in close() and cannot be reallocated on the same instance.
+        // Construct a new NativeFeagiAgentClient if a new connection is needed.
+        if (closed) {
+            throw new IllegalStateException(
+                    "NativeFeagiAgentClient for agent '" + config.agentId()
+                    + "' has been permanently closed and cannot be reused. "
+                    + "Construct a new instance.");
+        }
+        // Fast-path: avoid CAS overhead for the common already-connected case.
+        // This is NOT the authoritative guard — two threads could both observe connected==false
+        // here, both pass, and then one wins the CAS below while the other hits ISE from the
+        // CAS block. The authoritative guard is the re-check of connected inside the try block
+        // below (after the CAS), which cannot be reached by two threads simultaneously.
+        if (connected) {
+            throw new IllegalStateException("Already connected. Call close() first.");
+        }
+        // CAS guard: only one thread may enter the retry loop. Without this, two concurrent
+        // callers could both pass the connected == false check and race into native allocation,
+        // with the first thread's handle silently overwritten and leaked by the second.
+        if (!connecting.compareAndSet(false, true)) {
+            throw new IllegalStateException(
+                    "A connect() call is already in progress for agent '"
+                    + config.agentId() + "'.");
+        }
         try {
+            // Authoritative already-connected guard — reached by at most one thread at a time
+            // due to the CAS above. The outer check was a fast-path only; do not remove this.
             if (connected) {
                 throw new IllegalStateException("Already connected. Call close() first.");
             }
 
-            // AgentTypeCode provides a stable ABI mapping — never use .ordinal() here.
-            long cfgHandle = FeagiNativeBindings.feagiConfigNew(
-                    config.agentId(),
-                    AgentTypeCode.of(config.agentType()));
-            if (cfgHandle == NULL_HANDLE) {
-                throw new FeagiSdkException(
-                        "feagiConfigNew failed for agent '" + config.agentId() + "': "
-                        + nativeError());
-            }
+            int maxAttempts = config.registrationRetries() + 1;
+            long backoffMs  = config.retryBackoff().toMillis();
+            FeagiSdkException lastFailure = null;
 
-            long newClientHandle = NULL_HANDLE;
-            try {
-                applyEndpoints(cfgHandle);
-                applyTimingConfig(cfgHandle);
-                applySensorySocketConfig(cfgHandle);
-                applyCapabilities(cfgHandle);
-                // TODO: wire feagiConfigSetAgentDescriptor and feagiConfigSetAuthTokenBase64
-                // once AgentConfig exposes manufacturer/agentName/agentVersion/authToken fields.
-                // If feagiConfigValidate requires the agent descriptor, connect() will fail
-                // at the validate step with an opaque status until this is wired.
-
-                checkStatus(FeagiNativeBindings.feagiConfigValidate(cfgHandle),
-                        "feagiConfigValidate");
-
-                long[] outClient = new long[1];
-                checkStatus(FeagiNativeBindings.feagiClientNew(cfgHandle, outClient),
-                        "feagiClientNew");
-
-                newClientHandle = outClient[0];
-                if (newClientHandle == NULL_HANDLE) {
+            for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+                if (closed) {
                     throw new FeagiSdkException(
-                            "feagiClientNew returned null handle: " + nativeError());
+                            "NativeFeagiAgentClient was closed while connect() retries were in progress.");
+                }
+                if (attempt > 1) {
+                    LOG.info("NativeFeagiAgentClient: retry " + attempt + "/" + maxAttempts
+                            + " (backoff=" + backoffMs + "ms)");
+                    if (backoffMs > 0) {
+                        try {
+                            Thread.sleep(backoffMs);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            throw new FeagiSdkException(
+                                    "Interrupted during registration retry backoff", ie);
+                        }
+                    }
+                } else {
+                    LOG.info("NativeFeagiAgentClient: connecting → "
+                            + config.endpoints().registrationEndpoint());
                 }
 
-                checkStatus(FeagiNativeBindings.feagiClientConnect(newClientHandle),
-                        "feagiClientConnect");
-
-                clientHandle.set(newClientHandle);
-                connected = true;
-                newClientHandle = NULL_HANDLE; // ownership transferred; don't free in finally
-
-            } finally {
-                FeagiNativeBindings.feagiConfigFree(cfgHandle);
-                if (newClientHandle != NULL_HANDLE) {
-                    FeagiNativeBindings.feagiClientFree(newClientHandle);
+                try {
+                    attemptConnect();
+                    // Set connected and start heartbeat atomically under the write lock.
+                    // Also check whether close() ran while attemptConnect() was executing the
+                    // blocking network call (no lock was held during that call). If close() ran
+                    // in the interim, the freshly allocated handle must be freed immediately
+                    // rather than stored — otherwise the client silently re-connects after
+                    // close() has returned.
+                    handleLock.writeLock().lock();
+                    try {
+                        if (closed) {
+                            // close() ran while we were connecting — discard the handle.
+                            long staleHandle = clientHandle.getAndSet(NULL_HANDLE);
+                            if (staleHandle != NULL_HANDLE) {
+                                try {
+                                    FeagiNativeBindings.feagiClientFree(staleHandle);
+                                } catch (Exception e) {
+                                    LOG.log(Level.WARNING,
+                                            "NativeFeagiAgentClient: error freeing handle "
+                                            + "after close() raced with connect()", e);
+                                }
+                            }
+                            throw new FeagiSdkException(
+                                    "NativeFeagiAgentClient: close() was called while "
+                                    + "connect() was in flight — connection aborted.");
+                        }
+                        connected = true;
+                        try {
+                            startHeartbeatIfConfigured();
+                        } catch (Throwable t) {
+                            // startHeartbeatIfConfigured() threw something unexpected
+                            // (e.g. OutOfMemoryError from executor creation). Roll back:
+                            // free the handle and clear state so the client is not left
+                            // in a connected=true / no-heartbeat limbo.
+                            connected = false;
+                            long staleHandle = clientHandle.getAndSet(NULL_HANDLE);
+                            if (staleHandle != NULL_HANDLE) {
+                                try {
+                                    FeagiNativeBindings.feagiClientFree(staleHandle);
+                                } catch (Exception e) {
+                                    LOG.log(Level.WARNING,
+                                            "NativeFeagiAgentClient: error freeing handle "
+                                            + "during heartbeat startup rollback", e);
+                                }
+                            }
+                            throw new FeagiSdkException(
+                                    "NativeFeagiAgentClient: failed to start heartbeat "
+                                    + "after successful connect — connection rolled back", t);
+                        }
+                    } finally {
+                        handleLock.writeLock().unlock();
+                    }
+                    LOG.info("NativeFeagiAgentClient connected: agentId=" + config.agentId()
+                            + " type=" + config.agentType()
+                            + " registration=" + config.endpoints().registrationEndpoint()
+                            + " (attempt " + attempt + "/" + maxAttempts + ")");
+                    return;
+                } catch (FeagiSdkException e) {
+                    if (closed) {
+                        throw e;
+                    }
+                    lastFailure = e;
+                    LOG.log(Level.WARNING,
+                            "NativeFeagiAgentClient: attempt " + attempt + " failed: "
+                            + e.getMessage());
                 }
             }
+
+            throw new FeagiSdkException(
+                    "NativeFeagiAgentClient: failed to connect after " + maxAttempts
+                    + " attempt(s) to " + config.endpoints().registrationEndpoint(),
+                    lastFailure);
         } finally {
-            handleLock.writeLock().unlock();
+            connecting.set(false);
+        }
+    }
+
+    /**
+     * Single connection attempt. Allocates a native config + client handle, applies
+     * all config, validates, and calls {@code feagiClientConnect}. Frees the config
+     * handle unconditionally and frees the client handle on failure.
+     *
+     * @throws FeagiSdkException if any native step fails
+     */
+    private void attemptConnect() {
+        // AgentTypeCode provides a stable ABI mapping — never use .ordinal() here.
+        long cfgHandle = FeagiNativeBindings.feagiConfigNew(
+                config.agentId(),
+                AgentTypeCode.of(config.agentType()));
+        if (cfgHandle == NULL_HANDLE) {
+            throw new FeagiSdkException(
+                    "feagiConfigNew failed for agent '" + config.agentId() + "': "
+                    + nativeError());
         }
 
-        // Log after releasing the write lock — no need to hold it while logging.
-        LOG.info("NativeFeagiAgentClient connected: agentId=" + config.agentId()
-                + " type=" + config.agentType()
-                + " registration=" + config.endpoints().registrationEndpoint());
+        long newClientHandle = NULL_HANDLE;
+        try {
+            applyEndpoints(cfgHandle);
+            applyTimingConfig(cfgHandle);
+            applySensorySocketConfig(cfgHandle);
+            applyCapabilities(cfgHandle);
+            // TODO: wire feagiConfigSetAgentDescriptor and feagiConfigSetAuthTokenBase64
+            // once AgentConfig exposes manufacturer/agentName/agentVersion/authToken fields.
+
+            checkStatus(FeagiNativeBindings.feagiConfigValidate(cfgHandle),
+                    "feagiConfigValidate");
+
+            long[] outClient = new long[1];
+            checkStatus(FeagiNativeBindings.feagiClientNew(cfgHandle, outClient),
+                    "feagiClientNew");
+
+            newClientHandle = outClient[0];
+            if (newClientHandle == NULL_HANDLE) {
+                throw new FeagiSdkException(
+                        "feagiClientNew returned null handle: " + nativeError());
+            }
+
+            checkStatus(FeagiNativeBindings.feagiClientConnect(newClientHandle),
+                    "feagiClientConnect");
+
+            clientHandle.set(newClientHandle);
+            newClientHandle = NULL_HANDLE; // conditionally transferred — the write-lock block in
+                                           // connect() will either confirm the handle (connected=true)
+                                           // or free it (if close() raced). Do not free in finally.
+
+        } finally {
+            FeagiNativeBindings.feagiConfigFree(cfgHandle);
+            if (newClientHandle != NULL_HANDLE) {
+                FeagiNativeBindings.feagiClientFree(newClientHandle);
+            }
+        }
     }
 
     /**
@@ -299,16 +488,59 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     }
 
     /**
+     * Return {@code true} if currently connected to FEAGI.
+     *
+     * <p>Reflects real connection state: {@code true} after a successful
+     * {@link #connect()}, {@code false} before connect or after {@link #close()}.
+     * Reads a {@code volatile} field — safe to call from any thread without a lock.
+     */
+    @Override
+    public boolean isConnected() {
+        return connected;
+    }
+
+    /**
+     * Gracefully disconnect from FEAGI and release native resources.
+     *
+     * <p>Equivalent to {@link #close()}. Provided as a named method to match the
+     * acceptance criterion ("connect(), disconnect(), isConnected()") and to make
+     * non-try-with-resources usage more readable.
+     *
+     * <p>Idempotent — safe to call multiple times.
+     */
+    @Override
+    public void disconnect() {
+        close();
+    }
+
+    /**
      * {@inheritDoc}
      *
-     * <p>Idempotent — safe to call multiple times. Holds the write lock so it cannot
-     * run concurrently with an in-progress send or poll.
+     * <p>Stops the heartbeat scheduler (waiting up to 2 seconds for any in-flight tick
+     * to complete), then acquires the write lock to set state and free the native handle.
+     * Idempotent — safe to call multiple times.
+     *
+     * <p><b>Lock ordering:</b> {@code stopHeartbeat()} is called <em>before</em> acquiring
+     * the write lock. This is critical: the heartbeat thread holds the read lock during each
+     * tick, and read/write locks are mutually exclusive. If we held the write lock while
+     * calling {@code awaitTermination()}, the heartbeat thread could be blocked waiting for
+     * the read lock while we waited for the thread to finish — a deadlock. By stopping the
+     * heartbeat first (outside the lock), we ensure the thread has exited before we acquire
+     * the write lock.
      */
     @Override
     public void close() {
+        // Phase 1: shut down the heartbeat executor BEFORE acquiring the write lock.
+        // The heartbeat thread holds the read lock during each tick; read and write locks
+        // are mutually exclusive, so calling awaitTermination() inside the write lock
+        // would deadlock. We shut down here (outside the lock) to let the thread exit.
+        ScheduledExecutorService executorToAwait = shutdownHeartbeat();
+
         String closedAgentId = null;
+        ScheduledExecutorService raceExecutor = null;
         handleLock.writeLock().lock();
         try {
+            closed = true;
             connected = false;
             long handle = clientHandle.getAndSet(NULL_HANDLE);
             if (handle != NULL_HANDLE) {
@@ -319,12 +551,153 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                 }
                 closedAgentId = config.agentId();
             }
+            // Phase 2 (still inside write lock): shut down any executor that was started
+            // by connect() after Phase 1 ran. This closes the race where:
+            //   1. close() calls shutdownHeartbeat() → sees heartbeatExecutor==null → returns null
+            //   2. connect() (holding write lock) calls startHeartbeatIfConfigured(),
+            //      sets heartbeatExecutor = newExecutor
+            //   3. close() acquires write lock here
+            // Without this second shutdown, the new executor is orphaned and runs forever.
+            // We do NOT call awaitTermination here — that happens in Phase 3, outside the lock.
+            raceExecutor = shutdownHeartbeat();
         } finally {
             handleLock.writeLock().unlock();
         }
-        // Log after releasing the write lock — consistent with connect() deferral.
+
+        // Phase 3: wait for both executor threads to exit, outside the lock so the heartbeat
+        // thread can acquire the read lock and observe connected=false on its final tick.
+        // awaitHeartbeatTermination is a no-op for null arguments, so this is always safe.
+        awaitHeartbeatTermination(executorToAwait);
+        awaitHeartbeatTermination(raceExecutor);
+
         if (closedAgentId != null) {
             LOG.info("NativeFeagiAgentClient closed: agentId=" + closedAgentId);
+        }
+    }
+
+    // ── Heartbeat ──────────────────────────────────────────────────────────────
+
+    /**
+     * Start the background heartbeat scheduler if {@code heartbeatInterval} is positive.
+     * Uses a single daemon thread so it does not prevent JVM shutdown.
+     *
+     * <p>Must be called inside the write lock. Checks {@code closed} under the lock so that
+     * if {@code close()} acquired the lock between {@code stopHeartbeat()} and here, we do
+     * not start a scheduler that will never be stopped.
+     */
+    private void startHeartbeatIfConfigured() {
+        if (closed) return; // close() ran while we were connecting — don't start scheduler
+        long intervalMs = config.heartbeatInterval().toMillis();
+        if (intervalMs <= 0) {
+            LOG.fine("NativeFeagiAgentClient: heartbeat disabled (interval=0)");
+            return;
+        }
+        heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "feagi-heartbeat-" + config.agentId());
+            t.setDaemon(true);
+            return t;
+        });
+        heartbeatExecutor.scheduleAtFixedRate(
+                this::sendHeartbeat, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
+        // ⚠️ Warn at startup so callers who set a positive heartbeatInterval without reading
+        // the sendHeartbeat() comment are alerted to the semantic risk. Remove this warning
+        // once feagiClientHeartbeat() is available in feagi_java_ffi.h and wired here.
+        LOG.warning("NativeFeagiAgentClient: heartbeat started using empty sensory payload "
+                + "as keepalive — FEAGI may misinterpret this as 'no sensory data'. "
+                + "Set heartbeatInterval=0 to disable until a dedicated ABI method exists. "
+                + "(interval=" + intervalMs + "ms, agentId=" + config.agentId() + ")");
+    }
+
+    /**
+     * Single heartbeat tick. Errors are logged and swallowed so the scheduler keeps running.
+     * Skips silently if no longer connected — avoids a spurious read-lock acquisition
+     * after {@link #close()} has set {@code connected = false}.
+     */
+    private void sendHeartbeat() {
+        if (!connected) return;
+        handleLock.readLock().lock();
+        try {
+            if (!connected) return; // re-check under lock
+            long handle = clientHandle.get();
+            if (handle == NULL_HANDLE) return;
+            // new byte[0] is safe to allocate per-call: modern JVMs intern zero-length
+            // arrays so there is no meaningful GC cost. A static shared array would be
+            // unsafe if the native ABI ever modified the buffer in-place.
+            // KNOWN SEMANTIC RISK — open a follow-up issue before shipping to production.
+            // Sending an empty sensory payload is used as a keepalive ping because
+            // feagi_java_ffi.h has no dedicated heartbeat method. FEAGI may interpret an
+            // empty payload as "agent reported no sensory data this tick" rather than a
+            // neutral keepalive, which could corrupt the sensory timeline depending on
+            // FEAGI's internal logic. Until a feagiClientHeartbeat() ABI method exists,
+            // consider disabling heartbeat entirely (heartbeatInterval=0) for production
+            // deployments where sensory timing integrity is critical.
+            // TODO: Replace with feagiClientHeartbeat() once available in feagi_java_ffi.h
+            int status = FeagiNativeBindings.feagiClientSendSensoryBytes(handle, new byte[0]);
+            if (status != FeagiNativeBindings.FeagiStatus.OK.code()) {
+                LOG.warning("NativeFeagiAgentClient: heartbeat failed (status=" + status + "): "
+                        + nativeError());
+            }
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "NativeFeagiAgentClient: heartbeat error", t);
+        } finally {
+            handleLock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Shut down the heartbeat executor and return it for later awaiting.
+     * Clears {@code heartbeatExecutor} and calls {@code shutdownNow()}, but does NOT
+     * wait for the thread to exit (no {@code awaitTermination}).
+     *
+     * <p>Safe to call with or without the write lock held, because {@code heartbeatExecutor}
+     * is {@code volatile}.
+     *
+     * @return the executor that was shut down, or {@code null} if none was running;
+     *         pass to {@link #awaitHeartbeatTermination(ScheduledExecutorService)}
+     *         outside the write lock for a best-effort exit guarantee
+     */
+    private ScheduledExecutorService shutdownHeartbeat() {
+        ScheduledExecutorService executor = heartbeatExecutor;
+        heartbeatExecutor = null;
+        if (executor != null) {
+            executor.shutdownNow();
+        }
+        return executor;
+    }
+
+    /**
+     * Wait for the heartbeat executor thread to exit.
+     * Must be called <em>outside</em> the write lock: the heartbeat thread holds the
+     * read lock during each tick, and read/write locks are mutually exclusive — waiting
+     * inside the write lock would deadlock.
+     *
+     * <p>The timeout is {@code min(heartbeatInterval + 500ms, 5000ms)}. The interval +
+     * buffer normally covers one in-flight tick, since {@code sendHeartbeat()} exits
+     * immediately once {@code connected == false}. The 5-second cap prevents a very long
+     * heartbeat interval from making {@link #close()} block for an equally long time —
+     * after the cap expires the thread will still stop harmlessly on its next tick.
+     *
+     * @param executor the executor returned by {@link #shutdownHeartbeat()};
+     *                 a {@code null} argument is a no-op
+     */
+    private void awaitHeartbeatTermination(ScheduledExecutorService executor) {
+        if (executor == null) return;
+        // Timeout = min(heartbeatInterval + 500ms buffer, 5000ms cap).
+        // The interval + buffer is normally sufficient to cover one in-flight tick, since
+        // sendHeartbeat() exits immediately once connected==false. The 5-second cap prevents
+        // a pathologically long heartbeatInterval (e.g. 5 minutes) from blocking close() for
+        // an equally long time. Even if the timeout expires, the thread stops harmlessly on
+        // its next tick because connected==false is already set.
+        long timeoutMs = Math.min(config.heartbeatInterval().toMillis() + 500, 5_000);
+        try {
+            if (!executor.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS)) {
+                LOG.warning("NativeFeagiAgentClient: heartbeat thread did not exit within "
+                        + timeoutMs + "ms after shutdown");
+            }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            LOG.warning("NativeFeagiAgentClient: interrupted while waiting for "
+                    + "heartbeat thread to stop");
         }
     }
 
