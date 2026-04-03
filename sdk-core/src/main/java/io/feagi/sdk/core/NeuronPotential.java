@@ -78,3 +78,4 @@ public final class NeuronPotential {
         return "NeuronPotential{id=" + neuronId + ", p=" + potential + '}';
     }
 }
+// SPDX-License-Identifier: Apache-2.0
