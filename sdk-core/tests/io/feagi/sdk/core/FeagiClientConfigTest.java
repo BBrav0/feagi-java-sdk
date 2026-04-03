@@ -193,8 +193,7 @@ class FeagiClientConfigTest {
 
     @Test
     void build_retryBackoffSetToZeroWithRetriesPositive_givesDistinctError() {
-        // The early cross-field check fires at the setter when retries are already > 0,
-        // so the exception is IllegalArgumentException at setter time — not at build().
+        // Order A: retries set first, then backoff(ZERO) — IAE fires at setter time
         var builder = FeagiClientConfig.builder()
                 .registrationEndpoint("tcp://localhost:30001")
                 .connectionTimeout(Duration.ofSeconds(5))
@@ -202,11 +201,26 @@ class FeagiClientConfigTest {
                 .registrationRetries(3);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> builder.retryBackoff(Duration.ZERO));
-        // Message must not say "no SDK default" — the caller DID set it, to zero
         assertFalse(ex.getMessage().contains("no SDK default"),
                 "Error must distinguish 'set to zero' from 'not set'");
         assertTrue(ex.getMessage().contains("Duration.ZERO"),
                 "Error must mention Duration.ZERO to explain what was wrong");
+    }
+
+    @Test
+    void build_retryBackoffZeroBeforeRetriesSet_throwsIAEAtBuild() {
+        // Order B: backoff(ZERO) set before retries — early check cannot fire at setter time,
+        // so build() catches it. Must throw IAE (not ISE) — same constraint, same exception type.
+        var b = FeagiClientConfig.builder()
+                .registrationEndpoint("tcp://localhost:30001")
+                .connectionTimeout(Duration.ofSeconds(5))
+                .heartbeatInterval(Duration.ofSeconds(1))
+                .retryBackoff(Duration.ZERO)   // accepted at setter (retries not yet known)
+                .registrationRetries(3)
+                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, b::build,
+                "Order B must throw IAE, not ISE — same constraint as order A");
+        assertTrue(ex.getMessage().contains("Duration.ZERO"));
     }
 
     @Test
@@ -268,7 +282,7 @@ class FeagiClientConfigTest {
         assertEquals(token, cfg.authTokenBase64());
         assertEquals("Neuraville", cfg.manufacturer());
         assertEquals("TestAgent", cfg.agentName());
-        assertEquals(2, cfg.agentVersion().getAsInt());
+        assertEquals(2, cfg.agentVersion().getAsLong());
     }
 
     // ── registrationEndpoint validation ───────────────────────────────────────
@@ -413,14 +427,17 @@ class FeagiClientConfigTest {
     @Test
     void agentVersion_zero_isAllowed() {
         FeagiClientConfig cfg = minimalBuilder().agentVersion(0L).build();
-        assertEquals(0, cfg.agentVersion().getAsInt());
+        assertEquals(0, cfg.agentVersion().getAsLong());
     }
 
     @Test
     void agentVersion_maxUint32_isAllowed() {
-        // 0xFFFFFFFFL = 4294967295 — top of uint32_t range
+        // 0xFFFFFFFFL = 4294967295 — top of uint32_t range.
+        // Must round-trip losslessly through OptionalLong — not truncate to -1.
         FeagiClientConfig cfg = minimalBuilder().agentVersion(0xFFFFFFFFL).build();
         assertTrue(cfg.agentVersion().isPresent());
+        assertEquals(0xFFFFFFFFL, cfg.agentVersion().getAsLong(),
+                "uint32 max value must be preserved losslessly — not sign-extended to -1");
     }
 
     @Test
@@ -545,6 +562,6 @@ class FeagiClientConfigTest {
     void isAgentVersionSet_trueAfterSet() {
         FeagiClientConfig cfg = minimalBuilder().agentVersion(0).build();
         assertTrue(cfg.agentVersion().isPresent());
-        assertEquals(0, cfg.agentVersion().getAsInt());
+        assertEquals(0, cfg.agentVersion().getAsLong());
     }
 }

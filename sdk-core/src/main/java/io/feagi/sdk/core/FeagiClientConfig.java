@@ -8,7 +8,7 @@ package io.feagi.sdk.core;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Objects;
-import java.util.OptionalInt;
+import java.util.OptionalLong;
 
 /**
  * Explicit connection parameters for a FEAGI agent client.
@@ -74,7 +74,7 @@ public final class FeagiClientConfig {
     private final String authTokenBase64;
     private final String manufacturer;
     private final String agentName;
-    private final OptionalInt agentVersion;
+    private final OptionalLong agentVersion;
 
     // ── Construction ──────────────────────────────────────────────────────────
 
@@ -93,7 +93,7 @@ public final class FeagiClientConfig {
         this.manufacturer          = b.manufacturer;
         this.agentName             = b.agentName;
         this.agentVersion          = b.agentVersionSet
-                ? OptionalInt.of(b.agentVersion) : OptionalInt.empty();
+                ? OptionalLong.of(b.agentVersion) : OptionalLong.empty();
     }
 
     // ── Factories ─────────────────────────────────────────────────────────────
@@ -193,15 +193,15 @@ public final class FeagiClientConfig {
     public String agentName()             { return agentName; }
 
     /**
-     * Agent software version, or {@link OptionalInt#empty()} if not set.
+     * Agent software version, or {@link OptionalLong#empty()} if not set.
      * Use {@code agentVersion().isPresent()} to check whether it was set.
      *
-     * <p>When present, passed to FEAGI as {@code uint32_t}. The builder accepts
-     * the full unsigned 32-bit range ({@code 0}–{@code 4,294,967,295}) via a
-     * {@code long} parameter; the value is stored here as {@code int} with the
-     * same bit pattern (two's complement).
+     * <p>Returns the full unsigned 32-bit range ({@code 0}–{@code 4,294,967,295})
+     * losslessly as a {@code long}. Using {@code OptionalLong} avoids the sign-extension
+     * that would occur with {@code OptionalInt} for values above {@link Integer#MAX_VALUE}.
+     * The native layer receives this as {@code uint32_t}.
      */
-    public OptionalInt agentVersion()     { return agentVersion; }
+    public OptionalLong agentVersion()    { return agentVersion; }
 
     // ── Builder ───────────────────────────────────────────────────────────────
 
@@ -240,7 +240,7 @@ public final class FeagiClientConfig {
         private String authTokenBase64;
         private String manufacturer;
         private String agentName;
-        private int agentVersion;
+        private long agentVersion; // stored as unsigned bits via Integer.toUnsignedLong()
         private boolean agentVersionSet = false;
 
         private Builder() {}
@@ -250,7 +250,7 @@ public final class FeagiClientConfig {
         /**
          * Set the FEAGI registration endpoint.
          *
-         * @param endpoint must start with {@code tcp://} or {@code ipc://}; must not be null or blank
+         * @param endpoint must start with {@code tcp://} or {@code ipc://}, and include an address after the scheme; must not be null or blank
          */
         public Builder registrationEndpoint(String endpoint) {
             this.registrationEndpoint = requireZmqEndpoint(endpoint, "registrationEndpoint");
@@ -443,7 +443,7 @@ public final class FeagiClientConfig {
                 throw new IllegalArgumentException(
                         "agentVersion must be in [0, 4294967295] (full uint32_t range), got " + version);
             }
-            this.agentVersion = (int) version; // safe narrowing — validated above
+            this.agentVersion = version; // stored as long, full uint32_t range preserved
             this.agentVersionSet = true;
             return this;
         }
@@ -476,7 +476,10 @@ public final class FeagiClientConfig {
                             + "Call .retryBackoff(Duration).");
                 }
                 if (retryBackoff.isZero()) {
-                    throw new IllegalStateException(
+                    // IAE, not ISE: this is a value-constraint violation (zero is invalid),
+                    // not a missing-field violation. Consistent with the setter-time check
+                    // that fires when retries are set first and backoff is set to ZERO after.
+                    throw new IllegalArgumentException(
                             "retryBackoff must be positive when registrationRetries > 0, "
                             + "but was set to Duration.ZERO. "
                             + "Use a positive duration (e.g. Duration.ofMillis(500)).");
@@ -620,7 +623,7 @@ public final class FeagiClientConfig {
                 + ", manufacturer=" + manufacturer
                 + ", agentName=" + agentName
                 + ", authTokenBase64=" + (authTokenBase64 != null ? "<set>" : "null")
-                + ", agentVersion=" + (agentVersion.isPresent() ? agentVersion.getAsInt() : "not set")
+                + ", agentVersion=" + (agentVersion.isPresent() ? agentVersion.getAsLong() : "not set")
                 + '}';
     }
 }
