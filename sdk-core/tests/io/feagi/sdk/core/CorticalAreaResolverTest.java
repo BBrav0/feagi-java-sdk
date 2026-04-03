@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class CorticalAreaResolverTest {
 
-    // ── CorticalDimensions ────────────────────────────────────────────────────
+    // ── CorticalDimensions (record) ───────────────────────────────────────────
 
     @Test
     void dimensions_rejectsZeroWidth() {
@@ -56,6 +56,7 @@ class CorticalAreaResolverTest {
 
     @Test
     void dimensions_equalsAndHashCode() {
+        // Records provide structural equals/hashCode automatically
         CorticalDimensions a = new CorticalDimensions(10, 20, 3);
         CorticalDimensions b = new CorticalDimensions(10, 20, 3);
         assertEquals(a, b);
@@ -69,6 +70,7 @@ class CorticalAreaResolverTest {
 
     @Test
     void dimensions_toString_containsAllFields() {
+        // Record toString() includes all components by default
         String s = new CorticalDimensions(8, 16, 2).toString();
         assertTrue(s.contains("8") && s.contains("16") && s.contains("2"));
     }
@@ -144,10 +146,11 @@ class CorticalAreaResolverTest {
     }
 
     @Test
-    void parseDimensions_zeroDimension_throws() {
-        // Dimensions must be >= 1; CorticalDimensions constructor enforces this
+    void parseDimensions_zeroDimension_throwsFeagiSdkException() {
+        // CorticalDimensions rejects zero values with IAE; parseDimensions wraps it as FSE
+        // so callers only need to catch FeagiSdkException from this method.
         String json = "{ \"cortical_dimensions\": [0, 20, 3] }";
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(FeagiSdkException.class,
                 () -> CorticalAreaResolver.parseDimensions(json, "x"));
     }
 
@@ -171,6 +174,19 @@ class CorticalAreaResolverTest {
     void resolve_blankAreaId_throws() {
         assertThrows(IllegalArgumentException.class,
                 () -> CorticalAreaResolver.resolve("  ", "localhost", 8000));
+    }
+
+    @Test
+    void resolve_areaIdWithSlash_throws() {
+        // Path traversal attempt must be rejected before the HTTP call
+        assertThrows(IllegalArgumentException.class,
+                () -> CorticalAreaResolver.resolve("../../etc", "localhost", 8000));
+    }
+
+    @Test
+    void resolve_areaIdWithQueryString_throws() {
+        assertThrows(IllegalArgumentException.class,
+                () -> CorticalAreaResolver.resolve("id?inject=1", "localhost", 8000));
     }
 
     @Test

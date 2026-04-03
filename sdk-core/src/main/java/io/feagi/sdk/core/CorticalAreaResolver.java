@@ -126,6 +126,15 @@ public final class CorticalAreaResolver {
         if (corticalAreaId.isBlank()) {
             throw new IllegalArgumentException("corticalAreaId must not be blank");
         }
+        // Guard against path traversal and injection. The URI multi-arg constructor
+        // encodes '?' and '#' but does NOT encode '/', so "../../etc" would produce
+        // a traversable path. FEAGI IDs are alphanumeric + underscore + hyphen only.
+        if (!corticalAreaId.matches("[A-Za-z0-9_\\-]+")) {
+            throw new IllegalArgumentException(
+                    "corticalAreaId contains disallowed characters — only ASCII "
+                    + "alphanumeric, underscore, and hyphen are permitted: '"
+                    + corticalAreaId + "'");
+        }
         if (port < 1 || port > 65535) {
             throw new IllegalArgumentException("port must be in [1, 65535], got " + port);
         }
@@ -137,18 +146,17 @@ public final class CorticalAreaResolver {
         LOG.fine("CorticalAreaResolver: GET " + url);
 
         try {
-            String body = httpGet(url, timeout);
-            if (body == null) {
-                // 404 or empty — area not found
+            Optional<String> body = httpGet(url, timeout);
+            if (body.isEmpty()) {
+                // 404 — area not found
                 return Optional.empty();
             }
-            return Optional.of(parseDimensions(body, corticalAreaId));
+            return Optional.of(parseDimensions(body.get(), corticalAreaId));
         } catch (IOException e) {
             // Network error (connection refused, timeout, etc.) — treat as not found
             // rather than throwing, so callers can retry without a try/catch.
             LOG.log(Level.WARNING,
-                    "CorticalAreaResolver: could not reach FEAGI API at " + url
-                    + " — " + e.getMessage());
+                    "CorticalAreaResolver: could not reach FEAGI API at " + url, e);
             return Optional.empty();
         }
     }
@@ -158,11 +166,12 @@ public final class CorticalAreaResolver {
     /**
      * Execute a GET request and return the response body as a string.
      *
-     * @return response body string, or {@code null} if the server returned 404
+     * @return {@link Optional} containing the response body, or {@link Optional#empty()}
+     *         if the server returned 404
      * @throws IOException       on network error or timeout
      * @throws FeagiSdkException on unexpected HTTP status (not 200 or 404)
      */
-    static String httpGet(String url, Duration timeout) throws IOException {
+    static Optional<String> httpGet(String url, Duration timeout) throws IOException {
         URL urlObj = URI.create(url).toURL();
         HttpURLConnection conn = (HttpURLConnection) urlObj.openConnection();
         try {
@@ -180,7 +189,7 @@ public final class CorticalAreaResolver {
 
             if (status == HttpURLConnection.HTTP_NOT_FOUND) {
                 LOG.fine("CorticalAreaResolver: 404 for " + url + " — area not found");
-                return null;
+                return Optional.empty();
             }
             if (status != HttpURLConnection.HTTP_OK) {
                 throw new FeagiSdkException(
@@ -189,7 +198,7 @@ public final class CorticalAreaResolver {
             }
 
             try (InputStream is = conn.getInputStream()) {
-                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                return Optional.of(new String(is.readAllBytes(), StandardCharsets.UTF_8));
             }
         } finally {
             conn.disconnect();
@@ -215,7 +224,12 @@ public final class CorticalAreaResolver {
      * @throws FeagiSdkException if {@code cortical_dimensions} is absent or malformed
      */
     static CorticalDimensions parseDimensions(String json, String corticalAreaId) {
-        // Locate the key
+        // Locate the key using indexOf. Known limitation: this matches the first
+        // occurrence of the byte sequence "cortical_dimensions" anywhere in the JSON,
+        // including inside string values (e.g. a "description" field that mentions
+        // "cortical_dimensions"). FEAGI API responses are not expected to contain such
+        // values in practice. If future API responses become more complex, replace this
+        // with a proper JSON parser (e.g. org.json or Jackson).
         String key = "\"cortical_dimensions\"";
         int keyIdx = json.indexOf(key);
         if (keyIdx < 0) {
@@ -253,10 +267,19 @@ public final class CorticalAreaResolver {
             int width  = Integer.parseInt(parts[0].trim());
             int height = Integer.parseInt(parts[1].trim());
             int depth  = Integer.parseInt(parts[2].trim());
-            CorticalDimensions dims = new CorticalDimensions(width, height, depth);
-            LOG.fine("CorticalAreaResolver: resolved '" + corticalAreaId
-                    + "' → " + dims);
-            return dims;
+            try {
+                CorticalDimensions dims = new CorticalDimensions(width, height, depth);
+                LOG.fine("CorticalAreaResolver: resolved '" + corticalAreaId
+                        + "' → " + dims);
+                return dims;
+            } catch (IllegalArgumentException e) {
+                // CorticalDimensions rejects zero/negative values — wrap so callers
+                // only need to catch FeagiSdkException from this method.
+                throw new FeagiSdkException(
+                        "CorticalAreaResolver: invalid dimension value in response "
+                        + "for cortical area '" + corticalAreaId + "': "
+                        + e.getMessage(), e);
+            }
         } catch (NumberFormatException e) {
             throw new FeagiSdkException(
                     "CorticalAreaResolver: non-integer value in 'cortical_dimensions' "
