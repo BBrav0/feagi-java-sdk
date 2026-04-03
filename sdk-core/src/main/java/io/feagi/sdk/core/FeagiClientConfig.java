@@ -195,7 +195,11 @@ public final class FeagiClientConfig {
     /**
      * Agent software version, or {@link OptionalInt#empty()} if not set.
      * Use {@code agentVersion().isPresent()} to check whether it was set.
-     * When present, passed to FEAGI as {@code uint32_t}.
+     *
+     * <p>When present, passed to FEAGI as {@code uint32_t}. The builder accepts
+     * the full unsigned 32-bit range ({@code 0}–{@code 4,294,967,295}) via a
+     * {@code long} parameter; the value is stored here as {@code int} with the
+     * same bit pattern (two's complement).
      */
     public OptionalInt agentVersion()     { return agentVersion; }
 
@@ -327,7 +331,7 @@ public final class FeagiClientConfig {
          * Set the sensory ZMQ endpoint. Required for sensory and bidirectional agents.
          * Pass {@code null} to leave unset (motor-only agents).
          *
-         * @param endpoint must start with {@code tcp://} if non-null
+         * @param endpoint must start with {@code tcp://} or {@code ipc://} if non-null
          */
         public Builder sensoryEndpoint(String endpoint) {
             this.sensoryEndpoint = requireOptionalTcpEndpoint(endpoint, "sensoryEndpoint");
@@ -338,7 +342,7 @@ public final class FeagiClientConfig {
          * Set the motor ZMQ endpoint. Required for motor and bidirectional agents.
          * Pass {@code null} to leave unset (sensory-only agents).
          *
-         * @param endpoint must start with {@code tcp://} if non-null
+         * @param endpoint must start with {@code tcp://} or {@code ipc://} if non-null
          */
         public Builder motorEndpoint(String endpoint) {
             this.motorEndpoint = requireOptionalTcpEndpoint(endpoint, "motorEndpoint");
@@ -348,7 +352,7 @@ public final class FeagiClientConfig {
         /**
          * Set the visualization ZMQ endpoint.
          *
-         * @param endpoint must start with {@code tcp://} if non-null
+         * @param endpoint must start with {@code tcp://} or {@code ipc://} if non-null
          */
         public Builder visualizationEndpoint(String endpoint) {
             this.visualizationEndpoint =
@@ -359,7 +363,7 @@ public final class FeagiClientConfig {
         /**
          * Set the control ZMQ endpoint.
          *
-         * @param endpoint must start with {@code tcp://} if non-null
+         * @param endpoint must start with {@code tcp://} or {@code ipc://} if non-null
          */
         public Builder controlEndpoint(String endpoint) {
             this.controlEndpoint = requireOptionalTcpEndpoint(endpoint, "controlEndpoint");
@@ -412,13 +416,19 @@ public final class FeagiClientConfig {
         /**
          * Set the agent software version. Passed as {@code uint32_t} to FEAGI.
          *
-         * @param version must be {@code >= 0}
+         * <p>Accepts the full unsigned 32-bit range: {@code 0} to {@code 4,294,967,295}
+         * ({@code 0xFFFFFFFFL}). Values are narrowed to {@code int} for native ABI
+         * compatibility — the widening to {@code long} here ensures values above
+         * {@link Integer#MAX_VALUE} are not silently rejected or wrapped.
+         *
+         * @param version must be in {@code [0, 4294967295]}
          */
-        public Builder agentVersion(int version) {
-            if (version < 0) {
-                throw new IllegalArgumentException("agentVersion must be >= 0");
+        public Builder agentVersion(long version) {
+            if (version < 0 || version > 0xFFFFFFFFL) {
+                throw new IllegalArgumentException(
+                        "agentVersion must be in [0, 4294967295] (full uint32_t range), got " + version);
             }
-            this.agentVersion = version;
+            this.agentVersion = (int) version; // safe narrowing — validated above
             this.agentVersionSet = true;
             return this;
         }
@@ -473,7 +483,9 @@ public final class FeagiClientConfig {
                 throw new IllegalArgumentException(
                         name + " must start with tcp:// or ipc:// (got: '" + value + "')");
             }
-            if (value.length() <= "tcp://".length() || value.substring(value.indexOf("//") + 2).isBlank()) {
+            // isBlank() on the part after "//" covers both "tcp://" and "ipc://" with
+            // no assumption about prefix length — handles any future scheme addition cleanly.
+            if (value.substring(value.indexOf("//") + 2).isBlank()) {
                 throw new IllegalArgumentException(
                         name + " must include an address after the scheme (got: '" + value + "')");
             }

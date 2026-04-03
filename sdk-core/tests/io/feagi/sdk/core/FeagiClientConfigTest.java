@@ -139,7 +139,6 @@ class FeagiClientConfigTest {
         assertEquals(Duration.ZERO, cfg.retryBackoff(),
                 "retryBackoff() must return Duration.ZERO (not null) when retries=0");
     }
-
     @Test
     void equals_twoZeroRetryConfigs_withSameBackoff_areEqual() {
         // Without the special-case, two zero-retry configs are equal only if
@@ -246,7 +245,7 @@ class FeagiClientConfigTest {
                 .authTokenBase64(token)
                 .manufacturer("Neuraville")
                 .agentName("TestAgent")
-                .agentVersion(2)
+                .agentVersion(2L)
                 .build();
 
         assertEquals("tcp://localhost:5558", cfg.sensoryEndpoint());
@@ -395,13 +394,26 @@ class FeagiClientConfigTest {
     @Test
     void agentVersion_negative_throws() {
         assertThrows(IllegalArgumentException.class,
-                () -> FeagiClientConfig.builder().agentVersion(-1));
+                () -> FeagiClientConfig.builder().agentVersion(-1L));
     }
 
     @Test
     void agentVersion_zero_isAllowed() {
-        FeagiClientConfig cfg = minimalBuilder().agentVersion(0).build();
+        FeagiClientConfig cfg = minimalBuilder().agentVersion(0L).build();
         assertEquals(0, cfg.agentVersion().getAsInt());
+    }
+
+    @Test
+    void agentVersion_maxUint32_isAllowed() {
+        // 0xFFFFFFFFL = 4294967295 — top of uint32_t range
+        FeagiClientConfig cfg = minimalBuilder().agentVersion(0xFFFFFFFFL).build();
+        assertTrue(cfg.agentVersion().isPresent());
+    }
+
+    @Test
+    void agentVersion_aboveUint32Max_throws() {
+        assertThrows(IllegalArgumentException.class,
+                () -> FeagiClientConfig.builder().agentVersion(0x1_0000_0000L));
     }
 
     // ── manufacturer / agentName validation ──────────────────────────────────
