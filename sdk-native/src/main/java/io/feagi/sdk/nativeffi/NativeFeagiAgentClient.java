@@ -42,6 +42,8 @@ import java.util.logging.Logger;
  *     byte[] motor = client.pollMotorBytes();
  *     client.disconnect();         // graceful disconnect; close() also works
  * }
+ * // This object is permanently closed after close()/disconnect().
+ * // Construct a new instance if a new connection is needed.
  * }</pre>
  *
  * <h2>Retry</h2>
@@ -110,10 +112,13 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     private volatile boolean connected = false;
 
     /**
-     * Set permanently to {@code true} by {@link #close()}. Checked after
-     * {@code attemptConnect()} returns successfully to detect the race where
-     * {@code close()} ran while the network call was in flight — in that case
-     * the freshly allocated client handle must be freed rather than stored.
+     * Set permanently to {@code true} by {@link #close()}. Once set, {@link #connect()}
+     * throws {@link IllegalStateException} immediately — this object is not reusable after
+     * close. Construct a new instance for a new connection.
+     *
+     * <p>Also checked in the post-connect write-lock block to detect the race where
+     * {@code close()} ran while {@code attemptConnect()} was executing the blocking
+     * network call — in that case the freshly allocated handle is freed immediately.
      */
     private volatile boolean closed = false;
 
@@ -180,6 +185,15 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      */
     @Override
     public void connect() {
+        // Permanent-close guard: once close() has been called, this object cannot be reused.
+        // Native handles are freed in close() and cannot be reallocated on the same instance.
+        // Construct a new NativeFeagiAgentClient if a new connection is needed.
+        if (closed) {
+            throw new IllegalStateException(
+                    "NativeFeagiAgentClient for agent '" + config.agentId()
+                    + "' has been permanently closed and cannot be reused. "
+                    + "Construct a new instance.");
+        }
         // CAS guard: only one thread may enter the retry loop. Without this, two concurrent
         // callers could both pass the connected == false check and race into native allocation,
         // with the first thread's handle silently overwritten and leaked by the second.
@@ -468,22 +482,27 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * {@inheritDoc}
      *
      * <p>Stops the heartbeat scheduler (waiting up to 2 seconds for any in-flight tick
-     * to complete), sets {@link #isConnected()} to {@code false}, and frees the native
-     * client handle. Idempotent — safe to call multiple times. Holds the write lock so
-     * it cannot run concurrently with an in-progress send or poll.
+     * to complete), then acquires the write lock to set state and free the native handle.
+     * Idempotent — safe to call multiple times.
+     *
+     * <p><b>Lock ordering:</b> {@code stopHeartbeat()} is called <em>before</em> acquiring
+     * the write lock. This is critical: the heartbeat thread holds the read lock during each
+     * tick, and read/write locks are mutually exclusive. If we held the write lock while
+     * calling {@code awaitTermination()}, the heartbeat thread could be blocked waiting for
+     * the read lock while we waited for the thread to finish — a deadlock. By stopping the
+     * heartbeat first (outside the lock), we ensure the thread has exited before we acquire
+     * the write lock.
      */
     @Override
     public void close() {
+        // Must happen BEFORE acquiring the write lock — see Javadoc above.
+        stopHeartbeat();
+
         String closedAgentId = null;
         handleLock.writeLock().lock();
         try {
-            // stopHeartbeat() runs inside the write lock alongside connected=false and
-            // clientHandle.getAndSet(NULL_HANDLE). This serializes it with
-            // startHeartbeatIfConfigured() (also inside the write lock in connect()),
-            // so the two cannot interleave. If close() wins the lock first, the scheduler
-            // is stopped before connect() can start it. If connect() wins first, the
-            // scheduler is running by the time close() acquires the lock and stops it.
-            stopHeartbeat();
+            // stopHeartbeat() and the write lock together provide the happens-before:
+            // heartbeat is fully stopped, then we mutate state under the write lock.
             closed = true;
             connected = false;
             long handle = clientHandle.getAndSet(NULL_HANDLE);
@@ -498,7 +517,6 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         } finally {
             handleLock.writeLock().unlock();
         }
-        // Log after releasing the write lock — consistent with connect() deferral.
         if (closedAgentId != null) {
             LOG.info("NativeFeagiAgentClient closed: agentId=" + closedAgentId);
         }
@@ -510,11 +528,12 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * Start the background heartbeat scheduler if {@code heartbeatInterval} is positive.
      * Uses a single daemon thread so it does not prevent JVM shutdown.
      *
-     * <p>Must be called inside the write lock, alongside {@code connected = true},
-     * so that {@link #close()}'s {@code stopHeartbeat()} call (also inside the write
-     * lock) cannot interleave — see the close() implementation for details.
+     * <p>Must be called inside the write lock. Checks {@code closed} under the lock so that
+     * if {@code close()} acquired the lock between {@code stopHeartbeat()} and here, we do
+     * not start a scheduler that will never be stopped.
      */
     private void startHeartbeatIfConfigured() {
+        if (closed) return; // close() ran while we were connecting — don't start scheduler
         long intervalMs = config.heartbeatInterval().toMillis();
         if (intervalMs <= 0) {
             LOG.fine("NativeFeagiAgentClient: heartbeat disabled (interval=0)");
