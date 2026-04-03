@@ -67,9 +67,12 @@ class CorticalAreaResolverTest {
 
     @Test
     void dimensions_totalNeurons_noOverflowForLargeArea() {
-        // 1000×1000×1000 = 1_000_000_000 — fits in long but overflows int
-        CorticalDimensions d = new CorticalDimensions(1000, 1000, 1000);
-        assertEquals(1_000_000_000L, d.totalNeurons());
+        // 1300×1300×1300 = 2,197,000,000 which exceeds Integer.MAX_VALUE (2,147,483,647)
+        // and would wrap to a negative int without the (long) cast in totalNeurons().
+        CorticalDimensions d = new CorticalDimensions(1300, 1300, 1300);
+        assertEquals(2_197_000_000L, d.totalNeurons());
+        assertTrue(d.totalNeurons() > Integer.MAX_VALUE,
+                "totalNeurons() must exceed Integer.MAX_VALUE to verify no int overflow");
     }
 
     @Test

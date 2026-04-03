@@ -17,6 +17,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 /**
  * Detects cortical area dimensions by querying the FEAGI REST API.
@@ -68,6 +69,13 @@ import java.util.logging.Logger;
 public final class CorticalAreaResolver {
 
     private static final Logger LOG = Logger.getLogger(CorticalAreaResolver.class.getName());
+
+    /**
+     * Pre-compiled pattern for valid cortical area IDs.
+     * Using a compiled constant avoids recompiling the regex on every call and ensures
+     * the allowed character set is defined in exactly one place — update here only.
+     */
+    private static final Pattern VALID_CORTICAL_ID = Pattern.compile("[A-Za-z0-9_\\-]+");
 
     /** Default FEAGI REST API host. */
     public static final String DEFAULT_HOST = "127.0.0.1";
@@ -136,7 +144,7 @@ public final class CorticalAreaResolver {
         // Guard against path traversal and injection. The URI multi-arg constructor
         // encodes '?' and '#' but does NOT encode '/', so "../../etc" would produce
         // a traversable path. FEAGI IDs are alphanumeric + underscore + hyphen only.
-        if (!corticalAreaId.matches("[A-Za-z0-9_\\-]+")) {
+        if (!VALID_CORTICAL_ID.matcher(corticalAreaId).matches()) {
             throw new IllegalArgumentException(
                     "corticalAreaId contains disallowed characters — only ASCII "
                     + "alphanumeric, underscore, and hyphen are permitted: '"
@@ -302,10 +310,10 @@ public final class CorticalAreaResolver {
         // ID like "../../etc" would produce a traversable URL. resolve() enforces this
         // constraint before calling buildUrl. If buildUrl is ever called from a new code path,
         // that path must apply the same regex guard — do not call buildUrl with unvalidated input.
-        if (!corticalAreaId.matches("[A-Za-z0-9_\\-]+")) {
+        if (!VALID_CORTICAL_ID.matcher(corticalAreaId).matches()) {
             throw new IllegalStateException(
                     "buildUrl called with unvalidated corticalAreaId — "
-                    + "this is a programming error. Apply the [A-Za-z0-9_\\-]+ "
+                    + "this is a programming error. Apply the VALID_CORTICAL_ID "
                     + "guard before calling buildUrl. Got: '" + corticalAreaId + "'");
         }
         try {
