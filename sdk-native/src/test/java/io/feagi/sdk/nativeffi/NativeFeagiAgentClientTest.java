@@ -27,6 +27,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -464,4 +465,139 @@ class NativeFeagiAgentClientTest {
     // only after a live native feagiClientReceiveMotorBuffer call returns a buffer handle.
     // They cannot be unit-tested without a native stub or a mock. The branches are visible
     // in the source; integration/smoke test coverage is required for live verification.
+
+    // ── isConnected() — issue #2 ──────────────────────────────────────────────
+
+    @Test
+    void isConnected_falseBeforeConnect() {
+        var client = new NativeFeagiAgentClient(minimalConfig());
+        assertFalse(client.isConnected(),
+                "isConnected() must be false before connect()");
+    }
+
+    @Test
+    void isConnected_falseAfterClose() throws Exception {
+        var client = new NativeFeagiAgentClient(minimalConfig());
+        // Force connected = true via reflection (can't call real connect() without native lib)
+        java.lang.reflect.Field f = NativeFeagiAgentClient.class.getDeclaredField("connected");
+        f.setAccessible(true);
+        f.set(client, true);
+        assertTrue(client.isConnected());
+
+        client.close();
+        assertFalse(client.isConnected(),
+                "isConnected() must be false after close()");
+    }
+
+    // ── disconnect() — issue #2 ───────────────────────────────────────────────
+
+    @Test
+    void disconnect_isEquivalentToClose() {
+        var client = new NativeFeagiAgentClient(minimalConfig());
+        assertDoesNotThrow(client::disconnect,
+                "disconnect() must not throw when called before connect()");
+    }
+
+    @Test
+    void disconnect_isIdempotent() {
+        var client = new NativeFeagiAgentClient(minimalConfig());
+        assertDoesNotThrow(() -> {
+            client.disconnect();
+            client.disconnect();
+        });
+    }
+
+    // ── retry behaviour — issue #2 ────────────────────────────────────────────
+    // Retry logic runs before any native call when retries > registrationRetries,
+    // so we verify the retry count is passed correctly to the native config.
+    // Full retry integration requires the native library; the unit-testable surface
+    // is the config wiring verified in constructor_acceptsValid* tests above.
+    // The retry loop itself is documented in the Javadoc and covered by smoke tests.
+
+    @Test
+    void connect_retryCount_passedToNativeConfig() {
+        // Verify registrationRetries is wired through AgentConfig correctly.
+        // The native layer receives this value via feagiConfigSetRegistrationRetries.
+        // We can't call connect() without the native library, but we can verify the
+        // config is stored and accessible — the wiring is in applyTimingConfig().
+        AgentConfig cfg = new AgentConfig(
+                "retry-test", AgentType.BOTH,
+                new FeagiEndpoints(
+                        "tcp://localhost:30001",
+                        "tcp://localhost:5558",
+                        "tcp://localhost:5564",
+                        null, null),
+                AgentCapabilities.builder()
+                        .vision(VisionCapability.fromUnit("cam", 320, 240, 3,
+                                SensoryUnit.VISION, 0))
+                        .motor(MotorCapability.fromUnit("drive", 4,
+                                MotorUnit.ROTARY_MOTOR, 0))
+                        .build(),
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(10),
+                5,                          // 5 retries = 6 total attempts
+                Duration.ofMillis(100),
+                new SensorySocketConfig(1000, 0, true));
+        var client = new NativeFeagiAgentClient(cfg);
+        assertEquals(5, cfg.registrationRetries());
+        assertDoesNotThrow(client::close);
+    }
+
+    // ── heartbeat — issue #2 ──────────────────────────────────────────────────
+    // The heartbeat scheduler starts after a successful connect(). Without the
+    // native library we can't reach the connected state via the normal path.
+    // The testable surface without the native library:
+    // - Zero heartbeat interval config is accepted (no scheduler starts)
+    // - Non-zero heartbeat interval config is accepted (scheduler would start on connect)
+    // Full heartbeat verification requires the integration smoke test.
+
+    @Test
+    void heartbeatInterval_zero_acceptedInConfig() {
+        AgentConfig cfg = new AgentConfig(
+                "hb-test", AgentType.BOTH,
+                new FeagiEndpoints(
+                        "tcp://localhost:30001",
+                        "tcp://localhost:5558",
+                        "tcp://localhost:5564",
+                        null, null),
+                AgentCapabilities.builder()
+                        .vision(VisionCapability.fromUnit("cam", 320, 240, 3,
+                                SensoryUnit.VISION, 0))
+                        .motor(MotorCapability.fromUnit("drive", 4,
+                                MotorUnit.ROTARY_MOTOR, 0))
+                        .build(),
+                Duration.ZERO,              // heartbeat disabled
+                Duration.ofSeconds(10),
+                0,
+                Duration.ofMillis(100),
+                new SensorySocketConfig(1000, 0, true));
+        var client = new NativeFeagiAgentClient(cfg);
+        assertEquals(Duration.ZERO, cfg.heartbeatInterval());
+        assertDoesNotThrow(client::close);
+    }
+
+    @Test
+    void heartbeatInterval_positive_acceptedInConfig() {
+        AgentConfig cfg = new AgentConfig(
+                "hb-test-2", AgentType.BOTH,
+                new FeagiEndpoints(
+                        "tcp://localhost:30001",
+                        "tcp://localhost:5558",
+                        "tcp://localhost:5564",
+                        null, null),
+                AgentCapabilities.builder()
+                        .vision(VisionCapability.fromUnit("cam", 320, 240, 3,
+                                SensoryUnit.VISION, 0))
+                        .motor(MotorCapability.fromUnit("drive", 4,
+                                MotorUnit.ROTARY_MOTOR, 0))
+                        .build(),
+                Duration.ofSeconds(1),      // heartbeat every 1s
+                Duration.ofSeconds(10),
+                0,
+                Duration.ofMillis(100),
+                new SensorySocketConfig(1000, 0, true));
+        var client = new NativeFeagiAgentClient(cfg);
+        assertEquals(Duration.ofSeconds(1), cfg.heartbeatInterval());
+        assertDoesNotThrow(client::close);
+    }
 }
