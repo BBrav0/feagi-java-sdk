@@ -67,7 +67,7 @@ public class ControllerLogger implements Monitor {
     private final PrintStream stream;
 
     private final Logger internalLogger;
-    private final boolean enabled;
+    private volatile boolean enabled;
 
     /**
      * Creates a new ControllerLogger.
@@ -191,6 +191,20 @@ public class ControllerLogger implements Monitor {
     @Override
     public boolean isEnabled() {
         return enabled;
+    }
+
+    /**
+     * Enables monitoring.
+     */
+    public void enable() {
+        this.enabled = true;
+    }
+
+    /**
+     * Disables monitoring.
+     */
+    public void disable() {
+        this.enabled = false;
     }
 
     /**
