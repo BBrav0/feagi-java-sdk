@@ -100,13 +100,13 @@ class CorticalAreaResolverTest {
 
     @Test
     void buildUrl_correctFormat() {
-        String url = CorticalAreaResolver.buildUrl("127.0.0.1", 8000, "i__inf");
+        String url = DefaultCorticalAreaResolver.buildUrl("127.0.0.1", 8000, "i__inf");
         assertEquals("http://127.0.0.1:8000/v1/genome/cortical_area/i__inf", url);
     }
 
     @Test
     void buildUrl_customHostAndPort() {
-        String url = CorticalAreaResolver.buildUrl("feagi-host", 9000, "o__mot");
+        String url = DefaultCorticalAreaResolver.buildUrl("feagi-host", 9000, "o__mot");
         assertEquals("http://feagi-host:9000/v1/genome/cortical_area/o__mot", url);
     }
 
@@ -115,21 +115,21 @@ class CorticalAreaResolverTest {
         // resolve() validates corticalAreaId before calling buildUrl.
         // A path-traversal cortical area ID must be caught at the validation step.
         assertThrows(IllegalArgumentException.class,
-                () -> CorticalAreaResolver.resolve("../../etc", "real-host", 8000));
+                () -> CorticalAreaResolver.resolveOnce("../../etc", "real-host", 8000));
     }
 
     @Test
     void resolve_corticalIdWithQueryChar_isRejectedByValidation() {
         // '?' in the cortical area ID must be caught by the regex guard.
         assertThrows(IllegalArgumentException.class,
-                () -> CorticalAreaResolver.resolve("id?inject=1", "real-host", 8000));
+                () -> CorticalAreaResolver.resolveOnce("id?inject=1", "real-host", 8000));
     }
 
     @Test
     void buildUrl_cleanInput_correctFormat() {
         // buildUrl is only called with pre-validated (safe) input from resolve().
         // Verify the happy path produces the expected URL.
-        String url = CorticalAreaResolver.buildUrl("real-host", 8000, "i__inf");
+        String url = DefaultCorticalAreaResolver.buildUrl("real-host", 8000, "i__inf");
         assertEquals("http://real-host:8000/v1/genome/cortical_area/i__inf", url);
     }
 
@@ -138,7 +138,7 @@ class CorticalAreaResolverTest {
         // buildUrl's own guard rejects invalid IDs so the programming error
         // is caught even if called outside of resolve().
         assertThrows(IllegalStateException.class,
-                () -> CorticalAreaResolver.buildUrl("host", 8000, "../../etc"));
+                () -> DefaultCorticalAreaResolver.buildUrl("host", 8000, "../../etc"));
     }
 
     // ── parseDimensions ───────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ class CorticalAreaResolverTest {
                   "cortical_name": "infrared"
                 }
                 """;
-        CorticalDimensions d = CorticalAreaResolver.parseDimensions(json, "i__inf");
+        CorticalDimensions d = DefaultCorticalAreaResolver.parseDimensions(json, "i__inf");
         assertEquals(10, d.width());
         assertEquals(20, d.height());
         assertEquals(3,  d.depth());
@@ -161,7 +161,7 @@ class CorticalAreaResolverTest {
     @Test
     void parseDimensions_extraWhitespace() {
         String json = "{ \"cortical_dimensions\" : [ 5 , 8 , 2 ] }";
-        CorticalDimensions d = CorticalAreaResolver.parseDimensions(json, "x");
+        CorticalDimensions d = DefaultCorticalAreaResolver.parseDimensions(json, "x");
         assertEquals(new CorticalDimensions(5, 8, 2), d);
     }
 
@@ -169,23 +169,26 @@ class CorticalAreaResolverTest {
     void parseDimensions_missingField_throwsFeagiSdkException() {
         String json = "{ \"cortical_id\": \"i__inf\" }";
         FeagiSdkException ex = assertThrows(FeagiSdkException.class,
-                () -> CorticalAreaResolver.parseDimensions(json, "i__inf"));
+                () -> DefaultCorticalAreaResolver.parseDimensions(json, "i__inf"));
         assertTrue(ex.getMessage().contains("cortical_dimensions"));
     }
 
     @Test
     void parseDimensions_wrongElementCount_throws() {
+        // The regex requires exactly 3 integer groups — a 2-element array won't match,
+        // so the exception message says "missing or malformed" rather than "3 elements".
         String json = "{ \"cortical_dimensions\": [10, 20] }"; // only 2 elements
         FeagiSdkException ex = assertThrows(FeagiSdkException.class,
-                () -> CorticalAreaResolver.parseDimensions(json, "x"));
-        assertTrue(ex.getMessage().contains("3 elements"));
+                () -> DefaultCorticalAreaResolver.parseDimensions(json, "x"));
+        assertTrue(ex.getMessage().contains("missing or malformed"),
+                "Expected 'missing or malformed' in: " + ex.getMessage());
     }
 
     @Test
     void parseDimensions_nonIntegerValue_throws() {
         String json = "{ \"cortical_dimensions\": [10, 20, \"three\"] }";
         assertThrows(FeagiSdkException.class,
-                () -> CorticalAreaResolver.parseDimensions(json, "x"));
+                () -> DefaultCorticalAreaResolver.parseDimensions(json, "x"));
     }
 
     @Test
@@ -194,15 +197,47 @@ class CorticalAreaResolverTest {
         // so callers only need to catch FeagiSdkException from this method.
         String json = "{ \"cortical_dimensions\": [0, 20, 3] }";
         assertThrows(FeagiSdkException.class,
-                () -> CorticalAreaResolver.parseDimensions(json, "x"));
+                () -> DefaultCorticalAreaResolver.parseDimensions(json, "x"));
     }
 
     @Test
     void parseDimensions_fieldFirstInJson() {
         // Ensure key is found regardless of field order
         String json = "{ \"cortical_dimensions\": [3, 4, 1], \"name\": \"x\" }";
-        CorticalDimensions d = CorticalAreaResolver.parseDimensions(json, "x");
+        CorticalDimensions d = DefaultCorticalAreaResolver.parseDimensions(json, "x");
         assertEquals(new CorticalDimensions(3, 4, 1), d);
+    }
+
+    @Test
+    void parseDimensions_keyInStringValue_doesNotFalseMatch() {
+        // Regression: if "cortical_dimensions": [w,h,d] appears verbatim inside a string
+        // value AND as a real key, the regex must find the real key's array.
+        // The regex requires the pattern to appear as key:array — a value inside a string
+        // will only match if it also syntactically resembles a key:array sequence.
+        // This test documents the known limitation and verifies the real key is found.
+        String json = "{ \"description\": \"cortical_dimensions is metadata\","
+                    + " \"cortical_dimensions\": [5, 6, 2] }";
+        CorticalDimensions d = DefaultCorticalAreaResolver.parseDimensions(json, "x");
+        assertEquals(new CorticalDimensions(5, 6, 2), d);
+    }
+
+    // ── CorticalAreaResolver as injectable interface (#3) ─────────────────────
+
+    @Test
+    void resolver_canBeImplementedAsLambdaForTesting() {
+        // The interface design means test code can inject a stub without a real network.
+        CorticalAreaResolver stub = id -> Optional.of(new CorticalDimensions(10, 20, 3));
+        Optional<CorticalDimensions> result = stub.resolve("i__inf");
+        assertTrue(result.isPresent());
+        assertEquals(new CorticalDimensions(10, 20, 3), result.get());
+    }
+
+    @Test
+    void resolver_createReturnsDefaultImplementation() {
+        // Verify the factory method returns a non-null working instance
+        CorticalAreaResolver resolver = CorticalAreaResolver.create("127.0.0.1", 8000);
+        assertNotNull(resolver);
+        assertInstanceOf(DefaultCorticalAreaResolver.class, resolver);
     }
 
     // ── resolve() argument validation ─────────────────────────────────────────
@@ -210,52 +245,52 @@ class CorticalAreaResolverTest {
     @Test
     void resolve_nullAreaId_throws() {
         assertThrows(NullPointerException.class,
-                () -> CorticalAreaResolver.resolve(null, "localhost", 8000));
+                () -> CorticalAreaResolver.resolveOnce(null, "localhost", 8000));
     }
 
     @Test
     void resolve_blankAreaId_throws() {
         assertThrows(IllegalArgumentException.class,
-                () -> CorticalAreaResolver.resolve("  ", "localhost", 8000));
+                () -> CorticalAreaResolver.resolveOnce("  ", "localhost", 8000));
     }
 
     @Test
     void resolve_areaIdWithSlash_throws() {
         // Path traversal attempt must be rejected before the HTTP call
         assertThrows(IllegalArgumentException.class,
-                () -> CorticalAreaResolver.resolve("../../etc", "localhost", 8000));
+                () -> CorticalAreaResolver.resolveOnce("../../etc", "localhost", 8000));
     }
 
     @Test
     void resolve_areaIdWithQueryString_throws() {
         assertThrows(IllegalArgumentException.class,
-                () -> CorticalAreaResolver.resolve("id?inject=1", "localhost", 8000));
+                () -> CorticalAreaResolver.resolveOnce("id?inject=1", "localhost", 8000));
     }
 
     @Test
     void resolve_invalidPort_throws() {
         assertThrows(IllegalArgumentException.class,
-                () -> CorticalAreaResolver.resolve("i__inf", "localhost", 0));
+                () -> CorticalAreaResolver.resolveOnce("i__inf", "localhost", 0));
         assertThrows(IllegalArgumentException.class,
-                () -> CorticalAreaResolver.resolve("i__inf", "localhost", 70000));
+                () -> CorticalAreaResolver.resolveOnce("i__inf", "localhost", 70000));
     }
 
     @Test
     void resolve_nullHost_throws() {
         assertThrows(NullPointerException.class,
-                () -> CorticalAreaResolver.resolve("i__inf", null, 8000));
+                () -> CorticalAreaResolver.resolveOnce("i__inf", null, 8000));
     }
 
     @Test
     void resolve_zeroTimeout_throws() {
         assertThrows(IllegalArgumentException.class,
-                () -> CorticalAreaResolver.resolve("i__inf", "localhost", 8000, Duration.ZERO));
+                () -> CorticalAreaResolver.resolveOnce("i__inf", "localhost", 8000, Duration.ZERO));
     }
 
     @Test
     void resolve_negativeTimeout_throws() {
         assertThrows(IllegalArgumentException.class,
-                () -> CorticalAreaResolver.resolve("i__inf", "localhost", 8000,
+                () -> CorticalAreaResolver.resolveOnce("i__inf", "localhost", 8000,
                         Duration.ofSeconds(-1)));
     }
 
@@ -270,7 +305,7 @@ class CorticalAreaResolverTest {
         } // port is now closed — any connect attempt will be refused immediately
 
         Optional<CorticalDimensions> result =
-                CorticalAreaResolver.resolve("i__inf", "127.0.0.1", refusedPort,
+                CorticalAreaResolver.resolveOnce("i__inf", "127.0.0.1", refusedPort,
                         Duration.ofMillis(500));
         assertTrue(result.isEmpty(),
                 "Connection-refused must return Optional.empty(), not throw");
@@ -278,7 +313,7 @@ class CorticalAreaResolverTest {
 
     // ── Integration shape test (skipped without live FEAGI) ──────────────────
     // To run against a live FEAGI instance:
-    //   CorticalAreaResolver.resolve("i__inf", "your-feagi-host", 8000)
+    //   CorticalAreaResolver.resolveOnce("i__inf", "your-feagi-host", 8000)
     //          .ifPresent(d -> System.out.println("dims: " + d));
     //
     // Not automated here because CI has no FEAGI dependency.
