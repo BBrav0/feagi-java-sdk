@@ -141,10 +141,10 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * Scheduler for the background heartbeat. {@code null} when heartbeat is disabled
      * or the client is not connected.
      *
-     * <p>Both {@link #startHeartbeatIfConfigured()} and {@link #stopHeartbeat()} are
-     * called inside the write lock, so the write-lock happens-before guarantee is
-     * sufficient for visibility. The {@code volatile} modifier is redundant but retained
-     * as a belt-and-suspenders signal that this field is accessed from multiple threads.
+     * <p>{@link #startHeartbeatIfConfigured()} is called under the write lock, while
+     * {@link #stopHeartbeat()} synchronizes on itself because {@link #close()} is
+     * documented as idempotent and may be called concurrently from multiple threads.
+     * The {@code volatile} modifier provides simple visibility for the fast-path reads.
      */
     private volatile ScheduledExecutorService heartbeatExecutor;
     private volatile ScheduledFuture<?> heartbeatTask;
@@ -185,32 +185,28 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      */
     @Override
     public void connect() {
-        // Permanent-close guard: once close() has been called, this object cannot be reused.
-        // Native handles are freed in close() and cannot be reallocated on the same instance.
-        // Construct a new NativeFeagiAgentClient if a new connection is needed.
+        // Fast-path guards before entering the connect CAS.
+        // closed is permanent; connected means this instance is already live.
+        // These are advisory pre-checks only — the post-connect write-lock block still
+        // handles the race where close() runs while attemptConnect() is blocked in native code.
         if (closed) {
             throw new IllegalStateException(
                     "NativeFeagiAgentClient for agent '" + config.agentId()
                     + "' has been permanently closed and cannot be reused. "
                     + "Construct a new instance.");
         }
+        if (connected) {
+            throw new IllegalStateException("Already connected. Call close() first.");
+        }
         // CAS guard: only one thread may enter the retry loop. Without this, two concurrent
-        // callers could both pass the connected == false check and race into native allocation,
-        // with the first thread's handle silently overwritten and leaked by the second.
+        // callers could both race into native allocation, with the first thread's handle
+        // silently overwritten and leaked by the second.
         if (!connecting.compareAndSet(false, true)) {
             throw new IllegalStateException(
                     "A connect() call is already in progress for agent '"
                     + config.agentId() + "'.");
         }
         try {
-            handleLock.writeLock().lock();
-            try {
-                if (connected) {
-                    throw new IllegalStateException("Already connected. Call close() first.");
-                }
-            } finally {
-                handleLock.writeLock().unlock();
-            }
 
             int maxAttempts = config.registrationRetries() + 1;
             long backoffMs  = config.retryBackoff().toMillis();
@@ -588,24 +584,26 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     /**
      * Stop and tear down the heartbeat scheduler.
      *
-     * <p>Must be called before acquiring the write lock. {@code shutdownNow()} interrupts the
-     * scheduler thread, but an in-flight tick blocked on the read lock (non-interruptible)
-     * will not be interrupted immediately. {@code awaitTermination} waits up to 2 seconds
-     * for the thread to exit. This is a best-effort shutdown wait after cancellation and
-     * interruption; it is not waiting for the heartbeat thread to observe {@code connected=false},
-     * because {@code close()} sets that flag only after this method returns and the write lock is held.
+     * <p>Must be called before acquiring the write lock. The method is synchronized because
+     * {@link #close()} is idempotent and may be called concurrently; synchronization makes the
+     * task/executor check-then-null sequence atomic and avoids fragile double-shutdown races.
      *
-     * <p>After this method returns, callers have a best-effort guarantee that the heartbeat
-     * thread has exited. The 2-second bound is chosen to exceed any realistic network round-trip.
+     * <p>{@code shutdownNow()} interrupts the scheduler thread, but an in-flight tick blocked
+     * on the read lock (non-interruptible) will not be interrupted immediately.
+     * {@code awaitTermination} waits up to 2 seconds for the thread to exit. This is a
+     * best-effort shutdown wait after cancellation/interruption; it does not rely on
+     * {@code connected=false}, which is set later by {@link #close()} under the write lock.
      */
-    private void stopHeartbeat() {
-        if (heartbeatTask != null) {
-            heartbeatTask.cancel(false);
-            heartbeatTask = null;
+    private synchronized void stopHeartbeat() {
+        ScheduledFuture<?> task = heartbeatTask;
+        heartbeatTask = null;
+        if (task != null) {
+            task.cancel(false);
         }
-        if (heartbeatExecutor != null) {
-            ScheduledExecutorService executor = heartbeatExecutor;
-            heartbeatExecutor = null;
+
+        ScheduledExecutorService executor = heartbeatExecutor;
+        heartbeatExecutor = null;
+        if (executor != null) {
             executor.shutdownNow();
             try {
                 // Best-effort wait after cancellation/interruption. This does not rely on
