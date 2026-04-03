@@ -138,14 +138,17 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * Scheduler for the background heartbeat. {@code null} when heartbeat is disabled
      * or the client is not connected.
      *
-     * <p>Written by {@link #startHeartbeatIfConfigured()} (inside the write lock) and
-     * cleared by {@link #shutdownHeartbeat()} (called both before and inside the write
-     * lock in {@link #close()}). The double-shutdown pattern in {@code close()} closes
-     * the race where {@code connect()} starts the executor after {@code close()}'s first
-     * shutdown call but before it acquires the write lock.
+     * <p>{@code volatile} is required here: {@link #shutdownHeartbeat()} reads this field
+     * in Phase 1 of {@link #close()} <em>without</em> holding the write lock (to avoid a
+     * deadlock with the heartbeat thread's read lock). Without {@code volatile}, the JMM
+     * provides no happens-before between the write in {@link #startHeartbeatIfConfigured()}
+     * (inside the write lock) and this lock-free read — Phase 1 could legally see a stale
+     * null. The double-shutdown pattern in Phase 2 makes the overall logic correct regardless,
+     * but {@code volatile} makes Phase 1 independently safe and removes reliance on Phase 2
+     * as a safety net.
      */
-    private ScheduledExecutorService heartbeatExecutor;
-    private ScheduledFuture<?> heartbeatTask;
+    private volatile ScheduledExecutorService heartbeatExecutor;
+    private ScheduledFuture<?> heartbeatTask; // only accessed inside write lock; no volatile needed
 
     // ── Construction ───────────────────────────────────────────────────────────
 
@@ -529,6 +532,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         ScheduledExecutorService executorToAwait = shutdownHeartbeat();
 
         String closedAgentId = null;
+        ScheduledExecutorService raceExecutor = null;
         handleLock.writeLock().lock();
         try {
             closed = true;
@@ -549,24 +553,17 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             //      sets heartbeatExecutor = newExecutor
             //   3. close() acquires write lock here
             // Without this second shutdown, the new executor is orphaned and runs forever.
-            // We do NOT call awaitTermination here because connected=false is now set —
-            // the thread will see it on its next tick and exit as a no-op, and we cannot
-            // wait inside the write lock without risking deadlock.
-            ScheduledExecutorService raceExecutor = shutdownHeartbeat();
-            if (raceExecutor != null && executorToAwait == null) {
-                executorToAwait = raceExecutor; // await this one after releasing the lock
-            } else if (raceExecutor != null) {
-                // Both executors exist (shouldn't happen in practice, but be safe).
-                // The first one is awaited below; just discard the reference to the second —
-                // it will exit quickly since connected=false is now visible.
-            }
+            // We do NOT call awaitTermination here — that happens in Phase 3, outside the lock.
+            raceExecutor = shutdownHeartbeat();
         } finally {
             handleLock.writeLock().unlock();
         }
 
-        // Phase 3: wait for the executor thread to exit — outside the lock so the heartbeat
+        // Phase 3: wait for both executor threads to exit, outside the lock so the heartbeat
         // thread can acquire the read lock and observe connected=false on its final tick.
+        // awaitHeartbeatTermination is a no-op for null arguments, so this is always safe.
         awaitHeartbeatTermination(executorToAwait);
+        awaitHeartbeatTermination(raceExecutor);
 
         if (closedAgentId != null) {
             LOG.info("NativeFeagiAgentClient closed: agentId=" + closedAgentId);
