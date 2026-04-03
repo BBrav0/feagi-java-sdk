@@ -217,6 +217,10 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             FeagiSdkException lastFailure = null;
 
             for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+                if (closed) {
+                    throw new FeagiSdkException(
+                            "NativeFeagiAgentClient was closed while connect() retries were in progress.");
+                }
                 if (attempt > 1) {
                     LOG.info("NativeFeagiAgentClient: retry " + attempt + "/" + maxAttempts
                             + " (backoff=" + backoffMs + "ms)");
@@ -271,6 +275,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                             + " (attempt " + attempt + "/" + maxAttempts + ")");
                     return;
                 } catch (FeagiSdkException e) {
+                    if (closed) {
+                        throw e;
+                    }
                     lastFailure = e;
                     LOG.log(Level.WARNING,
                             "NativeFeagiAgentClient: attempt " + attempt + " failed: "
@@ -581,11 +588,12 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     /**
      * Stop and tear down the heartbeat scheduler.
      *
-     * <p>Must be called inside the write lock. {@code shutdownNow()} interrupts the
+     * <p>Must be called before acquiring the write lock. {@code shutdownNow()} interrupts the
      * scheduler thread, but an in-flight tick blocked on the read lock (non-interruptible)
      * will not be interrupted immediately. {@code awaitTermination} waits up to 2 seconds
-     * for the thread to exit; if it does not, the thread will still stop harmlessly because
-     * {@code sendHeartbeat()} checks {@code connected == false} before touching native state.
+     * for the thread to exit. This is a best-effort shutdown wait after cancellation and
+     * interruption; it is not waiting for the heartbeat thread to observe {@code connected=false},
+     * because {@code close()} sets that flag only after this method returns and the write lock is held.
      *
      * <p>After this method returns, callers have a best-effort guarantee that the heartbeat
      * thread has exited. The 2-second bound is chosen to exceed any realistic network round-trip.
@@ -600,8 +608,8 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             heartbeatExecutor = null;
             executor.shutdownNow();
             try {
-                // Best-effort wait — gives the heartbeat thread a chance to observe
-                // connected=false (set immediately after this method returns) and exit cleanly.
+                // Best-effort wait after cancellation/interruption. This does not rely on
+                // connected=false yet; close() sets that flag only after this method returns.
                 if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
                     LOG.warning("NativeFeagiAgentClient: heartbeat thread did not exit "
                             + "within 2 seconds after shutdown");

@@ -503,16 +503,15 @@ class NativeFeagiAgentClientTest {
     }
 
     // ── retry behaviour — issue #2 ────────────────────────────────────────────
-    // Retry logic runs before any native call when retries > registrationRetries,
-    // so we verify the retry count is passed correctly to the native config.
-    // Full retry integration requires the native library; the unit-testable surface
-    // is the config wiring verified in constructor_acceptsValid* tests above.
-    // The retry loop itself is documented in the Javadoc and covered by smoke tests.
+    // Full retry integration requires the native library. This unit test only
+    // verifies that AgentConfig stores the configured registrationRetries value.
+    // It does not prove that the value reaches the native config; that path requires
+    // an integration or smoke test with the native library loaded.
 
     @Test
-    void connect_retryCount_passedToNativeConfig() {
-        // Verify registrationRetries is wired through AgentConfig correctly.
-        // The native layer receives this value via feagiConfigSetRegistrationRetries.
+    void registrationRetries_storedInConfig() {
+        // Verify AgentConfig stores registrationRetries correctly.
+        // Native propagation requires an integration test with the JNI layer loaded.
         AgentConfig cfg = new AgentConfig(
                 "retry-test", AgentType.BOTH,
                 new FeagiEndpoints(
