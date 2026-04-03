@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -167,8 +168,12 @@ public final class CorticalAreaResolver {
         try {
             conn.setRequestMethod("GET");
             conn.setRequestProperty("Accept", "application/json");
-            conn.setConnectTimeout((int) timeout.toMillis());
-            conn.setReadTimeout((int) timeout.toMillis());
+            // Clamp to Integer.MAX_VALUE (~24.8 days) — HttpURLConnection takes int millis.
+            // An unclamped cast of a large Duration.toMillis() (long) would silently overflow
+            // to a wrong or negative value, disabling the timeout entirely.
+            int timeoutMs = (int) Math.min(timeout.toMillis(), Integer.MAX_VALUE);
+            conn.setConnectTimeout(timeoutMs);
+            conn.setReadTimeout(timeoutMs);
             conn.setDoOutput(false);
 
             int status = conn.getResponseCode();
@@ -262,10 +267,28 @@ public final class CorticalAreaResolver {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     static String buildUrl(String host, int port, String corticalAreaId) {
-        // Cortical area IDs are validated by the native layer to contain only
-        // ASCII alphanumeric, underscore, and hyphen — no percent-encoding needed.
-        return "http://" + host + ":" + port
-                + "/v1/genome/cortical_area/" + corticalAreaId;
+        // Use URI's multi-argument constructor to enforce proper component boundaries.
+        // String concatenation allows host values like "evil@real-host" or
+        // "real-host/injected/path?q=1" to manipulate the resulting URL. The multi-arg
+        // constructor treats each parameter as a distinct URI component and percent-encodes
+        // any reserved characters, preventing injection and future-proofing against
+        // cortical area IDs that may expand beyond the current safe-character set.
+        try {
+            URI uri = new URI(
+                    "http",
+                    null,                                         // userInfo
+                    host,
+                    port,
+                    "/v1/genome/cortical_area/" + corticalAreaId,
+                    null,                                         // query
+                    null);                                        // fragment
+            return uri.toASCIIString();
+        } catch (URISyntaxException e) {
+            throw new FeagiSdkException(
+                    "CorticalAreaResolver: invalid host or cortical area ID — "
+                    + "host='" + host + "', id='" + corticalAreaId + "': "
+                    + e.getMessage(), e);
+        }
     }
 
     private static String truncate(String s, int maxLen) {

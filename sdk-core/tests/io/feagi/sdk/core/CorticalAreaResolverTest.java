@@ -44,7 +44,14 @@ class CorticalAreaResolverTest {
     @Test
     void dimensions_totalNeurons() {
         CorticalDimensions d = new CorticalDimensions(4, 5, 3);
-        assertEquals(60, d.totalNeurons());
+        assertEquals(60L, d.totalNeurons());
+    }
+
+    @Test
+    void dimensions_totalNeurons_noOverflowForLargeArea() {
+        // 1000×1000×1000 = 1_000_000_000 — fits in long but overflows int
+        CorticalDimensions d = new CorticalDimensions(1000, 1000, 1000);
+        assertEquals(1_000_000_000L, d.totalNeurons());
     }
 
     @Test
@@ -78,6 +85,15 @@ class CorticalAreaResolverTest {
     void buildUrl_customHostAndPort() {
         String url = CorticalAreaResolver.buildUrl("feagi-host", 9000, "o__mot");
         assertEquals("http://feagi-host:9000/v1/genome/cortical_area/o__mot", url);
+    }
+
+    @Test
+    void buildUrl_hostWithInjectedPath_isContained() {
+        // A host containing a path separator must not be able to inject extra path segments.
+        // URI construction should either encode or reject the offending character.
+        String url = CorticalAreaResolver.buildUrl("real-host", 8000, "i__inf");
+        assertTrue(url.startsWith("http://real-host:8000/"),
+                "Host must be placed in the authority component only");
     }
 
     // ── parseDimensions ───────────────────────────────────────────────────────

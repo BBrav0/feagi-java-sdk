@@ -57,8 +57,11 @@ public final class CorticalDimensions {
     /** Cortical area depth (z-dimension). */
     public int depth()  { return depth; }
 
-    /** Total neuron count in this cortical area ({@code width * height * depth}). */
-    public int totalNeurons() { return width * height * depth; }
+    /**
+     * Total neuron count in this cortical area ({@code width * height * depth}).
+     * Returns {@code long} to avoid 32-bit overflow for large cortical areas.
+     */
+    public long totalNeurons() { return (long) width * height * depth; }
 
     @Override
     public boolean equals(Object o) {
