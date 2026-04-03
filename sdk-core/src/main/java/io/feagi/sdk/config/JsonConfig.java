@@ -123,8 +123,7 @@ public final class JsonConfig {
         ));
 
         try (FileWriter writer = new FileWriter(outputPath.toFile())) {
-            Gson gson = new GsonBuilder().setPrettyPrinting().create();
-            gson.toJson(jsonMap, writer);
+            GSON.toJson(jsonMap, writer);
         }
     }
 
@@ -144,8 +143,7 @@ public final class JsonConfig {
         }
 
         try (FileReader reader = new FileReader(jsonPath.toFile())) {
-            Gson gson = new Gson();
-            Map<?, ?> jsonMap = gson.fromJson(reader, Map.class);
+            Map<?, ?> jsonMap = GSON.fromJson(reader, Map.class);
 
             if (jsonMap == null) {
                 throw new IllegalArgumentException("Invalid JSON file: " + jsonPath);
