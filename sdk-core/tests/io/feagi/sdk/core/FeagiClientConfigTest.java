@@ -117,16 +117,15 @@ class FeagiClientConfigTest {
 
     @Test
     void retryBackoff_zero_rejectedWhenRetriesArePositive() {
-        // When registrationRetries is already set to > 0, setting retryBackoff(ZERO)
-        // should throw immediately at the setter — not wait until build().
-        var builder = FeagiClientConfig.builder()
+        // Zero backoff is rejected at build() regardless of setter call order.
+        var b = FeagiClientConfig.builder()
                 .registrationEndpoint("tcp://localhost:30001")
                 .connectionTimeout(Duration.ofSeconds(5))
                 .heartbeatInterval(Duration.ofSeconds(1))
-                .registrationRetries(3);
-        assertThrows(IllegalArgumentException.class,
-                () -> builder.retryBackoff(Duration.ZERO),
-                "Setting retryBackoff(ZERO) after retries>0 must throw at setter time");
+                .registrationRetries(3)
+                .retryBackoff(Duration.ZERO)
+                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true));
+        assertThrows(IllegalArgumentException.class, b::build);
     }
 
     @Test
@@ -193,14 +192,15 @@ class FeagiClientConfigTest {
 
     @Test
     void build_retryBackoffSetToZeroWithRetriesPositive_givesDistinctError() {
-        // Order A: retries set first, then backoff(ZERO) — IAE fires at setter time
-        var builder = FeagiClientConfig.builder()
+        // Order A: retries set first, then backoff(ZERO). Cross-field check fires at build().
+        var b = FeagiClientConfig.builder()
                 .registrationEndpoint("tcp://localhost:30001")
                 .connectionTimeout(Duration.ofSeconds(5))
                 .heartbeatInterval(Duration.ofSeconds(1))
-                .registrationRetries(3);
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> builder.retryBackoff(Duration.ZERO));
+                .registrationRetries(3)
+                .retryBackoff(Duration.ZERO)
+                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, b::build);
         assertFalse(ex.getMessage().contains("no SDK default"),
                 "Error must distinguish 'set to zero' from 'not set'");
         assertTrue(ex.getMessage().contains("Duration.ZERO"),
@@ -209,17 +209,16 @@ class FeagiClientConfigTest {
 
     @Test
     void build_retryBackoffZeroBeforeRetriesSet_throwsIAEAtBuild() {
-        // Order B: backoff(ZERO) set before retries — early check cannot fire at setter time,
-        // so build() catches it. Must throw IAE (not ISE) — same constraint, same exception type.
+        // Order B: backoff(ZERO) set before retries. Same result as order A — IAE at build().
         var b = FeagiClientConfig.builder()
                 .registrationEndpoint("tcp://localhost:30001")
                 .connectionTimeout(Duration.ofSeconds(5))
                 .heartbeatInterval(Duration.ofSeconds(1))
-                .retryBackoff(Duration.ZERO)   // accepted at setter (retries not yet known)
+                .retryBackoff(Duration.ZERO)
                 .registrationRetries(3)
                 .sensorySocketConfig(new SensorySocketConfig(1000, 0, true));
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, b::build,
-                "Order B must throw IAE, not ISE — same constraint as order A");
+                "Order B must throw IAE at build() — same as order A");
         assertTrue(ex.getMessage().contains("Duration.ZERO"));
     }
 

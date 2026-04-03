@@ -87,7 +87,7 @@ public final class FeagiClientConfig {
         this.connectionTimeout     = b.connectionTimeout;
         this.heartbeatInterval     = b.heartbeatInterval;
         this.registrationRetries   = b.registrationRetries;
-        this.retryBackoff          = b.retryBackoff != null ? b.retryBackoff : Duration.ZERO;
+        this.retryBackoff          = b.retryBackoff;
         this.sensorySocketConfig   = b.sensorySocketConfig;
         this.authTokenBase64       = b.authTokenBase64;
         this.manufacturer          = b.manufacturer;
@@ -250,7 +250,7 @@ public final class FeagiClientConfig {
         /**
          * Set the FEAGI registration endpoint.
          *
-         * @param endpoint must start with {@code tcp://} or {@code ipc://}, and include an address after the scheme; must not be null or blank
+         * @param endpoint must start with {@code tcp://}; must not be null or blank
          */
         public Builder registrationEndpoint(String endpoint) {
             this.registrationEndpoint = requireZmqEndpoint(endpoint, "registrationEndpoint");
@@ -298,32 +298,17 @@ public final class FeagiClientConfig {
         /**
          * Set the backoff duration between registration retry attempts.
          *
-         * <p><b>Cross-field constraint:</b> this value must be positive when
-         * {@link #registrationRetries(int)} is {@code > 0}. If retries have already
-         * been set to a positive value and this is called with {@link Duration#ZERO},
-         * an {@link IllegalArgumentException} is thrown immediately rather than waiting
-         * until {@link #build()}.
-         *
-         * <p>{@link Duration#ZERO} is accepted without error when retries are zero
-         * (or not yet set) — useful to document "no backoff" intent explicitly.
+         * <p>{@link Duration#ZERO} is accepted here regardless of whether retries
+         * have been set. The cross-field constraint — that backoff must be positive
+         * when {@code registrationRetries > 0} — is enforced at {@link #build()} so
+         * that the result is identical regardless of call order.
          *
          * @param backoff must be non-negative; must not be null
-         * @throws IllegalArgumentException if backoff is negative, or if it is
-         *         {@link Duration#ZERO} and {@code registrationRetries} has already
-         *         been set to a positive value
          */
         public Builder retryBackoff(Duration backoff) {
             Objects.requireNonNull(backoff, "retryBackoff must not be null");
             if (backoff.isNegative()) {
                 throw new IllegalArgumentException("retryBackoff must not be negative");
-            }
-            // Early cross-field check: if retries are already known to be > 0,
-            // reject Duration.ZERO immediately rather than surprising the caller at build().
-            if (backoff.isZero() && registrationRetriesSet && registrationRetries > 0) {
-                throw new IllegalArgumentException(
-                        "retryBackoff must be positive when registrationRetries > 0, "
-                        + "but was set to Duration.ZERO. "
-                        + "Use a positive duration (e.g. Duration.ofMillis(500)).");
             }
             this.retryBackoff = backoff;
             return this;
@@ -453,11 +438,16 @@ public final class FeagiClientConfig {
         /**
          * Build and return an immutable {@link FeagiClientConfig}.
          *
-         * <p>{@code retryBackoff} is only required when {@code registrationRetries > 0}.
-         * When retries are disabled ({@code registrationRetries = 0}) the backoff value
-         * is never consulted and may be omitted.
+         * <p>{@code retryBackoff} is only required when {@code registrationRetries > 0}
+         * and must be positive in that case. When retries are disabled
+         * ({@code registrationRetries = 0}), the backoff value is never consulted:
+         * if it was set to {@link Duration#ZERO} or left unset, it is normalized to
+         * {@link Duration#ZERO} here. The cross-field constraint is enforced at
+         * {@code build()} regardless of the order in which setters were called.
          *
-         * @throws IllegalStateException if any required field was not set
+         * @throws IllegalStateException    if any required field was not set
+         * @throws IllegalArgumentException if {@code retryBackoff} is {@link Duration#ZERO}
+         *                                  or not set while {@code registrationRetries > 0}
          */
         public FeagiClientConfig build() {
             requireSet(registrationEndpoint, "registrationEndpoint");
@@ -476,13 +466,16 @@ public final class FeagiClientConfig {
                             + "Call .retryBackoff(Duration).");
                 }
                 if (retryBackoff.isZero()) {
-                    // IAE, not ISE: this is a value-constraint violation (zero is invalid),
-                    // not a missing-field violation. Consistent with the setter-time check
-                    // that fires when retries are set first and backoff is set to ZERO after.
                     throw new IllegalArgumentException(
                             "retryBackoff must be positive when registrationRetries > 0, "
                             + "but was set to Duration.ZERO. "
                             + "Use a positive duration (e.g. Duration.ofMillis(500)).");
+                }
+            } else {
+                // Normalize: retryBackoff is never consulted when retries == 0.
+                // Explicit policy in build() rather than a silent default in the constructor.
+                if (retryBackoff == null) {
+                    retryBackoff = Duration.ZERO;
                 }
             }
             return new FeagiClientConfig(this);
