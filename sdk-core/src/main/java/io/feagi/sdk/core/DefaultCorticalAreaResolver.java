@@ -157,9 +157,21 @@ public final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
             }
 
             try (InputStream is = conn.getInputStream()) {
-                // 64 KB is far more than any cortical-area JSON response needs.
-                // readAllBytes() has no size cap — a misbehaving server could cause OOM.
-                byte[] bytes = is.readNBytes(64 * 1024);
+                // Cap at 64 KB — far more than any cortical-area JSON response needs.
+                // readAllBytes() has no size cap and could OOM on a misbehaving server.
+                final int maxBytes = 64 * 1024;
+                byte[] bytes = is.readNBytes(maxBytes);
+                if (bytes.length == maxBytes) {
+                    // readNBytes returns exactly maxBytes when the response is >= maxBytes,
+                    // which means the body may have been truncated mid-JSON. Throw early
+                    // with a clear message rather than letting parseDimensions produce a
+                    // confusing "missing or malformed" error.
+                    throw new FeagiSdkException(
+                            "CorticalAreaResolver: response from " + url
+                            + " reached the " + maxBytes + "-byte cap and may be truncated."
+                            + " This is unexpected for a cortical area response.");
+                }
+                LOG.fine("CorticalAreaResolver: read " + bytes.length + " bytes from " + url);
                 return Optional.of(new String(bytes, StandardCharsets.UTF_8));
             }
         } finally {

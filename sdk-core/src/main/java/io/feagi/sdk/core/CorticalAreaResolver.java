@@ -44,6 +44,7 @@ import java.util.Optional;
  * <h2>Placement</h2>
  * {@code sdk-core/src/main/java/io/feagi/sdk/core/CorticalAreaResolver.java}
  */
+@FunctionalInterface
 public interface CorticalAreaResolver {
 
     /** Default FEAGI REST API host. */

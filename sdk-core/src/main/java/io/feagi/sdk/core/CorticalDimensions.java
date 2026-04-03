@@ -15,7 +15,7 @@ package io.feagi.sdk.core;
  * <h2>Usage</h2>
  * <pre>{@code
  * Optional<CorticalDimensions> dims =
- *         CorticalAreaResolver.resolve("i__inf", "127.0.0.1", 8000);
+ *         CorticalAreaResolver.resolveOnce("i__inf", "127.0.0.1", 8000);
  *
  * dims.ifPresent(d -> {
  *     int id = XyzpCodec.toFlatId(x, y, z, d.width(), d.height());
