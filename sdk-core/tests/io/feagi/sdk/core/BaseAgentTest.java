@@ -61,6 +61,8 @@ class BaseAgentTest {
 
         record HwSnapshot(byte[] data) {}
 
+        final CountDownLatch firstTick = new CountDownLatch(1);
+
         // Call counts
         int initHwCalls;
         int readSensorsCalls;
@@ -70,9 +72,12 @@ class BaseAgentTest {
         int closeHwCalls;
 
         // What hooks received / returned
-        final List<Object>      hwDataReceived   = new ArrayList<>();
-        final List<AgentFrame>  framesReceived   = new ArrayList<>();
-        final List<Object>      commandsReceived = new ArrayList<>();
+        // CopyOnWriteArrayList: run-loop thread writes, test thread reads after f.get() —
+        // happens-before from f.get() is sufficient for correctness but the plain ArrayList
+        // has no internal memory barrier on iteration, so use COWAL to be safe.
+        final List<Object>      hwDataReceived   = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final List<AgentFrame>  framesReceived   = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final List<Object>      commandsReceived = new java.util.concurrent.CopyOnWriteArrayList<>();
 
         // Configuration
         boolean throwOnReadSensors   = false;
@@ -103,6 +108,7 @@ class BaseAgentTest {
         protected Map<String, byte[]> mapSensors(Object hwData) throws Exception {
             mapSensorsCalls++;
             hwDataReceived.add(hwData);
+            firstTick.countDown();
             if (throwOnMapSensors) throw new RuntimeException("sensor map error");
             return sensorsToReturn;
         }
@@ -163,6 +169,11 @@ class BaseAgentTest {
             try { a.run(AgentRunConfig.builder().tickInterval(Duration.ZERO).build()); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         });
+        // Wait until at least one tick has fully executed before sleeping and stopping.
+        // Thread.sleep(sleepMs) alone is racy on loaded machines — the run loop thread
+        // may not have started by the time sleep returns.
+        assertTrue(a.firstTick.await(2, TimeUnit.SECONDS),
+                "Agent failed to execute a tick within 2 seconds");
         Thread.sleep(sleepMs);
         a.stop();
         f.get(3, TimeUnit.SECONDS);

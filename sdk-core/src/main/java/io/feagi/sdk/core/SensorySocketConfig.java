@@ -5,6 +5,8 @@
 
 package io.feagi.sdk.core;
 
+import java.util.Objects;
+
 /**
  * Sensory socket configuration aligned with FEAGI agent settings.
  */
@@ -51,5 +53,26 @@ public final class SensorySocketConfig {
      */
     public boolean immediate() {
         return immediate;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof SensorySocketConfig that)) return false;
+        return sendHwm == that.sendHwm
+            && lingerMs == that.lingerMs
+            && immediate == that.immediate;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(sendHwm, lingerMs, immediate);
+    }
+
+    @Override
+    public String toString() {
+        return "SensorySocketConfig{sendHwm=" + sendHwm
+                + ", lingerMs=" + lingerMs
+                + ", immediate=" + immediate + '}';
     }
 }
