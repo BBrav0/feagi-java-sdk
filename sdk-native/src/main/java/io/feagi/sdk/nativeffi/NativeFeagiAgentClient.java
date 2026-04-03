@@ -600,8 +600,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             return t;
         });
         heartbeatTask = heartbeatExecutor.scheduleAtFixedRate(
-                this::sendHeartbeat, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
-        LOG.info("NativeFeagiAgentClient: heartbeat started (interval=" + intervalMs + "ms)");
+                this::sendHeartbeat, 0, intervalMs, TimeUnit.MILLISECONDS);
+        LOG.info("NativeFeagiAgentClient: heartbeat started (interval=" + intervalMs + "ms,"
+                + " first tick: immediate)");
     }
 
     /**
@@ -667,25 +668,29 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     }
 
     /**
-     * Wait up to 2 seconds for the heartbeat executor thread to exit.
+     * Wait for the heartbeat executor thread to exit.
      * Must be called <em>outside</em> the write lock: the heartbeat thread holds the
      * read lock during each tick, and read/write locks are mutually exclusive — waiting
      * inside the write lock would deadlock.
      *
-     * <p>After {@code connected = false} is set (which happens before this method is
-     * called in {@link #close()}), any in-flight tick that unblocks will see
-     * {@code connected == false} and return immediately as a no-op, so the 2-second
-     * bound is a worst-case that covers one tick at the configured heartbeat interval.
+     * <p>The timeout is derived from the configured heartbeat interval plus a 500 ms buffer
+     * to cover scheduling jitter. This ensures the wait is always long enough to cover one
+     * in-flight tick regardless of how long the heartbeat interval is. After
+     * {@code connected = false} is set, any unblocking tick will observe it and return
+     * immediately as a no-op, so in practice the wait is very short.
      *
      * @param executor the executor returned by {@link #shutdownHeartbeat()};
      *                 a {@code null} argument is a no-op
      */
     private void awaitHeartbeatTermination(ScheduledExecutorService executor) {
         if (executor == null) return;
+        // One heartbeat interval + 500 ms buffer is always sufficient to cover one in-flight
+        // tick. A hardcoded 2-second timeout would be too short for heartbeat intervals > 2s.
+        long timeoutMs = config.heartbeatInterval().toMillis() + 500;
         try {
-            if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                LOG.warning("NativeFeagiAgentClient: heartbeat thread did not exit "
-                        + "within 2 seconds after shutdown");
+            if (!executor.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS)) {
+                LOG.warning("NativeFeagiAgentClient: heartbeat thread did not exit within "
+                        + timeoutMs + "ms after shutdown");
             }
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
