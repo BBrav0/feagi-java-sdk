@@ -253,7 +253,7 @@ public final class FeagiClientConfig {
          * @param endpoint must start with {@code tcp://}; must not be null or blank
          */
         public Builder registrationEndpoint(String endpoint) {
-            this.registrationEndpoint = requireTcpEndpoint(endpoint, "registrationEndpoint");
+            this.registrationEndpoint = requireZmqEndpoint(endpoint, "registrationEndpoint");
             return this;
         }
 
@@ -298,17 +298,32 @@ public final class FeagiClientConfig {
         /**
          * Set the backoff duration between registration retry attempts.
          *
-         * <p>Must be positive when {@link #registrationRetries(int)} is {@code > 0}.
-         * {@link Duration#ZERO} is accepted and treated as "no backoff" — useful when
-         * explicitly setting {@code registrationRetries(0)} to document intent, even
-         * though the value is never consulted in that case.
+         * <p><b>Cross-field constraint:</b> this value must be positive when
+         * {@link #registrationRetries(int)} is {@code > 0}. If retries have already
+         * been set to a positive value and this is called with {@link Duration#ZERO},
+         * an {@link IllegalArgumentException} is thrown immediately rather than waiting
+         * until {@link #build()}.
+         *
+         * <p>{@link Duration#ZERO} is accepted without error when retries are zero
+         * (or not yet set) — useful to document "no backoff" intent explicitly.
          *
          * @param backoff must be non-negative; must not be null
+         * @throws IllegalArgumentException if backoff is negative, or if it is
+         *         {@link Duration#ZERO} and {@code registrationRetries} has already
+         *         been set to a positive value
          */
         public Builder retryBackoff(Duration backoff) {
             Objects.requireNonNull(backoff, "retryBackoff must not be null");
             if (backoff.isNegative()) {
                 throw new IllegalArgumentException("retryBackoff must not be negative");
+            }
+            // Early cross-field check: if retries are already known to be > 0,
+            // reject Duration.ZERO immediately rather than surprising the caller at build().
+            if (backoff.isZero() && registrationRetriesSet && registrationRetries > 0) {
+                throw new IllegalArgumentException(
+                        "retryBackoff must be positive when registrationRetries > 0, "
+                        + "but was set to Duration.ZERO. "
+                        + "Use a positive duration (e.g. Duration.ofMillis(500)).");
             }
             this.retryBackoff = backoff;
             return this;
@@ -334,7 +349,7 @@ public final class FeagiClientConfig {
          * @param endpoint must start with {@code tcp://} or {@code ipc://} if non-null
          */
         public Builder sensoryEndpoint(String endpoint) {
-            this.sensoryEndpoint = requireOptionalTcpEndpoint(endpoint, "sensoryEndpoint");
+            this.sensoryEndpoint = requireOptionalZmqEndpoint(endpoint, "sensoryEndpoint");
             return this;
         }
 
@@ -345,7 +360,7 @@ public final class FeagiClientConfig {
          * @param endpoint must start with {@code tcp://} or {@code ipc://} if non-null
          */
         public Builder motorEndpoint(String endpoint) {
-            this.motorEndpoint = requireOptionalTcpEndpoint(endpoint, "motorEndpoint");
+            this.motorEndpoint = requireOptionalZmqEndpoint(endpoint, "motorEndpoint");
             return this;
         }
 
@@ -356,7 +371,7 @@ public final class FeagiClientConfig {
          */
         public Builder visualizationEndpoint(String endpoint) {
             this.visualizationEndpoint =
-                    requireOptionalTcpEndpoint(endpoint, "visualizationEndpoint");
+                    requireOptionalZmqEndpoint(endpoint, "visualizationEndpoint");
             return this;
         }
 
@@ -366,7 +381,7 @@ public final class FeagiClientConfig {
          * @param endpoint must start with {@code tcp://} or {@code ipc://} if non-null
          */
         public Builder controlEndpoint(String endpoint) {
-            this.controlEndpoint = requireOptionalTcpEndpoint(endpoint, "controlEndpoint");
+            this.controlEndpoint = requireOptionalZmqEndpoint(endpoint, "controlEndpoint");
             return this;
         }
 
@@ -472,7 +487,7 @@ public final class FeagiClientConfig {
 
         // ── Validation helpers ────────────────────────────────────────────────
 
-        private static String requireTcpEndpoint(String value, String name) {
+        private static String requireZmqEndpoint(String value, String name) {
             Objects.requireNonNull(value, name + " must not be null");
             if (value.isBlank()) {
                 throw new IllegalArgumentException(name + " must not be blank");
@@ -492,9 +507,9 @@ public final class FeagiClientConfig {
             return value;
         }
 
-        private static String requireOptionalTcpEndpoint(String value, String name) {
+        private static String requireOptionalZmqEndpoint(String value, String name) {
             if (value == null) return null;
-            return requireTcpEndpoint(value, name);
+            return requireZmqEndpoint(value, name);
         }
 
         private static Duration requirePositive(Duration v, String name) {
@@ -536,6 +551,15 @@ public final class FeagiClientConfig {
 
     // ── Object ────────────────────────────────────────────────────────────────
 
+    /**
+     * Two configs are equal if all fields are equal, including {@code authTokenBase64}.
+     *
+     * <p><b>Security note:</b> {@code authTokenBase64} is compared via
+     * {@link String#equals}, which short-circuits on the first differing byte. This
+     * is not constant-time. Config objects are not used in timing-sensitive auth
+     * comparisons in the current SDK, so the risk is negligible — but do not use
+     * {@code equals()} to compare tokens in a security-critical path.
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -556,6 +580,15 @@ public final class FeagiClientConfig {
             && Objects.equals(agentName,              that.agentName);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p><b>Security note:</b> {@code authTokenBase64} is included in the hash.
+     * In adversarial contexts where an attacker can control which bucket a config
+     * lands in and observe lookup timing, this could leak partial token information.
+     * Config objects are not used as map keys in timing-sensitive paths in the current
+     * SDK — this note exists to prevent such use being added silently in the future.
+     */
     @Override
     public int hashCode() {
         return Objects.hash(

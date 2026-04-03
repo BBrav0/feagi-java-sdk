@@ -117,18 +117,28 @@ class FeagiClientConfigTest {
 
     @Test
     void retryBackoff_zero_rejectedWhenRetriesArePositive() {
-        var b = FeagiClientConfig.builder()
+        // When registrationRetries is already set to > 0, setting retryBackoff(ZERO)
+        // should throw immediately at the setter — not wait until build().
+        var builder = FeagiClientConfig.builder()
                 .registrationEndpoint("tcp://localhost:30001")
                 .connectionTimeout(Duration.ofSeconds(5))
                 .heartbeatInterval(Duration.ofSeconds(1))
-                .registrationRetries(3)
-                .retryBackoff(Duration.ZERO)
-                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true));
-        assertThrows(IllegalStateException.class, b::build);
+                .registrationRetries(3);
+        assertThrows(IllegalArgumentException.class,
+                () -> builder.retryBackoff(Duration.ZERO),
+                "Setting retryBackoff(ZERO) after retries>0 must throw at setter time");
+    }
+
+    @Test
+    void retryBackoff_zero_acceptedWhenRetriesNotYetSet() {
+        // If retries haven't been set yet, ZERO is accepted at setter time;
+        // the cross-field check fires at build() if retries end up > 0.
+        assertDoesNotThrow(() -> FeagiClientConfig.builder().retryBackoff(Duration.ZERO));
     }
 
     @Test
     void build_retryBackoffNotRequired_whenRetriesAreZero() {
+        // retryBackoff is never consulted when registrationRetries = 0, so omitting it is valid
         FeagiClientConfig cfg = FeagiClientConfig.builder()
                 .registrationEndpoint("tcp://localhost:30001")
                 .connectionTimeout(Duration.ofSeconds(5))
@@ -136,9 +146,11 @@ class FeagiClientConfigTest {
                 .registrationRetries(0)
                 .sensorySocketConfig(new SensorySocketConfig(1000, 0, true))
                 .build();
+        // accessor must not return null — returns Duration.ZERO as a safe sentinel
         assertEquals(Duration.ZERO, cfg.retryBackoff(),
                 "retryBackoff() must return Duration.ZERO (not null) when retries=0");
     }
+
     @Test
     void equals_twoZeroRetryConfigs_withSameBackoff_areEqual() {
         // Without the special-case, two zero-retry configs are equal only if
@@ -181,14 +193,15 @@ class FeagiClientConfigTest {
 
     @Test
     void build_retryBackoffSetToZeroWithRetriesPositive_givesDistinctError() {
-        var b = FeagiClientConfig.builder()
+        // The early cross-field check fires at the setter when retries are already > 0,
+        // so the exception is IllegalArgumentException at setter time — not at build().
+        var builder = FeagiClientConfig.builder()
                 .registrationEndpoint("tcp://localhost:30001")
                 .connectionTimeout(Duration.ofSeconds(5))
                 .heartbeatInterval(Duration.ofSeconds(1))
-                .registrationRetries(3)
-                .retryBackoff(Duration.ZERO)
-                .sensorySocketConfig(new SensorySocketConfig(1000, 0, true));
-        IllegalStateException ex = assertThrows(IllegalStateException.class, b::build);
+                .registrationRetries(3);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> builder.retryBackoff(Duration.ZERO));
         // Message must not say "no SDK default" — the caller DID set it, to zero
         assertFalse(ex.getMessage().contains("no SDK default"),
                 "Error must distinguish 'set to zero' from 'not set'");
