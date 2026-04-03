@@ -30,15 +30,33 @@ class CorticalAreaResolverTest {
     }
 
     @Test
+    void dimensions_rejectsNegativeWidth() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new CorticalDimensions(-1, 5, 1));
+    }
+
+    @Test
     void dimensions_rejectsZeroHeight() {
         assertThrows(IllegalArgumentException.class,
                 () -> new CorticalDimensions(5, 0, 1));
     }
 
     @Test
+    void dimensions_rejectsNegativeHeight() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new CorticalDimensions(5, -1, 1));
+    }
+
+    @Test
     void dimensions_rejectsZeroDepth() {
         assertThrows(IllegalArgumentException.class,
                 () -> new CorticalDimensions(5, 5, 0));
+    }
+
+    @Test
+    void dimensions_rejectsNegativeDepth() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new CorticalDimensions(5, 5, -1));
     }
 
     @Test

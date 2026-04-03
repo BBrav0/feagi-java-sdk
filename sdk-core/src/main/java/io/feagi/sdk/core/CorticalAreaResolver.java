@@ -198,7 +198,10 @@ public final class CorticalAreaResolver {
             }
 
             try (InputStream is = conn.getInputStream()) {
-                return Optional.of(new String(is.readAllBytes(), StandardCharsets.UTF_8));
+                // 64 KB is far more than any cortical-area JSON response needs.
+                // readAllBytes() has no size cap — a misbehaving server could cause OOM.
+                byte[] bytes = is.readNBytes(64 * 1024);
+                return Optional.of(new String(bytes, StandardCharsets.UTF_8));
             }
         } finally {
             conn.disconnect();
@@ -267,35 +270,34 @@ public final class CorticalAreaResolver {
             int width  = Integer.parseInt(parts[0].trim());
             int height = Integer.parseInt(parts[1].trim());
             int depth  = Integer.parseInt(parts[2].trim());
-            try {
-                CorticalDimensions dims = new CorticalDimensions(width, height, depth);
-                LOG.fine("CorticalAreaResolver: resolved '" + corticalAreaId
-                        + "' → " + dims);
-                return dims;
-            } catch (IllegalArgumentException e) {
-                // CorticalDimensions rejects zero/negative values — wrap so callers
-                // only need to catch FeagiSdkException from this method.
-                throw new FeagiSdkException(
-                        "CorticalAreaResolver: invalid dimension value in response "
-                        + "for cortical area '" + corticalAreaId + "': "
-                        + e.getMessage(), e);
-            }
+            CorticalDimensions dims = new CorticalDimensions(width, height, depth);
+            LOG.fine("CorticalAreaResolver: resolved '" + corticalAreaId + "' → " + dims);
+            return dims;
         } catch (NumberFormatException e) {
+            // Must be caught before IllegalArgumentException — NFE is a subtype of IAE.
             throw new FeagiSdkException(
                     "CorticalAreaResolver: non-integer value in 'cortical_dimensions' "
                     + "for cortical area '" + corticalAreaId + "': " + arrayContent, e);
+        } catch (IllegalArgumentException e) {
+            // CorticalDimensions compact constructor rejects zero/negative values.
+            // Wrapped so callers only need to catch FeagiSdkException from this method.
+            throw new FeagiSdkException(
+                    "CorticalAreaResolver: invalid dimension value in response "
+                    + "for cortical area '" + corticalAreaId + "': " + e.getMessage(), e);
         }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     static String buildUrl(String host, int port, String corticalAreaId) {
-        // Use URI's multi-argument constructor to enforce proper component boundaries.
-        // String concatenation allows host values like "evil@real-host" or
-        // "real-host/injected/path?q=1" to manipulate the resulting URL. The multi-arg
-        // constructor treats each parameter as a distinct URI component and percent-encodes
-        // any reserved characters, preventing injection and future-proofing against
-        // cortical area IDs that may expand beyond the current safe-character set.
+        // Precondition: corticalAreaId must contain only [A-Za-z0-9_\-].
+        // The URI multi-arg constructor encodes '?' and '#' but NOT '/', so a path like
+        // "../../etc" would produce a traversable URL. resolve() enforces the character
+        // constraint before calling this method; direct test calls must respect the same
+        // invariant. If this method is ever called from a new code path, add the same
+        // regex guard there or call resolve() instead.
+        assert corticalAreaId.matches("[A-Za-z0-9_\\-]+")
+                : "corticalAreaId must be pre-validated before calling buildUrl: " + corticalAreaId;
         try {
             URI uri = new URI(
                     "http",
