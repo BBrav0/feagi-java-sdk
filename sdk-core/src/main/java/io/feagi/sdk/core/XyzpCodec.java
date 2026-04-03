@@ -112,9 +112,9 @@ public final class XyzpCodec {
         if (flatId < 0)  throw new IllegalArgumentException("flatId must be >= 0");
         if (width <= 0)  throw new IllegalArgumentException("width must be > 0");
         if (height <= 0) throw new IllegalArgumentException("height must be > 0");
-        int slice = width * height;
-        int z = flatId / slice;
-        int rem = flatId % slice;
+        long slice = (long) width * height;
+        int  z     = (int)  (flatId / slice);
+        int  rem   = (int)  (flatId % slice);
         int y = rem / width;
         int x = rem % width;
         return new int[]{x, y, z};
@@ -216,14 +216,15 @@ public final class XyzpCodec {
      * @return byte-container payload covering all channels
      */
     public static byte[] encodeContainer(Map<String, List<NeuronPotential>> channels) {
+        Objects.requireNonNull(channels, "channels must not be null");
+        if (channels.isEmpty()) {
+             throw new IllegalArgumentException(
+                     "channels must not be empty — omit the call rather than sending nothing");
+        }
         for (Map.Entry<String, List<NeuronPotential>> e : channels.entrySet()) {
             Objects.requireNonNull(e.getKey(), "channel name must not be null");
             Objects.requireNonNull(e.getValue(), "neuron list for channel '" + e.getKey() + "' must not be null");
         }
-         if (channels.isEmpty()) {
-             throw new IllegalArgumentException(
-                     "channels must not be empty — omit the call rather than sending nothing");
-         }
 
         // Pre-compute total size
         int totalSize = 0;
