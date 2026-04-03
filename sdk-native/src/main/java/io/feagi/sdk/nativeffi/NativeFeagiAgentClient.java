@@ -199,6 +199,11 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                     + "' has been permanently closed and cannot be reused. "
                     + "Construct a new instance.");
         }
+        // Fast-path: avoid CAS overhead for the common already-connected case.
+        // This is NOT the authoritative guard — two threads could both observe connected==false
+        // here, both pass, and then one wins the CAS below while the other hits ISE from the
+        // CAS block. The authoritative guard is the re-check of connected inside the try block
+        // below (after the CAS), which cannot be reached by two threads simultaneously.
         if (connected) {
             throw new IllegalStateException("Already connected. Call close() first.");
         }
@@ -211,9 +216,8 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                     + config.agentId() + "'.");
         }
         try {
-            // connected is volatile — the read here is atomic and the connecting CAS above
-            // already prevents a second thread from reaching this point concurrently.
-            // No write-lock needed for this check.
+            // Authoritative already-connected guard — reached by at most one thread at a time
+            // due to the CAS above. The outer check was a fast-path only; do not remove this.
             if (connected) {
                 throw new IllegalStateException("Already connected. Call close() first.");
             }
@@ -365,7 +369,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                     "feagiClientConnect");
 
             clientHandle.set(newClientHandle);
-            newClientHandle = NULL_HANDLE; // ownership transferred — don't free in finally
+            newClientHandle = NULL_HANDLE; // conditionally transferred — the write-lock block in
+                                           // connect() will either confirm the handle (connected=true)
+                                           // or free it (if close() raced). Do not free in finally.
 
         } finally {
             FeagiNativeBindings.feagiConfigFree(cfgHandle);
@@ -673,20 +679,24 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * read lock during each tick, and read/write locks are mutually exclusive — waiting
      * inside the write lock would deadlock.
      *
-     * <p>The timeout is derived from the configured heartbeat interval plus a 500 ms buffer
-     * to cover scheduling jitter. This ensures the wait is always long enough to cover one
-     * in-flight tick regardless of how long the heartbeat interval is. After
-     * {@code connected = false} is set, any unblocking tick will observe it and return
-     * immediately as a no-op, so in practice the wait is very short.
+     * <p>The timeout is {@code min(heartbeatInterval + 500ms, 5000ms)}. The interval +
+     * buffer normally covers one in-flight tick, since {@code sendHeartbeat()} exits
+     * immediately once {@code connected == false}. The 5-second cap prevents a very long
+     * heartbeat interval from making {@link #close()} block for an equally long time —
+     * after the cap expires the thread will still stop harmlessly on its next tick.
      *
      * @param executor the executor returned by {@link #shutdownHeartbeat()};
      *                 a {@code null} argument is a no-op
      */
     private void awaitHeartbeatTermination(ScheduledExecutorService executor) {
         if (executor == null) return;
-        // One heartbeat interval + 500 ms buffer is always sufficient to cover one in-flight
-        // tick. A hardcoded 2-second timeout would be too short for heartbeat intervals > 2s.
-        long timeoutMs = config.heartbeatInterval().toMillis() + 500;
+        // Timeout = min(heartbeatInterval + 500ms buffer, 5000ms cap).
+        // The interval + buffer is normally sufficient to cover one in-flight tick, since
+        // sendHeartbeat() exits immediately once connected==false. The 5-second cap prevents
+        // a pathologically long heartbeatInterval (e.g. 5 minutes) from blocking close() for
+        // an equally long time. Even if the timeout expires, the thread stops harmlessly on
+        // its next tick because connected==false is already set.
+        long timeoutMs = Math.min(config.heartbeatInterval().toMillis() + 500, 5_000);
         try {
             if (!executor.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS)) {
                 LOG.warning("NativeFeagiAgentClient: heartbeat thread did not exit within "
