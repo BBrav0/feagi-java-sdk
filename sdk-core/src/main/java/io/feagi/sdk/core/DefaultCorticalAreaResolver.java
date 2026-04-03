@@ -73,7 +73,10 @@ public final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
     private final Duration timeout;
 
     DefaultCorticalAreaResolver(String host, int port, Duration timeout) {
-        this.host    = Objects.requireNonNull(host,    "host must not be null");
+        this.host    = Objects.requireNonNull(host, "host must not be null");
+        if (host.isBlank()) {
+            throw new IllegalArgumentException("host must not be blank");
+        }
         this.port    = port;
         this.timeout = Objects.requireNonNull(timeout, "timeout must not be null");
         if (port < 1 || port > 65535) {
@@ -189,11 +192,17 @@ public final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
     static CorticalDimensions parseDimensions(String json, String corticalAreaId) {
         Matcher m = DIMENSIONS_PATTERN.matcher(json);
         if (!m.find()) {
+            // Log the response body at FINE for debugging, but keep it out of the
+            // exception message. The body could contain auth tokens, session IDs, or
+            // other PII in an error payload that would otherwise appear in logs and
+            // stack traces at WARNING level or above.
+            LOG.fine("CorticalAreaResolver: response body for '" + corticalAreaId
+                    + "' (first 200 chars): " + truncate(json, 200));
             throw new FeagiSdkException(
                     "CorticalAreaResolver: 'cortical_dimensions' field missing or malformed "
                     + "in response for cortical area '" + corticalAreaId + "'. "
-                    + "Expected format: \"cortical_dimensions\": [w, h, d]. Response: "
-                    + truncate(json, 200));
+                    + "Expected format: \"cortical_dimensions\": [w, h, d]. "
+                    + "Enable FINE logging to see the response body.");
         }
         // Groups 1/2/3 are digit strings (with optional leading minus) — NFE is not
         // expected but caught as a safety net for values that overflow int.
@@ -219,14 +228,15 @@ public final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     static String buildUrl(String host, int port, String corticalAreaId) {
-        // Precondition: corticalAreaId must be pre-validated by resolve().
-        // The URI multi-arg constructor encodes '?' and '#' but NOT '/', so an unvalidated
-        // ID like "../../etc" would produce a traversable URL.
+        // Belt-and-suspenders guard: resolve() validates corticalAreaId before calling
+        // here, so this check should never fire in normal use. It exists solely to catch
+        // future callers who bypass resolve() and call buildUrl directly — e.g. from a
+        // new code path or a test. Throws IllegalStateException (not IAE) to signal a
+        // programming error rather than user-supplied invalid input.
         if (!VALID_CORTICAL_ID.matcher(corticalAreaId).matches()) {
             throw new IllegalStateException(
-                    "buildUrl called with unvalidated corticalAreaId — "
-                    + "this is a programming error. Apply the VALID_CORTICAL_ID "
-                    + "guard before calling buildUrl. Got: '" + corticalAreaId + "'");
+                    "buildUrl called with unvalidated corticalAreaId '" + corticalAreaId
+                    + "' — apply VALID_CORTICAL_ID before calling buildUrl directly.");
         }
         try {
             URI uri = new URI(

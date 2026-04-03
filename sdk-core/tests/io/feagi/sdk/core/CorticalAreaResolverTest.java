@@ -307,6 +307,14 @@ class CorticalAreaResolverTest {
     }
 
     @Test
+    void resolve_blankHost_throws() {
+        assertThrows(IllegalArgumentException.class,
+                () -> CorticalAreaResolver.create("  ", 8000));
+        assertThrows(IllegalArgumentException.class,
+                () -> CorticalAreaResolver.create("", 8000));
+    }
+
+    @Test
     void resolve_zeroTimeout_throws() {
         assertThrows(IllegalArgumentException.class,
                 () -> CorticalAreaResolver.resolveOnce("i__inf", "localhost", 8000, Duration.ZERO));
