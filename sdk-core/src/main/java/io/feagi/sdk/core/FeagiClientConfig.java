@@ -250,7 +250,7 @@ public final class FeagiClientConfig {
         /**
          * Set the FEAGI registration endpoint.
          *
-         * @param endpoint must start with {@code tcp://}; must not be null or blank
+         * @param endpoint must start with {@code tcp://} or {@code ipc://}, must not be null or blank
          */
         public Builder registrationEndpoint(String endpoint) {
             this.registrationEndpoint = requireZmqEndpoint(endpoint, "registrationEndpoint");
