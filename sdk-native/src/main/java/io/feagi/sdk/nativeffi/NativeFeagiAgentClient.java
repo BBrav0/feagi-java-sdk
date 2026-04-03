@@ -145,14 +145,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      * (inside the write lock) and this lock-free read — Phase 1 could legally see a stale null.
      */
     private volatile ScheduledExecutorService heartbeatExecutor;
-
-    /**
-     * The scheduled heartbeat future. Only read and written inside the write lock — either
-     * in {@link #startHeartbeatIfConfigured()} (which sets it) or in the Phase 2 block of
-     * {@link #close()} (which clears it via {@link #shutdownHeartbeat()}). Never touched
-     * in Phase 1 of {@code close()} to avoid a data race outside the lock.
-     */
-    private ScheduledFuture<?> heartbeatTask;
+    // heartbeatTask is intentionally not stored: shutdownNow() on the executor subsumes
+    // any per-task cancel(), so retaining the future would add no cancellation capability
+    // and would create a misleading impression that an explicit cancellation path exists.
 
     // ── Construction ───────────────────────────────────────────────────────────
 
@@ -564,9 +559,6 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             //   3. close() acquires write lock here
             // Without this second shutdown, the new executor is orphaned and runs forever.
             // We do NOT call awaitTermination here — that happens in Phase 3, outside the lock.
-            // heartbeatTask is also cleared here (inside the lock) since shutdownHeartbeat()
-            // intentionally skips it to avoid a data race when called without the lock in Phase 1.
-            heartbeatTask = null;
             raceExecutor = shutdownHeartbeat();
         } finally {
             handleLock.writeLock().unlock();
@@ -605,10 +597,15 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             t.setDaemon(true);
             return t;
         });
-        heartbeatTask = heartbeatExecutor.scheduleAtFixedRate(
-                this::sendHeartbeat, 0, intervalMs, TimeUnit.MILLISECONDS);
-        LOG.info("NativeFeagiAgentClient: heartbeat started (interval=" + intervalMs + "ms,"
-                + " first tick: immediate)");
+        heartbeatExecutor.scheduleAtFixedRate(
+                this::sendHeartbeat, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
+        // ⚠️ Warn at startup so callers who set a positive heartbeatInterval without reading
+        // the sendHeartbeat() comment are alerted to the semantic risk. Remove this warning
+        // once feagiClientHeartbeat() is available in feagi_java_ffi.h and wired here.
+        LOG.warning("NativeFeagiAgentClient: heartbeat started using empty sensory payload "
+                + "as keepalive — FEAGI may misinterpret this as 'no sensory data'. "
+                + "Set heartbeatInterval=0 to disable until a dedicated ABI method exists. "
+                + "(interval=" + intervalMs + "ms, agentId=" + config.agentId() + ")");
     }
 
     /**
@@ -649,15 +646,11 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
 
     /**
      * Shut down the heartbeat executor and return it for later awaiting.
-     * Clears and calls {@code shutdownNow()} on {@code heartbeatExecutor}, but does NOT
-     * touch {@code heartbeatTask} and does NOT wait for the thread to exit.
+     * Clears {@code heartbeatExecutor} and calls {@code shutdownNow()}, but does NOT
+     * wait for the thread to exit (no {@code awaitTermination}).
      *
-     * <p>{@code heartbeatTask} is intentionally left alone here: this method is called in
-     * Phase 1 of {@link #close()} without holding the write lock, and {@code heartbeatTask}
-     * is a plain (non-volatile) field that must only be written inside the write lock to
-     * avoid a JMM data race. It is cleared in Phase 2 (inside the write lock). Skipping
-     * the task clear in Phase 1 is safe because {@code shutdownNow()} on the executor
-     * already subsumes any {@code cancel()} on the task.
+     * <p>Safe to call with or without the write lock held, because {@code heartbeatExecutor}
+     * is {@code volatile}.
      *
      * @return the executor that was shut down, or {@code null} if none was running;
      *         pass to {@link #awaitHeartbeatTermination(ScheduledExecutorService)}
@@ -666,7 +659,6 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     private ScheduledExecutorService shutdownHeartbeat() {
         ScheduledExecutorService executor = heartbeatExecutor;
         heartbeatExecutor = null;
-        // heartbeatTask intentionally NOT cleared here — see Javadoc above
         if (executor != null) {
             executor.shutdownNow();
         }
