@@ -10,7 +10,7 @@ package io.feagi.sdk.core;
  *
  * <p>The neuron ID is a flat integer index derived from FEAGI's XYZP coordinate system.
  * Cortical area geometry maps a 3-D position {@code (x, y, z)} to a flat index via
- * {@link XyzpCodec#encode(int, int, int, int, int)} — callers who work in cortical
+ * {@link XyzpCodec#toFlatId(int, int, int, int, int)} — callers who work in cortical
  * coordinates should use that helper rather than computing the index manually.
  *
  * <p>The firing potential is a value in {@code [0.0, 1.0]} representing how strongly
@@ -78,4 +78,3 @@ public final class NeuronPotential {
         return "NeuronPotential{id=" + neuronId + ", p=" + potential + '}';
     }
 }
-// SPDX-License-Identifier: Apache-2.0
