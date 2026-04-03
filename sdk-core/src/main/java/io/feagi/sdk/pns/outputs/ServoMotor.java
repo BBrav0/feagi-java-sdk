@@ -268,8 +268,9 @@ public class ServoMotor extends BaseOutput {
     public int hashCode() {
         int result;
         long temp;
-        result = (minAngle != Double.doubleToLongBits(minAngle)) ? 1 : 0;
-        result = 31 * result + (maxAngle != Double.doubleToLongBits(maxAngle) ? 1 : 0);
+        temp = Double.doubleToLongBits(minAngle);
+        result = (int) (temp ^ (temp >>> 32));
+        result = 31 * result + (int) (Double.doubleToLongBits(maxAngle) ^ (Double.doubleToLongBits(maxAngle) >>> 32));
         result = 31 * result + (encoding != null ? encoding.hashCode() : 0);
         temp = Double.doubleToLongBits(gain);
         result = 31 * result + (int) (temp ^ (temp >>> 32));
