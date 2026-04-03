@@ -478,15 +478,10 @@ class NativeFeagiAgentClientTest {
     @Test
     void isConnected_falseAfterClose() {
         var client = new NativeFeagiAgentClient(minimalConfig());
-        // connectedForTesting() is the @VisibleForTesting accessor — avoids fragile reflection.
-        // We can't reach connected=true without the native library, but we can verify
-        // that close() keeps it false and isConnected() agrees.
         assertFalse(client.isConnected());
         client.close();
         assertFalse(client.isConnected(),
                 "isConnected() must be false after close()");
-        assertFalse(client.connectedForTesting(),
-                "internal connected flag must be false after close()");
     }
 
     // ── disconnect() — issue #2 ───────────────────────────────────────────────

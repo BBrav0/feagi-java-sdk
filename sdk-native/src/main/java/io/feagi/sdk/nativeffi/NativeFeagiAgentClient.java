@@ -74,6 +74,9 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     private static final Logger LOG = Logger.getLogger(NativeFeagiAgentClient.class.getName());
     private static final long NULL_HANDLE = 0L;
 
+    /** Reused empty array for heartbeat pings — avoids a GC allocation on every tick. */
+    private static final byte[] EMPTY_HEARTBEAT = new byte[0];
+
     private final AgentConfig config;
 
     /**
@@ -105,6 +108,14 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     private final ReentrantReadWriteLock handleLock = new ReentrantReadWriteLock();
 
     private volatile boolean connected = false;
+
+    /**
+     * Set permanently to {@code true} by {@link #close()}. Checked after
+     * {@code attemptConnect()} returns successfully to detect the race where
+     * {@code close()} ran while the network call was in flight — in that case
+     * the freshly allocated client handle must be freed rather than stored.
+     */
+    private volatile boolean closed = false;
 
     /**
      * CAS guard that ensures only one thread can enter the retry loop at a time.
@@ -210,11 +221,29 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
                 try {
                     attemptConnect();
                     // Set connected and start heartbeat atomically under the write lock.
-                    // If we set connected=true first then released the lock, close() could
-                    // call stopHeartbeat() (seeing null) and return before startHeartbeat
-                    // ran — leaking the scheduler.
+                    // Also check whether close() ran while attemptConnect() was executing the
+                    // blocking network call (no lock was held during that call). If close() ran
+                    // in the interim, the freshly allocated handle must be freed immediately
+                    // rather than stored — otherwise the client silently re-connects after
+                    // close() has returned.
                     handleLock.writeLock().lock();
                     try {
+                        if (closed) {
+                            // close() ran while we were connecting — discard the handle.
+                            long staleHandle = clientHandle.getAndSet(NULL_HANDLE);
+                            if (staleHandle != NULL_HANDLE) {
+                                try {
+                                    FeagiNativeBindings.feagiClientFree(staleHandle);
+                                } catch (Exception e) {
+                                    LOG.log(Level.WARNING,
+                                            "NativeFeagiAgentClient: error freeing handle "
+                                            + "after close() raced with connect()", e);
+                                }
+                            }
+                            throw new FeagiSdkException(
+                                    "NativeFeagiAgentClient: close() was called while "
+                                    + "connect() was in flight — connection aborted.");
+                        }
                         connected = true;
                         startHeartbeatIfConfigured();
                     } finally {
@@ -420,15 +449,6 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     }
 
     /**
-     * Package-private accessor for the {@code connected} flag, used by tests to
-     * verify state without reflection. Avoids fragile {@code getDeclaredField} calls
-     * that break silently on field renames.
-     */
-    boolean connectedForTesting() {
-        return connected;
-    }
-
-    /**
      * Gracefully disconnect from FEAGI and release native resources.
      *
      * <p>Equivalent to {@link #close()}. Provided as a named method to match the
@@ -437,6 +457,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
      *
      * <p>Idempotent — safe to call multiple times.
      */
+    @Override
     public void disconnect() {
         close();
     }
@@ -453,11 +474,8 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         String closedAgentId = null;
         handleLock.writeLock().lock();
         try {
-            // stopHeartbeat() must run inside the write lock so it cannot race with
-            // startHeartbeatIfConfigured(). Without this, close() could call stopHeartbeat()
-            // while connect() is between "set connected=true" and "start scheduler", see null,
-            // return, and then the scheduler starts and is never stopped — leaking a daemon thread.
             stopHeartbeat();
+            closed = true;
             connected = false;
             long handle = clientHandle.getAndSet(NULL_HANDLE);
             if (handle != NULL_HANDLE) {
@@ -482,7 +500,10 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
     /**
      * Start the background heartbeat scheduler if {@code heartbeatInterval} is positive.
      * Uses a single daemon thread so it does not prevent JVM shutdown.
-     * Called after a successful connection, outside the write lock.
+     *
+     * <p>Must be called inside the write lock, alongside {@code connected = true},
+     * so that {@link #close()}'s {@code stopHeartbeat()} call (also inside the write
+     * lock) cannot interleave — see the close() implementation for details.
      */
     private void startHeartbeatIfConfigured() {
         long intervalMs = config.heartbeatInterval().toMillis();
@@ -514,7 +535,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             if (handle == NULL_HANDLE) return;
             // The native layer sends the actual heartbeat packet; we use an empty
             // payload as the ping signal since there is no dedicated heartbeat ABI method.
-            int status = FeagiNativeBindings.feagiClientSendSensoryBytes(handle, new byte[0]);
+            int status = FeagiNativeBindings.feagiClientSendSensoryBytes(handle, EMPTY_HEARTBEAT);
             if (status != FeagiNativeBindings.FeagiStatus.OK.code()) {
                 LOG.warning("NativeFeagiAgentClient: heartbeat failed (status=" + status + "): "
                         + nativeError());
