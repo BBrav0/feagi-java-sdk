@@ -100,13 +100,13 @@ class CorticalAreaResolverTest {
 
     @Test
     void buildUrl_correctFormat() {
-        String url = DefaultCorticalAreaResolver.buildUrl("127.0.0.1", 8000, "i__inf");
+        String url = DefaultCorticalAreaResolver.buildUrl("http", "127.0.0.1", 8000, "i__inf");
         assertEquals("http://127.0.0.1:8000/v1/genome/cortical_area/i__inf", url);
     }
 
     @Test
     void buildUrl_customHostAndPort() {
-        String url = DefaultCorticalAreaResolver.buildUrl("feagi-host", 9000, "o__mot");
+        String url = DefaultCorticalAreaResolver.buildUrl("http", "feagi-host", 9000, "o__mot");
         assertEquals("http://feagi-host:9000/v1/genome/cortical_area/o__mot", url);
     }
 
@@ -129,7 +129,7 @@ class CorticalAreaResolverTest {
     void buildUrl_cleanInput_correctFormat() {
         // buildUrl is only called with pre-validated (safe) input from resolve().
         // Verify the happy path produces the expected URL.
-        String url = DefaultCorticalAreaResolver.buildUrl("real-host", 8000, "i__inf");
+        String url = DefaultCorticalAreaResolver.buildUrl("http", "real-host", 8000, "i__inf");
         assertEquals("http://real-host:8000/v1/genome/cortical_area/i__inf", url);
     }
 
@@ -138,7 +138,7 @@ class CorticalAreaResolverTest {
         // buildUrl's own guard rejects invalid IDs so the programming error
         // is caught even if called outside of resolve().
         assertThrows(IllegalStateException.class,
-                () -> DefaultCorticalAreaResolver.buildUrl("host", 8000, "../../etc"));
+                () -> DefaultCorticalAreaResolver.buildUrl("http", "host", 8000, "../../etc"));
     }
 
     // ── parseDimensions ───────────────────────────────────────────────────────
@@ -209,12 +209,32 @@ class CorticalAreaResolverTest {
     }
 
     @Test
-    void parseDimensions_keyInStringValue_doesNotFalseMatch() {
-        // Regression: if "cortical_dimensions": [w,h,d] appears verbatim inside a string
-        // value AND as a real key, the regex must find the real key's array.
-        // The regex requires the pattern to appear as key:array — a value inside a string
-        // will only match if it also syntactically resembles a key:array sequence.
-        // This test documents the known limitation and verifies the real key is found.
+    void parseDimensions_keyInStringValue_falseMatchIsKnownLimitation() {
+        // The true false-match scenario requires the verbatim text
+        //   "cortical_dimensions": [w, h, d]
+        // to appear inside a JSON string value WITHOUT escape sequences — i.e. as raw
+        // JSON bytes. This cannot be constructed as a valid JSON string value using
+        // Java string literals because the inner quotes would need to be escaped as \",
+        // and the regex pattern matches " (unescaped quote), not \" (backslash-quote).
+        //
+        // In practice, the risk is a FEAGI response where a string field happens to
+        // contain the exact unescaped key-colon-array sequence — unlikely in FEAGI's
+        // API but documented here for future maintainers.
+        //
+        // What we CAN test: escaped inner quotes do NOT trigger the false match.
+        // The regex correctly skips the escaped-quote sequence and finds the real key.
+        String json = "{ \"note\": \"\\\"cortical_dimensions\\\": [99, 88, 77]\","
+                    + " \"cortical_dimensions\": [5, 6, 2] }";
+        CorticalDimensions d = DefaultCorticalAreaResolver.parseDimensions(json, "x");
+        // Escaped inner quotes don't match — the real key is found correctly.
+        assertEquals(new CorticalDimensions(5, 6, 2), d,
+                "Escaped-quote variant must NOT false-match; real key must be found");
+    }
+
+    @Test
+    void parseDimensions_keyMentionedInStringOnly_doesNotFalseMatch() {
+        // A string value mentioning "cortical_dimensions" without the `: [w,h,d]` form
+        // does NOT trigger the false-match — the regex requires the full key:array syntax.
         String json = "{ \"description\": \"cortical_dimensions is metadata\","
                     + " \"cortical_dimensions\": [5, 6, 2] }";
         CorticalDimensions d = DefaultCorticalAreaResolver.parseDimensions(json, "x");
@@ -265,6 +285,35 @@ class CorticalAreaResolverTest {
     void resolve_areaIdWithQueryString_throws() {
         assertThrows(IllegalArgumentException.class,
                 () -> CorticalAreaResolver.resolveOnce("id?inject=1", "localhost", 8000));
+    }
+
+    @Test
+    void resolve_areaIdWithLeadingHyphen_throws() {
+        assertThrows(IllegalArgumentException.class,
+                () -> CorticalAreaResolver.resolveOnce("-bad", "localhost", 8000));
+    }
+
+    @Test
+    void resolve_areaIdWithTrailingHyphen_throws() {
+        assertThrows(IllegalArgumentException.class,
+                () -> CorticalAreaResolver.resolveOnce("bad-", "localhost", 8000));
+    }
+
+    @Test
+    void resolve_areaIdWithInternalHyphen_isValid() {
+        // Internal hyphens are allowed — e.g. "v1-motor"
+        // Verify the regex accepts them (no network call; validation is at construction)
+        CorticalAreaResolver resolver = CorticalAreaResolver.create("localhost", 8000);
+        // Just confirm no IAE is thrown from the ID validation step
+        // (the actual resolve() call will fail with IOException / empty for unreachable host)
+        assertDoesNotThrow(() -> {
+            try {
+                resolver.resolve("v1-motor");
+            } catch (Exception e) {
+                // Network failure is expected in tests — only IAE would indicate a bug
+                if (e instanceof IllegalArgumentException) throw e;
+            }
+        });
     }
 
     @Test
@@ -342,6 +391,69 @@ class CorticalAreaResolverTest {
                         Duration.ofMillis(500));
         assertTrue(result.isEmpty(),
                 "Connection-refused must return Optional.empty(), not throw");
+    }
+
+    // ── httpGet — non-200/404 status codes (#3) ───────────────────────────────
+
+    @Test
+    void httpGet_500response_throwsFeagiSdkException() throws Exception {
+        com.sun.net.httpserver.HttpServer server =
+                com.sun.net.httpserver.HttpServer.create(
+                        new java.net.InetSocketAddress(0), 0);
+        server.createContext("/v1/genome/cortical_area/i__inf", exchange -> {
+            exchange.sendResponseHeaders(500, -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            String url = DefaultCorticalAreaResolver.buildUrl("http", "127.0.0.1", port, "i__inf");
+            assertThrows(FeagiSdkException.class,
+                    () -> DefaultCorticalAreaResolver.httpGet(url, Duration.ofSeconds(2)));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void httpGet_503response_throwsFeagiSdkException() throws Exception {
+        com.sun.net.httpserver.HttpServer server =
+                com.sun.net.httpserver.HttpServer.create(
+                        new java.net.InetSocketAddress(0), 0);
+        server.createContext("/v1/genome/cortical_area/i__inf", exchange -> {
+            exchange.sendResponseHeaders(503, -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            String url = DefaultCorticalAreaResolver.buildUrl("http", "127.0.0.1", port, "i__inf");
+            assertThrows(FeagiSdkException.class,
+                    () -> DefaultCorticalAreaResolver.httpGet(url, Duration.ofSeconds(2)));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void httpGet_404response_returnsEmpty() throws Exception {
+        com.sun.net.httpserver.HttpServer server =
+                com.sun.net.httpserver.HttpServer.create(
+                        new java.net.InetSocketAddress(0), 0);
+        server.createContext("/v1/genome/cortical_area/i__inf", exchange -> {
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            String url = DefaultCorticalAreaResolver.buildUrl("http", "127.0.0.1", port, "i__inf");
+            Optional<String> result =
+                    DefaultCorticalAreaResolver.httpGet(url, Duration.ofSeconds(2));
+            assertTrue(result.isEmpty());
+        } finally {
+            server.stop(0);
+        }
     }
 
     // ── Integration shape test (skipped without live FEAGI) ──────────────────

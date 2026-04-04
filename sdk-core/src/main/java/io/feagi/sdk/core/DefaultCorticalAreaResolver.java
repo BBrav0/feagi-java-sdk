@@ -43,10 +43,13 @@ public final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
 
     /**
      * Pre-compiled pattern for valid cortical area IDs.
+     * Rules: ASCII alphanumeric and underscore anywhere; hyphens only in the middle
+     * (not as the first or last character). Examples: {@code "i__inf"}, {@code "v1-motor"}.
      * Defined once here — both {@link #resolve} and {@link #buildUrl} use it.
      * Update the pattern here only; it is the single source of truth.
      */
-    static final Pattern VALID_CORTICAL_ID = Pattern.compile("[A-Za-z0-9_\\-]+");
+    static final Pattern VALID_CORTICAL_ID =
+            Pattern.compile("[A-Za-z0-9_]([A-Za-z0-9_\\-]*[A-Za-z0-9_])?");
 
     /**
      * Matches {@code "cortical_dimensions": [w, h, d]} in a JSON response.
@@ -71,14 +74,24 @@ public final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
     private final String host;
     private final int    port;
     private final Duration timeout;
+    private final String scheme;
 
     DefaultCorticalAreaResolver(String host, int port, Duration timeout) {
+        this(host, port, timeout, "http");
+    }
+
+    DefaultCorticalAreaResolver(String host, int port, Duration timeout, String scheme) {
         this.host    = Objects.requireNonNull(host, "host must not be null");
         if (host.isBlank()) {
             throw new IllegalArgumentException("host must not be blank");
         }
         this.port    = port;
         this.timeout = Objects.requireNonNull(timeout, "timeout must not be null");
+        this.scheme  = Objects.requireNonNull(scheme, "scheme must not be null");
+        if (!scheme.equals("http") && !scheme.equals("https")) {
+            throw new IllegalArgumentException(
+                    "scheme must be 'http' or 'https', got: '" + scheme + "'");
+        }
         if (port < 1 || port > 65535) {
             throw new IllegalArgumentException("port must be in [1, 65535], got " + port);
         }
@@ -105,7 +118,7 @@ public final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
                     + corticalAreaId + "'");
         }
 
-        String url = buildUrl(host, port, corticalAreaId);
+        String url = buildUrl(scheme, host, port, corticalAreaId);
         LOG.fine("CorticalAreaResolver: GET " + url);
 
         try {
@@ -227,12 +240,10 @@ public final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    static String buildUrl(String host, int port, String corticalAreaId) {
+    static String buildUrl(String scheme, String host, int port, String corticalAreaId) {
         // Belt-and-suspenders guard: resolve() validates corticalAreaId before calling
         // here, so this check should never fire in normal use. It exists solely to catch
-        // future callers who bypass resolve() and call buildUrl directly — e.g. from a
-        // new code path or a test. Throws IllegalStateException (not IAE) to signal a
-        // programming error rather than user-supplied invalid input.
+        // future callers who bypass resolve() and call buildUrl directly.
         if (!VALID_CORTICAL_ID.matcher(corticalAreaId).matches()) {
             throw new IllegalStateException(
                     "buildUrl called with unvalidated corticalAreaId '" + corticalAreaId
@@ -240,7 +251,7 @@ public final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
         }
         try {
             URI uri = new URI(
-                    "http",
+                    scheme,
                     null,
                     host,
                     port,

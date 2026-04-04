@@ -75,32 +75,42 @@ public interface CorticalAreaResolver {
     // ── Static factory ────────────────────────────────────────────────────────
 
     /**
-     * Create a resolver that targets {@value #DEFAULT_HOST}:{@value #DEFAULT_PORT}
-     * with {@link #DEFAULT_TIMEOUT}.
+     * Create a resolver targeting {@value #DEFAULT_HOST}:{@value #DEFAULT_PORT}
+     * over plain HTTP with {@link #DEFAULT_TIMEOUT}.
+     *
+     * <p><b>Note:</b> the default scheme is plain {@code http}. For TLS-secured FEAGI
+     * deployments use {@link #createSecure(String, int)}.
      */
     static CorticalAreaResolver create() {
         return create(DEFAULT_HOST, DEFAULT_PORT, DEFAULT_TIMEOUT);
     }
 
     /**
-     * Create a resolver targeting the specified host and port with {@link #DEFAULT_TIMEOUT}.
-     *
-     * @param host FEAGI API host
-     * @param port FEAGI API port (typically {@value #DEFAULT_PORT})
+     * Create a plain-HTTP resolver targeting the specified host and port.
      */
     static CorticalAreaResolver create(String host, int port) {
         return create(host, port, DEFAULT_TIMEOUT);
     }
 
     /**
-     * Create a resolver with explicit host, port, and timeout.
-     *
-     * @param host    FEAGI API host
-     * @param port    FEAGI API port
-     * @param timeout connection and read timeout; must be positive
+     * Create a plain-HTTP resolver with explicit host, port, and timeout.
      */
     static CorticalAreaResolver create(String host, int port, Duration timeout) {
-        return new DefaultCorticalAreaResolver(host, port, timeout);
+        return new DefaultCorticalAreaResolver(host, port, timeout, "http");
+    }
+
+    /**
+     * Create an HTTPS resolver targeting the specified host and port.
+     */
+    static CorticalAreaResolver createSecure(String host, int port) {
+        return createSecure(host, port, DEFAULT_TIMEOUT);
+    }
+
+    /**
+     * Create an HTTPS resolver with explicit host, port, and timeout.
+     */
+    static CorticalAreaResolver createSecure(String host, int port, Duration timeout) {
+        return new DefaultCorticalAreaResolver(host, port, timeout, "https");
     }
 
     // ── Static convenience ────────────────────────────────────────────────────
