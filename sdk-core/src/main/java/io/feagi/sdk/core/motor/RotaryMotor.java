@@ -51,9 +51,8 @@ public final class RotaryMotor implements Motor {
     private final boolean invertDirection;
     private final boolean bidirectional;
 
-    private volatile double rawValue;
-    private volatile boolean hasData;
-    private volatile long lastUpdateTimestamp;
+    // Immutable state holder for atomic updates
+    private volatile MotorState state = new MotorState(0.0, false, 0);
 
     /**
      * Create a rotary motor with default settings (100% max speed, percentage unit).
@@ -94,16 +93,12 @@ public final class RotaryMotor implements Motor {
             throw new IllegalArgumentException("maxSpeed must be > 0");
         }
         Objects.requireNonNull(speedUnit, "speedUnit must not be null");
-
         this.groupId = groupId;
         this.outputIndex = outputIndex;
         this.maxSpeed = maxSpeed;
         this.speedUnit = speedUnit;
         this.invertDirection = invertDirection;
         this.bidirectional = bidirectional;
-        this.rawValue = 0.0;
-        this.hasData = false;
-        this.lastUpdateTimestamp = 0;
     }
 
     @Override
@@ -123,17 +118,17 @@ public final class RotaryMotor implements Motor {
 
     @Override
     public double getRawValue() {
-        return rawValue;
+        return state.rawValue;
     }
 
     @Override
     public boolean hasData() {
-        return hasData;
+        return state.hasData;
     }
 
     @Override
     public long getLastUpdateTimestamp() {
-        return lastUpdateTimestamp;
+        return state.timestamp;
     }
 
     /**
@@ -182,7 +177,7 @@ public final class RotaryMotor implements Motor {
      * @return current speed in the configured unit
      */
     public double getSpeed() {
-        return mapRawToSpeed(rawValue);
+        return mapRawToSpeed(state.rawValue);
     }
 
     /**
@@ -193,7 +188,7 @@ public final class RotaryMotor implements Motor {
      * @return normalized speed
      */
     public double getNormalizedSpeed() {
-        double normalized = clamp(rawValue);
+        double normalized = clamp(state.rawValue);
         if (bidirectional) {
             // Map [0, 1] to [-1, 1]
             normalized = (normalized * 2.0) - 1.0;
@@ -208,12 +203,23 @@ public final class RotaryMotor implements Motor {
      * Get the speed as a percentage of maximum speed.
      *
      * <p>For bidirectional motors, negative percentage indicates reverse direction.
+     * To get a 0-100% range regardless of direction, use {@link #getSpeedPercentageAbsolute()}.
      *
      * @return speed as percentage (-100 to 100 for bidirectional, 0 to 100 otherwise)
      */
     public double getSpeedPercentage() {
-        double speed = getSpeed();
-        return (speed / maxSpeed) * 100.0;
+        return (getSpeed() / maxSpeed) * 100.0;
+    }
+
+    /**
+     * Get the speed as an absolute percentage (always 0-100%).
+     *
+     * <p>Use {@link #getDirection()} to determine rotation direction.
+     *
+     * @return speed as percentage (0 to 100)
+     */
+    public double getSpeedPercentageAbsolute() {
+        return Math.abs(getSpeed() / maxSpeed) * 100.0;
     }
 
     /**
@@ -264,29 +270,38 @@ public final class RotaryMotor implements Motor {
     /**
      * Update the motor with a new raw value from FEAGI.
      *
+     * <p>This method performs an atomic update of all three state fields
+     * using a single volatile reference to the immutable MotorState record.
+     *
      * @param rawValue  raw value from FEAGI (typically 0.0-1.0)
      * @param timestamp update timestamp in milliseconds
      */
     public void updateValue(double rawValue, long timestamp) {
-        this.rawValue = rawValue;
-        this.hasData = true;
-        this.lastUpdateTimestamp = timestamp;
+        this.state = new MotorState(rawValue, true, timestamp);
     }
 
     /**
      * Clear the data flag (called when no data received in a frame).
      */
     public void clearData() {
-        this.hasData = false;
+        this.state = new MotorState(0.0, false, 0);
+    }
+
+    @Override
+    public MotorType getMotorType() {
+        return MotorType.ROTARY;
     }
 
     /**
-     * Create a builder for constructing RotaryMotor instances.
+     * Create an immutable snapshot of this motor's current state.
      *
-     * @return a new builder
+     * @param rawValue  the raw FEAGI value
+     * @param timestamp the snapshot timestamp
+     * @return immutable snapshot
      */
-    public static Builder builder() {
-        return new Builder();
+    @Override
+    public Snapshot createSnapshot(double rawValue, long timestamp) {
+        return new RotarySnapshotImpl(this, rawValue, timestamp);
     }
 
     /**
@@ -294,7 +309,6 @@ public final class RotaryMotor implements Motor {
      */
     private double mapRawToSpeed(double raw) {
         double normalized = clamp(raw);
-
         double speed;
         if (bidirectional) {
             // Map [0, 1] to [-maxSpeed, +maxSpeed]
@@ -303,11 +317,9 @@ public final class RotaryMotor implements Motor {
             // Map [0, 1] to [0, maxSpeed]
             speed = normalized * maxSpeed;
         }
-
         if (invertDirection) {
             speed = -speed;
         }
-
         return speed;
     }
 
@@ -318,12 +330,146 @@ public final class RotaryMotor implements Motor {
         return Math.max(0.0, Math.min(1.0, value));
     }
 
+    /**
+     * Immutable holder for atomic motor state updates.
+     */
+    private static final class MotorState {
+        final double rawValue;
+        final boolean hasData;
+        final long timestamp;
+
+        MotorState(double rawValue, boolean hasData, long timestamp) {
+            this.rawValue = rawValue;
+            this.hasData = hasData;
+            this.timestamp = timestamp;
+        }
+    }
+
+    /**
+     * Immutable snapshot implementation for rotary motors.
+     */
+    private final class RotarySnapshotImpl implements RotarySnapshot {
+        private final String snapshotName;
+        private final double snapshotRawValue;
+        private final long snapshotTimestamp;
+        private final double snapshotSpeed;
+        private final double snapshotMaxSpeed;
+        private final SpeedUnit snapshotSpeedUnit;
+        private final boolean snapshotBidirectional;
+        private final boolean snapshotInvertDirection;
+
+        RotarySnapshotImpl(RotaryMotor motor, double rawValue, long timestamp) {
+            this.snapshotName = motor.getName();
+            this.snapshotRawValue = rawValue;
+            this.snapshotTimestamp = timestamp;
+            this.snapshotMaxSpeed = motor.getMaxSpeed();
+            this.snapshotSpeedUnit = motor.getSpeedUnit();
+            this.snapshotBidirectional = motor.isBidirectional();
+            this.snapshotInvertDirection = motor.isInverted();
+            this.snapshotSpeed = mapRawToSpeedStatic(rawValue, snapshotMaxSpeed, snapshotBidirectional, snapshotInvertDirection);
+        }
+
+        private static double mapRawToSpeedStatic(double raw, double maxSpd, boolean bidir, boolean inv) {
+            double normalized = clamp(raw);
+            double spd;
+            if (bidir) {
+                spd = ((normalized * 2.0) - 1.0) * maxSpd;
+            } else {
+                spd = normalized * maxSpd;
+            }
+            if (inv) {
+                spd = -spd;
+            }
+            return spd;
+        }
+
+        @Override
+        public String getName() { return snapshotName; }
+
+        @Override
+        public MotorType getMotorType() { return MotorType.ROTARY; }
+
+        @Override
+        public double getRawValue() { return snapshotRawValue; }
+
+        @Override
+        public long getTimestamp() { return snapshotTimestamp; }
+
+        @Override
+        public double getSpeed() { return snapshotSpeed; }
+
+        @Override
+        public double getNormalizedSpeed() {
+            double normalized = clamp(snapshotRawValue);
+            if (snapshotBidirectional) {
+                normalized = (normalized * 2.0) - 1.0;
+            }
+            if (snapshotInvertDirection) {
+                normalized = -normalized;
+            }
+            return normalized;
+        }
+
+        @Override
+        public double getSpeedPercentage() {
+            return (snapshotSpeed / snapshotMaxSpeed) * 100.0;
+        }
+
+        @Override
+        public double getSpeedPercentageAbsolute() {
+            return Math.abs(snapshotSpeed / snapshotMaxSpeed) * 100.0;
+        }
+
+        @Override
+        public int getDirection() {
+            if (!snapshotBidirectional) {
+                return 1;
+            }
+            double normalized = getNormalizedSpeed();
+            if (normalized > 0.01) return 1;
+            if (normalized < -0.01) return -1;
+            return 0;
+        }
+
+        @Override
+        public boolean isStopped() {
+            return Math.abs(getNormalizedSpeed()) < 0.01;
+        }
+
+        @Override
+        public boolean isMovingForward() {
+            return getDirection() > 0;
+        }
+
+        @Override
+        public boolean isMovingBackward() {
+            return snapshotBidirectional && getDirection() < 0;
+        }
+
+        @Override
+        public String toString() {
+            String direction = snapshotBidirectional ?
+                    (getDirection() > 0 ? "FWD" : (getDirection() < 0 ? "REV" : "STOP")) : "FWD";
+            return String.format("RotaryMotor{name='%s', speed=%.2f %s, dir=%s}",
+                    snapshotName, Math.abs(snapshotSpeed), snapshotSpeedUnit, direction);
+        }
+    }
+
     @Override
     public String toString() {
         String direction = bidirectional ?
                 (isMovingForward() ? "FWD" : (isMovingBackward() ? "REV" : "STOP")) : "FWD";
         return String.format("RotaryMotor{name='%s', groupId=%d, outputIndex=%d, speed=%.2f %s, dir=%s}",
                 name, groupId, outputIndex, Math.abs(getSpeed()), speedUnit, direction);
+    }
+
+    /**
+     * Create a new builder for RotaryMotor instances.
+     *
+     * @return new builder
+     */
+    public static Builder builder() {
+        return new Builder();
     }
 
     /**

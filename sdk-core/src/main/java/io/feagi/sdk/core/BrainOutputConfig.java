@@ -101,7 +101,7 @@ public final class BrainOutputConfig {
          * @return this builder
          */
         public Builder pollTimeout(Duration pollTimeout) {
-            Objects.requireNonNull(pollTimeout, "pollTimeout must not be null");
+            Objects.requireNonNull(pollTimeout, "pollTimeout must not null");
             if (pollTimeout.isZero() || pollTimeout.isNegative()) {
                 throw new IllegalArgumentException("pollTimeout must be positive");
             }
@@ -112,12 +112,12 @@ public final class BrainOutputConfig {
         /**
          * Set the poll interval.
          *
-         * @param pollIntervalMillis interval between polls
+         * @param pollIntervalMillis interval between polls (must be >= 1)
          * @return this builder
          */
         public Builder pollIntervalMillis(int pollIntervalMillis) {
-            if (pollIntervalMillis < 0) {
-                throw new IllegalArgumentException("pollIntervalMillis must be non-negative");
+            if (pollIntervalMillis < 1) {
+                throw new IllegalArgumentException("pollIntervalMillis must be >= 1");
             }
             this.pollIntervalMillis = pollIntervalMillis;
             return this;

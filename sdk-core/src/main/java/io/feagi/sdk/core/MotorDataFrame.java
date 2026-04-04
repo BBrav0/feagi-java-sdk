@@ -18,32 +18,37 @@ import java.util.Optional;
  * Container for decoded motor data received from FEAGI in a single frame.
  *
  * <p>MotorDataFrame provides type-safe access to motor data after it has been
- * decoded from the raw FEAGI byte format. Motors can be accessed by name,
- * by type, or as a complete collection.
+ * decoded from the raw FEAGI byte format. This frame stores immutable snapshots
+ * of motor state, making it safe to store and use across threads.
  *
  * <p>Example usage:
  * <pre>{@code
  * MotorDataFrame frame = brainOutput.receive();
  * if (frame != null && frame.hasData()) {
- *     // Access by name
- *     ServoMotor arm = frame.getServo("arm_joint");
+ *     // Access servo snapshot by name
+ *     Motor.ServoSnapshot arm = frame.getServoSnapshot("arm_joint");
  *     if (arm != null) {
  *         double angle = arm.getAngle();
  *     }
  *
- *     // Access all motors of a type
- *     Map<String, RotaryMotor> wheels = frame.getRotaryMotors();
- *     for (RotaryMotor wheel : wheels.values()) {
- *         System.out.println(wheel.getName() + ": " + wheel.getSpeed());
+ *     // Access rotary snapshot by name
+ *     Motor.RotarySnapshot wheel = frame.getRotarySnapshot("left_wheel");
+ *     if (wheel != null) {
+ *         double speed = wheel.getSpeed();
+ *     }
+ *
+ *     // Access all servo snapshots
+ *     for (Motor.ServoSnapshot servo : frame.getServoSnapshots().values()) {
+ *         System.out.println(servo.getName() + ": " + servo.getAngle() + "°");
  *     }
  * }
  * }</pre>
  */
 public final class MotorDataFrame {
 
-    private final Map<String, Motor> motorsByName;
-    private final Map<String, ServoMotor> servosByName;
-    private final Map<String, RotaryMotor> rotaryMotorsByName;
+    private final Map<String, Motor.Snapshot> snapshotsByName;
+    private final Map<String, Motor.ServoSnapshot> servoSnapshotsByName;
+    private final Map<String, Motor.RotarySnapshot> rotarySnapshotsByName;
     private final long timestamp;
     private final boolean hasData;
 
@@ -51,50 +56,52 @@ public final class MotorDataFrame {
      * Create an empty frame with no data.
      */
     public MotorDataFrame() {
-        this.motorsByName = Collections.emptyMap();
-        this.servosByName = Collections.emptyMap();
-        this.rotaryMotorsByName = Collections.emptyMap();
+        this.snapshotsByName = Collections.emptyMap();
+        this.servoSnapshotsByName = Collections.emptyMap();
+        this.rotarySnapshotsByName = Collections.emptyMap();
         this.timestamp = System.currentTimeMillis();
         this.hasData = false;
     }
 
     /**
-     * Create a frame from a map of motors.
+     * Create a frame from a map of snapshots.
      *
-     * @param motorsByName map of motor name to motor instance
+     * @param snapshotsByName map of motor name to snapshot
+     * @param timestamp       frame timestamp in milliseconds
      */
-    public MotorDataFrame(Map<String, Motor> motorsByName) {
-        this(motorsByName, System.currentTimeMillis());
-    }
-
-    /**
-     * Create a frame from a map of motors with a specific timestamp.
-     *
-     * @param motorsByName map of motor name to motor instance
-     * @param timestamp    frame timestamp in milliseconds
-     */
-    public MotorDataFrame(Map<String, Motor> motorsByName, long timestamp) {
-        this.motorsByName = motorsByName != null ?
-                Collections.unmodifiableMap(new HashMap<>(motorsByName)) :
+    private MotorDataFrame(Map<String, Motor.Snapshot> snapshotsByName, long timestamp) {
+        this.snapshotsByName = snapshotsByName != null ?
+                Collections.unmodifiableMap(new HashMap<>(snapshotsByName)) :
                 Collections.emptyMap();
         this.timestamp = timestamp;
-        this.hasData = !this.motorsByName.isEmpty();
+        this.hasData = !this.snapshotsByName.isEmpty();
 
-        // Index motors by type
-        Map<String, ServoMotor> servos = new HashMap<>();
-        Map<String, RotaryMotor> rotaries = new HashMap<>();
+        // Index snapshots by type
+        Map<String, Motor.ServoSnapshot> servos = new HashMap<>();
+        Map<String, Motor.RotarySnapshot> rotaries = new HashMap<>();
 
-        for (Map.Entry<String, Motor> entry : this.motorsByName.entrySet()) {
-            Motor motor = entry.getValue();
-            if (motor instanceof ServoMotor) {
-                servos.put(entry.getKey(), (ServoMotor) motor);
-            } else if (motor instanceof RotaryMotor) {
-                rotaries.put(entry.getKey(), (RotaryMotor) motor);
+        for (Map.Entry<String, Motor.Snapshot> entry : this.snapshotsByName.entrySet()) {
+            Motor.Snapshot snapshot = entry.getValue();
+            if (snapshot.isServo()) {
+                servos.put(entry.getKey(), snapshot.asServo());
+            } else if (snapshot.isRotary()) {
+                rotaries.put(entry.getKey(), snapshot.asRotary());
             }
         }
 
-        this.servosByName = Collections.unmodifiableMap(servos);
-        this.rotaryMotorsByName = Collections.unmodifiableMap(rotaries);
+        this.servoSnapshotsByName = Collections.unmodifiableMap(servos);
+        this.rotarySnapshotsByName = Collections.unmodifiableMap(rotaries);
+    }
+
+    /**
+     * Create a MotorDataFrame from a map of snapshots.
+     *
+     * @param snapshots map of motor name to snapshot
+     * @param timestamp frame timestamp in milliseconds
+     * @return new MotorDataFrame instance
+     */
+    public static MotorDataFrame fromSnapshots(Map<String, Motor.Snapshot> snapshots, long timestamp) {
+        return new MotorDataFrame(snapshots, timestamp);
     }
 
     /**
@@ -125,90 +132,90 @@ public final class MotorDataFrame {
     }
 
     /**
-     * Get a motor by name.
+     * Get a motor snapshot by name.
      *
      * @param name motor name
-     * @return motor instance, or null if not found
+     * @return snapshot, or null if not found
      */
-    public Motor getMotor(String name) {
-        return motorsByName.get(name);
+    public Motor.Snapshot getSnapshot(String name) {
+        return snapshotsByName.get(name);
     }
 
     /**
-     * Get a motor by name wrapped in Optional.
+     * Get a motor snapshot by name wrapped in Optional.
      *
      * @param name motor name
-     * @return Optional containing motor, or empty if not found
+     * @return Optional containing snapshot, or empty if not found
      */
-    public Optional<Motor> getMotorOptional(String name) {
-        return Optional.ofNullable(motorsByName.get(name));
+    public Optional<Motor.Snapshot> getSnapshotOptional(String name) {
+        return Optional.ofNullable(snapshotsByName.get(name));
     }
 
     /**
-     * Get a servo motor by name.
+     * Get a servo snapshot by name.
      *
      * @param name motor name
-     * @return servo motor instance, or null if not found or not a servo
+     * @return servo snapshot, or null if not found or not a servo
      */
-    public ServoMotor getServo(String name) {
-        return servosByName.get(name);
+    public Motor.ServoSnapshot getServoSnapshot(String name) {
+        return servoSnapshotsByName.get(name);
     }
 
     /**
-     * Get a servo motor by name wrapped in Optional.
+     * Get a servo snapshot by name wrapped in Optional.
      *
      * @param name motor name
-     * @return Optional containing servo motor, or empty if not found
+     * @return Optional containing servo snapshot, or empty if not found
      */
-    public Optional<ServoMotor> getServoOptional(String name) {
-        return Optional.ofNullable(servosByName.get(name));
+    public Optional<Motor.ServoSnapshot> getServoSnapshotOptional(String name) {
+        return Optional.ofNullable(servoSnapshotsByName.get(name));
     }
 
     /**
-     * Get a rotary motor by name.
+     * Get a rotary snapshot by name.
      *
      * @param name motor name
-     * @return rotary motor instance, or null if not found or not a rotary motor
+     * @return rotary snapshot, or null if not found or not a rotary
      */
-    public RotaryMotor getRotaryMotor(String name) {
-        return rotaryMotorsByName.get(name);
+    public Motor.RotarySnapshot getRotarySnapshot(String name) {
+        return rotarySnapshotsByName.get(name);
     }
 
     /**
-     * Get a rotary motor by name wrapped in Optional.
+     * Get a rotary snapshot by name wrapped in Optional.
      *
      * @param name motor name
-     * @return Optional containing rotary motor, or empty if not found
+     * @return Optional containing rotary snapshot, or empty if not found
      */
-    public Optional<RotaryMotor> getRotaryMotorOptional(String name) {
-        return Optional.ofNullable(rotaryMotorsByName.get(name));
+    public Optional<Motor.RotarySnapshot> getRotarySnapshotOptional(String name) {
+        return Optional.ofNullable(rotarySnapshotsByName.get(name));
     }
 
     /**
-     * Get all motors in this frame.
+     * Get all snapshots in this frame.
      *
-     * @return unmodifiable map of all motors by name
+     * @return unmodifiable map of all snapshots by name
      */
-    public Map<String, Motor> getAllMotors() {
-        return motorsByName;
+    public Map<String, Motor.Snapshot> getAllSnapshots() {
+        return snapshotsByName;
     }
 
     /**
-     * Get all servo motors in this frame.
+     * Get all servo snapshots in this frame.
      *
-     * @return unmodifiable map of servo motors by name
+     * @return unmodifiable map of servo snapshots by name
      */
-    public Map<String, ServoMotor> getServos() {
-        return servosByName;
+    public Map<String, Motor.ServoSnapshot> getServoSnapshots() {
+        return servoSnapshotsByName;
     }
 
     /**
-     * Get all rotary motors in this frame.
+     * Get all rotary snapshots in this frame.
      *
-     * @return unmodifiable map of rotary motors by name
+     * @return unmodifiable map of rotary snapshots by name
      */
-    public Map<String, RotaryMotor> getRotaryMotors() {
-        return rotaryMotorsByName;
+    public Map<String, Motor.RotarySnapshot> getRotarySnapshots() {
+        return rotarySnapshotsByName;
     }
 
     /**
@@ -217,7 +224,7 @@ public final class MotorDataFrame {
      * @return motor count
      */
     public int getMotorCount() {
-        return motorsByName.size();
+        return snapshotsByName.size();
     }
 
     /**
@@ -226,7 +233,7 @@ public final class MotorDataFrame {
      * @return servo motor count
      */
     public int getServoCount() {
-        return servosByName.size();
+        return servoSnapshotsByName.size();
     }
 
     /**
@@ -235,7 +242,7 @@ public final class MotorDataFrame {
      * @return rotary motor count
      */
     public int getRotaryMotorCount() {
-        return rotaryMotorsByName.size();
+        return rotarySnapshotsByName.size();
     }
 
     /**
@@ -245,7 +252,7 @@ public final class MotorDataFrame {
      * @return true if motor exists
      */
     public boolean hasMotor(String name) {
-        return motorsByName.containsKey(name);
+        return snapshotsByName.containsKey(name);
     }
 
     /**
@@ -255,7 +262,7 @@ public final class MotorDataFrame {
      * @return true if servo exists
      */
     public boolean hasServo(String name) {
-        return servosByName.containsKey(name);
+        return servoSnapshotsByName.containsKey(name);
     }
 
     /**
@@ -265,7 +272,7 @@ public final class MotorDataFrame {
      * @return true if rotary motor exists
      */
     public boolean hasRotaryMotor(String name) {
-        return rotaryMotorsByName.containsKey(name);
+        return rotarySnapshotsByName.containsKey(name);
     }
 
     /**
@@ -296,33 +303,33 @@ public final class MotorDataFrame {
      * Builder for MotorDataFrame instances.
      */
     public static final class Builder {
-        private final Map<String, Motor> motors = new HashMap<>();
+        private final Map<String, Motor.Snapshot> snapshots = new HashMap<>();
         private long timestamp = System.currentTimeMillis();
 
         private Builder() {}
 
         /**
-         * Add a motor to the frame.
+         * Add a snapshot to the frame.
          *
-         * @param motor motor to add
+         * @param snapshot snapshot to add
          * @return this builder
          */
-        public Builder addMotor(Motor motor) {
-            if (motor != null) {
-                motors.put(motor.getName(), motor);
+        public Builder addSnapshot(Motor.Snapshot snapshot) {
+            if (snapshot != null) {
+                snapshots.put(snapshot.getName(), snapshot);
             }
             return this;
         }
 
         /**
-         * Add multiple motors to the frame.
+         * Add multiple snapshots to the frame.
          *
-         * @param motors motors to add
+         * @param snapshots snapshots to add
          * @return this builder
          */
-        public Builder addMotors(Map<String, Motor> motors) {
-            if (motors != null) {
-                this.motors.putAll(motors);
+        public Builder addSnapshots(Map<String, Motor.Snapshot> snapshots) {
+            if (snapshots != null) {
+                this.snapshots.putAll(snapshots);
             }
             return this;
         }
@@ -344,7 +351,7 @@ public final class MotorDataFrame {
          * @return new motor data frame
          */
         public MotorDataFrame build() {
-            return new MotorDataFrame(motors, timestamp);
+            return new MotorDataFrame(snapshots, timestamp);
         }
     }
 }

@@ -26,7 +26,6 @@ public final class ServoMotor implements Motor {
      * Default maximum angle in degrees.
      */
     public static final double DEFAULT_MAX_ANGLE = 180.0;
-
     private final String name;
     private final int groupId;
     private final int outputIndex;
@@ -34,10 +33,8 @@ public final class ServoMotor implements Motor {
     private final double maxAngle;
     private final boolean invertDirection;
 
-    private volatile double rawValue;
-    private volatile boolean hasData;
-    private volatile long lastUpdateTimestamp;
-
+    // Immutable state holder for atomic updates
+    private volatile MotorState state = new MotorState(0.0, false, 0);
     /**
      * Create a servo motor with default angle range (0-180 degrees).
      *
@@ -48,7 +45,6 @@ public final class ServoMotor implements Motor {
     public ServoMotor(String name, int groupId, int outputIndex) {
         this(name, groupId, outputIndex, DEFAULT_MIN_ANGLE, DEFAULT_MAX_ANGLE, false);
     }
-
     /**
      * Create a servo motor with custom angle range.
      *
@@ -60,7 +56,7 @@ public final class ServoMotor implements Motor {
      * @param invertDirection if true, invert the angle mapping
      */
     public ServoMotor(String name, int groupId, int outputIndex,
-                      double minAngle, double maxAngle, boolean invertDirection) {
+                       double minAngle, double maxAngle, boolean invertDirection) {
         this.name = Objects.requireNonNull(name, "name must not be null");
         if (name.isEmpty()) {
             throw new IllegalArgumentException("name must not be empty");
@@ -74,47 +70,36 @@ public final class ServoMotor implements Motor {
         if (minAngle >= maxAngle) {
             throw new IllegalArgumentException("minAngle must be less than maxAngle");
         }
-
         this.groupId = groupId;
         this.outputIndex = outputIndex;
         this.minAngle = minAngle;
         this.maxAngle = maxAngle;
         this.invertDirection = invertDirection;
-        this.rawValue = 0.0;
-        this.hasData = false;
-        this.lastUpdateTimestamp = 0;
     }
-
     @Override
     public String getName() {
         return name;
     }
-
     @Override
     public int getGroupId() {
         return groupId;
     }
-
     @Override
     public int getOutputIndex() {
         return outputIndex;
     }
-
     @Override
     public double getRawValue() {
-        return rawValue;
+        return state.rawValue;
     }
-
     @Override
     public boolean hasData() {
-        return hasData;
+        return state.hasData;
     }
-
     @Override
     public long getLastUpdateTimestamp() {
-        return lastUpdateTimestamp;
+        return state.timestamp;
     }
-
     /**
      * Return the minimum configured angle.
      *
@@ -123,7 +108,6 @@ public final class ServoMotor implements Motor {
     public double getMinAngle() {
         return minAngle;
     }
-
     /**
      * Return the maximum configured angle.
      *
@@ -132,7 +116,6 @@ public final class ServoMotor implements Motor {
     public double getMaxAngle() {
         return maxAngle;
     }
-
     /**
      * Return whether direction is inverted.
      *
@@ -141,7 +124,6 @@ public final class ServoMotor implements Motor {
     public boolean isInverted() {
         return invertDirection;
     }
-
     /**
      * Get the current angle in degrees.
      *
@@ -151,9 +133,8 @@ public final class ServoMotor implements Motor {
      * @return current angle in degrees
      */
     public double getAngle() {
-        return mapRawToAngle(rawValue);
+        return mapRawToAngle(state.rawValue);
     }
-
     /**
      * Get the current angle in radians.
      *
@@ -162,7 +143,6 @@ public final class ServoMotor implements Motor {
     public double getAngleRadians() {
         return Math.toRadians(getAngle());
     }
-
     /**
      * Get the angle as a normalized value between 0.0 and 1.0.
      *
@@ -170,39 +150,48 @@ public final class ServoMotor implements Motor {
      */
     public double getNormalizedPosition() {
         if (invertDirection) {
-            return 1.0 - clamp(rawValue);
+            return 1.0 - clamp(state.rawValue);
         }
-        return clamp(rawValue);
+        return clamp(state.rawValue);
     }
-
     /**
      * Update the motor with a new raw value from FEAGI.
+     *
+     * <p>This method performs an atomic update of all three state fields
+     * using a single volatile reference to the immutable MotorState record.
      *
      * @param rawValue  raw value from FEAGI (typically 0.0-1.0)
      * @param timestamp update timestamp in milliseconds
      */
     public void updateValue(double rawValue, long timestamp) {
-        this.rawValue = rawValue;
-        this.hasData = true;
-        this.lastUpdateTimestamp = timestamp;
+        this.state = new MotorState(rawValue, true, timestamp);
     }
-
     /**
      * Clear the data flag (called when no data received in a frame).
      */
     public void clearData() {
-        this.hasData = false;
+        this.state = new MotorState(0.0, false, 0);
     }
-
     /**
-     * Create a builder for constructing ServoMotor instances.
+     * Return the motor type.
      *
-     * @return a new builder
+     * @return motor type
      */
-    public static Builder builder() {
-        return new Builder();
+    @Override
+    public MotorType getMotorType() {
+        return MotorType.SERVO;
     }
-
+    /**
+     * Create an immutable snapshot of this motor's current state.
+     *
+     * @param rawValue  the raw FEAGI value
+     * @param timestamp the snapshot timestamp
+     * @return immutable snapshot
+     */
+    @Override
+    public Snapshot createSnapshot(double rawValue, long timestamp) {
+        return new ServoSnapshotImpl(this, rawValue, timestamp);
+    }
     /**
      * Map raw value to angle in degrees.
      */
@@ -213,18 +202,94 @@ public final class ServoMotor implements Motor {
         }
         return minAngle + normalized * (maxAngle - minAngle);
     }
-
     /**
      * Clamp value to [0.0, 1.0].
      */
     private static double clamp(double value) {
         return Math.max(0.0, Math.min(1.0, value));
     }
-
+    /**
+     * Immutable holder for atomic motor state updates.
+     */
+    private static final class MotorState {
+        final double rawValue;
+        final boolean hasData;
+        final long timestamp;
+        MotorState(double rawValue, boolean hasData, long timestamp) {
+            this.rawValue = rawValue;
+            this.hasData = hasData;
+            this.timestamp = timestamp;
+        }
+    }
+    /**
+     * Immutable snapshot implementation for servo motors.
+     */
+    private final class ServoSnapshotImpl implements ServoSnapshot {
+        private final String name;
+        private final double rawValue;
+        private final long timestamp;
+        private final double minAngle;
+        private final double maxAngle;
+        private final boolean invertDirection;
+        private final double angle;
+        ServoSnapshotImpl(ServoMotor motor, double rawValue, long timestamp) {
+            this.name = motor.getName();
+            this.rawValue = rawValue;
+            this.timestamp = timestamp;
+            this.minAngle = motor.getMinAngle();
+            this.maxAngle = motor.getMaxAngle();
+            this.invertDirection = motor.isInverted();
+            this.angle = mapRawToAngle(rawValue, minAngle, maxAngle, invertDirection);
+        }
+        private static double mapRawToAngle(double raw, double minAngle, double maxAngle, boolean invert) {
+            double normalized = clamp(raw);
+            if (invert) {
+                normalized = 1.0 - normalized;
+            }
+            return minAngle + normalized * (maxAngle - minAngle);
+        }
+        private static double clamp(double value) {
+            return Math.max(0.0, Math.min(1.0, value));
+        }
+        @Override
+        public String getName() { return name; }
+        @Override
+        public MotorType getMotorType() { return MotorType.SERVO; }
+        @Override
+        public double getRawValue() { return rawValue; }
+        @Override
+        public long getTimestamp() { return timestamp; }
+        @Override
+        public double getAngle() { return angle; }
+        @Override
+        public double getAngleRadians() {
+            return Math.toRadians(angle);
+        }
+        @Override
+        public double getNormalizedPosition() {
+            if (invertDirection) {
+                return 1.0 - clamp(rawValue);
+            }
+            return clamp(rawValue);
+        }
+        @Override
+        public String toString() {
+            return String.format("ServoMotor{name='%s', groupId=%d, outputIndex=%d, angle=%.2f°, raw=%.4f}",
+                    name, groupId, outputIndex, angle, rawValue);
+        }
+    }
     @Override
     public String toString() {
         return String.format("ServoMotor{name='%s', groupId=%d, outputIndex=%d, angle=%.2f°, raw=%.4f}",
-                name, groupId, outputIndex, getAngle(), rawValue);
+                name, groupId, outputIndex, getAngle(), getRawValue());
+    }
+    /**
+     * Create a new builder for ServoMotor instances.
+     *
+     * @return new builder
+     */
+    public static Builder builder() {
+        return new Builder();
     }
 
     /**
@@ -237,9 +302,7 @@ public final class ServoMotor implements Motor {
         private double minAngle = DEFAULT_MIN_ANGLE;
         private double maxAngle = DEFAULT_MAX_ANGLE;
         private boolean invertDirection = false;
-
         private Builder() {}
-
         /**
          * Set the motor name.
          */
@@ -247,7 +310,6 @@ public final class ServoMotor implements Motor {
             this.name = name;
             return this;
         }
-
         /**
          * Set the group ID.
          */
@@ -255,7 +317,6 @@ public final class ServoMotor implements Motor {
             this.groupId = groupId;
             return this;
         }
-
         /**
          * Set the output index.
          */
@@ -263,7 +324,6 @@ public final class ServoMotor implements Motor {
             this.outputIndex = outputIndex;
             return this;
         }
-
         /**
          * Set the angle range.
          */
@@ -272,7 +332,6 @@ public final class ServoMotor implements Motor {
             this.maxAngle = maxAngle;
             return this;
         }
-
         /**
          * Set whether to invert direction.
          */
@@ -280,7 +339,6 @@ public final class ServoMotor implements Motor {
             this.invertDirection = invert;
             return this;
         }
-
         /**
          * Build the ServoMotor instance.
          */

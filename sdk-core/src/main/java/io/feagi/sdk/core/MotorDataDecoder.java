@@ -10,6 +10,7 @@ import io.feagi.sdk.core.motor.RotaryMotor;
 import io.feagi.sdk.core.motor.ServoMotor;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -20,8 +21,8 @@ import java.util.logging.Logger;
  * Decodes raw motor data from FEAGI into structured motor values.
  *
  * <p>This decoder handles the conversion of raw byte payloads received
- * from FEAGI into MotorDataFrame objects. The decoded data can be
- * used to update registered Motor instances.
+ * from FEAGI into MotorDataFrame objects containing immutable snapshots
+ * of motor values.
  *
  * <p>The FEAGI motor data protocol format (based on typical implementation):
  * <ul>
@@ -32,56 +33,71 @@ import java.util.logging.Logger;
  * <p>Supported formats:
  * <ul>
  *   <li>Simple format: Each motor value is a single float (4 bytes)</li>
- *   <li>Grouped format: [groupId][outputCount][values...]</li>
- *   <li>JSON format: JSON-encoded motor data</li>
+ *   <li>Grouped format: Magic byte 0xFE prefix, then [groupId][outputCount][values...]</li>
+ *   <li>JSON format: JSON-encoded motor data (starts with '{' or '[')</li>
  * </ul>
+ *
+ * <p><b>Thread Safety:</b> This class creates immutable snapshots during decode,
+ * so returned MotorDataFrame objects are safe to use across threads and will not
+ * be affected by subsequent decode calls.
  */
 public final class MotorDataDecoder {
 
     private static final Logger LOG = Logger.getLogger(MotorDataDecoder.class.getName());
 
+    /** Magic byte indicating grouped format */
+    private static final byte GROUPED_FORMAT_MAGIC = (byte) 0xFE;
+
+    /** Magic byte indicating simple binary format with header */
+    private static final byte SIMPLE_BINARY_MAGIC = (byte) 0xFD;
+
+    // Mutable maps for motor instances - not final to allow updates
     private final Map<String, MotorOutputSpec> registeredOutputs;
     private final Map<String, Motor> motorInstances;
     private volatile boolean initialized;
 
     /**
      * Create a new decoder with no registered outputs.
+     *
+     * <p>Use {@link #registerOutputs(Map)} or {@link #registerOutput(MotorOutputSpec)}
+     * to add outputs before decoding.
      */
     public MotorDataDecoder() {
-        this.registeredOutputs = Collections.emptyMap();
-        this.motorInstances = Collections.emptyMap();
+        this.registeredOutputs = new HashMap<>();
+        this.motorInstances = new HashMap<>();
         this.initialized = false;
     }
 
     /**
-     * Create a decoder with registered outputs.
+     * Create a decoder with motor instances directly.
      *
-     * @param registeredOutputs map of output name to MotorOutputSpec
+     * <p>This constructor accepts the motor instances map from BrainOutput,
+     * which maps motor names to Motor objects.
+     *
+     * @param motorInstances map of motor name to Motor instance
      */
-    public MotorDataDecoder(Map<String, MotorOutputSpec> registeredOutputs) {
-        this.registeredOutputs = registeredOutputs != null ?
-                Collections.unmodifiableMap(new HashMap<>(registeredOutputs)) : Collections.emptyMap();
-        this.motorInstances = new HashMap<>();
-        initializeMotors();
-        this.initialized = true;
+    public MotorDataDecoder(Map<String, Motor> motorInstances) {
+        this.registeredOutputs = new HashMap<>();
+        this.motorInstances = motorInstances != null ?
+                new HashMap<>(motorInstances) : new HashMap<>();
+        this.initialized = !this.motorInstances.isEmpty();
     }
 
     /**
      * Register outputs with this decoder.
      *
-     * @param outputs output specifications to register
+     * @param outputs map of output name to MotorOutputSpec
      */
     public void registerOutputs(Map<String, MotorOutputSpec> outputs) {
-        if (outputs == null) {
-            this.registeredOutputs = Collections.emptyMap();
-            this.motorInstances.clear();
-            this.initialized = false;
-            return;
-        }
+        Objects.requireNonNull(outputs, "outputs must not be null");
+
+        this.registeredOutputs.clear();
+        this.motorInstances.clear();
+
         for (Map.Entry<String, MotorOutputSpec> entry : outputs.entrySet()) {
             registerOutput(entry.getValue());
         }
-        this.initialized = true;
+        this.initialized = !this.motorInstances.isEmpty();
     }
 
     /**
@@ -94,13 +110,17 @@ public final class MotorDataDecoder {
         Motor motor = output.createMotor();
         registeredOutputs.put(output.getName(), output);
         motorInstances.put(output.getName(), motor);
+        this.initialized = true;
     }
 
     /**
-     * Decode raw bytes into a motor data frame.
+     * Decode raw bytes into a motor data frame with immutable snapshots.
+     *
+     * <p>This method creates snapshots of motor values, so the returned
+     * frame is not affected by subsequent decode calls.
      *
      * @param rawData raw byte payload from FEAGI
-     * @return decoded MotorDataFrame, or empty frame if no data
+     * @return decoded MotorDataFrame with snapshots, or empty frame if no data
      */
     public MotorDataFrame decode(byte[] rawData) {
         if (rawData == null || rawData.length == 0) {
@@ -113,16 +133,20 @@ public final class MotorDataDecoder {
         }
 
         try {
-            // Try JSON format first (most flexible)
+            // Try JSON format first (starts with '{' or '[')
             if (isJsonFormat(rawData)) {
                 return decodeJsonFormat(rawData);
             }
-            // Try grouped format
+            // Check for grouped format (magic byte 0xFE)
             if (isGroupedFormat(rawData)) {
                 return decodeGroupedFormat(rawData);
             }
-            // Fall back to simple format
-            return decodeSimpleFormat(rawData);
+            // Check for simple binary with header (magic byte 0xFD)
+            if (isSimpleBinaryFormat(rawData)) {
+                return decodeSimpleBinaryFormat(rawData);
+            }
+            // Fall back to raw float format (legacy)
+            return decodeRawFloatFormat(rawData);
         } catch (Exception e) {
             LOG.warning("Error decoding motor data: " + e.getMessage());
             return MotorDataFrame.empty();
@@ -133,43 +157,52 @@ public final class MotorDataDecoder {
      * Check if data appears to be JSON format.
      */
     private boolean isJsonFormat(byte[] data) {
-        if (data.length < 2) return false;
+        if (data.length < 1) return false;
         byte first = data[0];
         return first == '{' || first == '[';
     }
 
     /**
      * Check if data appears to be grouped format.
-     * Grouped format: [groupId][outputCount][values...]
+     * Grouped format starts with magic byte 0xFE.
      */
     private boolean isGroupedFormat(byte[] data) {
-        if (data.length < 2) return false;
-        int outputCount = data[1] & 0xFF;
-        int expectedLength = 2 + (outputCount * 4);
-        return data.length >= expectedLength;
+        if (data.length < 3) return false;
+        return data[0] == GROUPED_FORMAT_MAGIC;
+    }
+
+    /**
+     * Check if data appears to be simple binary format with header.
+     * Simple binary format starts with magic byte 0xFD.
+     */
+    private boolean isSimpleBinaryFormat(byte[] data) {
+        if (data.length < 5) return false;
+        return data[0] == SIMPLE_BINARY_MAGIC;
     }
 
     /**
      * Decode JSON format motor data.
+     *
+     * <p>Supported JSON format:
+     * <pre>{@code
+     * {"motor_name": 0.5, "another_motor": 0.75}
+     * }</pre>
+     *
+     * <p>Or with wrapper:
+     * <pre>{@code
+     * {"motors": {"motor_name": 0.5}}
+     * }</pre>
      */
     private MotorDataFrame decodeJsonFormat(byte[] rawData) {
-        String json = new String(rawData, java.nio.charset.StandardCharsets.UTF_8);
+        String json = new String(rawData, StandardCharsets.UTF_8);
         try {
-            Map<String, Motor> decoded = new HashMap<>();
-            int start = json.indexOf('{');
-            if (start < 0) {
+            // Parse values from JSON - create snapshots
+            Map<String, Motor.Snapshot> snapshots = new HashMap<>();
+            parseJsonToSnapshots(json, snapshots);
+            if (snapshots.isEmpty()) {
                 return MotorDataFrame.empty();
             }
-            int end = json.lastIndexOf('}');
-            if (end <= start) {
-                return MotorDataFrame.empty();
-            }
-            String content = json.substring(start, end + 1);
-            parseSimpleJson(content, decoded);
-            if (decoded.isEmpty()) {
-                return MotorDataFrame.empty();
-            }
-            return new MotorDataFrame(decoded, System.currentTimeMillis());
+            return MotorDataFrame.fromSnapshots(snapshots, System.currentTimeMillis());
         } catch (Exception e) {
             LOG.warning("Failed to parse JSON motor data: " + e.getMessage());
             return MotorDataFrame.empty();
@@ -177,79 +210,94 @@ public final class MotorDataDecoder {
     }
 
     /**
-     * Parse simple JSON format without external dependencies.
+     * Parse JSON and create motor snapshots.
      */
-    private void parseSimpleJson(String json, Map<String, Motor> decoded) {
-        // Remove outer braces
-        int start = 0;
-        int end = json.length() - 1;
-        while (start < json.length() && Character.isWhitespace(json.charAt(start))) {
-            start++;
-        }
-        while (end >= 0 && Character.isWhitespace(json.charAt(end))) {
-            end--;
-        }
-        if (start >= end) {
+    private void parseJsonToSnapshots(String json, Map<String, Motor.Snapshot> snapshots) {
+        // Find the object bounds
+        int start = json.indexOf('{');
+        if (start < 0) {
             return;
         }
-        String content = json.substring(start, end);
-        // Check for nested structure like {"motors": {...} }
-        if (content.startsWith("\"motors\":") || content.startsWith("\"motor\":")) {
-            int colonIndex = content.indexOf(':');
-            if (colonIndex > 0) {
-                String inner = content.substring(colonIndex + 1).trim();
-                parseMotorValues(inner, decoded);
-            }
-        } else {
-            // Direct motor values
-            parseMotorValues(content, decoded);
+        int end = json.lastIndexOf('}');
+        if (end <= start) {
+            return;
         }
+
+        String content = json.substring(start + 1, end).trim();
+
+        // Check for nested structure like {"motors": {...} }
+        int colonIndex = content.indexOf(':');
+        if (colonIndex > 0) {
+            String key = content.substring(0, colonIndex).trim().replace("\"", "");
+            if ("motors".equals(key) || "motor".equals(key)) {
+                String inner = content.substring(colonIndex + 1).trim();
+                if (inner.startsWith("{")) {
+                    parseMotorValuesToSnapshots(inner, snapshots);
+                    return;
+                }
+            }
+        }
+
+        // Direct motor values
+        parseMotorValuesToSnapshots("{" + content + "}", snapshots);
     }
 
     /**
-     * Parse motor values from JSON content.
+     * Parse motor values from JSON content and create snapshots.
      */
-    private void parseMotorValues(String content, Map<String, Motor> decoded) {
-        // Simple key-value parsing
-        int i = 0;
+    private void parseMotorValuesToSnapshots(String content, Map<String, Motor.Snapshot> snapshots) {
+        // Simple JSON key-value parsing
+        int i = content.indexOf('{');
+        if (i < 0) return;
+        i++; // Skip opening brace
+
         while (i < content.length()) {
             // Skip whitespace
             while (i < content.length() && Character.isWhitespace(content.charAt(i))) {
                 i++;
             }
-            if (i >= content.length()) {
+            if (i >= content.length() || content.charAt(i) == '}') {
                 break;
             }
-            // Find key
+
+            // Find key (between quotes)
+            if (content.charAt(i) != '"') {
+                i++;
+                continue;
+            }
+            i++; // Skip opening quote
             int keyStart = i;
-            while (i < content.length() && content.charAt(i) != ':' && content.charAt(i) != ',') {
+            while (i < content.length() && content.charAt(i) != '"') {
                 i++;
             }
-            if (i >= content.length()) {
-                break;
-            }
-            String key = content.substring(keyStart, i).trim().replace("\"", "");
-            // Skip colon and whitespace
+            if (i >= content.length()) break;
+            String key = content.substring(keyStart, i);
+            i++; // Skip closing quote
+
+            // Skip whitespace and colon
             while (i < content.length() && (content.charAt(i) == ':' || Character.isWhitespace(content.charAt(i)))) {
                 i++;
             }
+
             // Find value
             int valueStart = i;
             while (i < content.length() && content.charAt(i) != ',' && content.charAt(i) != '}') {
                 i++;
             }
             String valueStr = content.substring(valueStart, i).trim();
-            // Try to find corresponding motor
+
+            // Try to find corresponding motor and create snapshot
             Motor motor = motorInstances.get(key);
             if (motor != null) {
                 try {
                     double value = Double.parseDouble(valueStr);
-                    updateMotorValue(motor, value);
-                    decoded.put(key, motor);
+                    Motor.Snapshot snapshot = motor.createSnapshot(value, System.currentTimeMillis());
+                    snapshots.put(key, snapshot);
                 } catch (NumberFormatException e) {
                     LOG.warning("Failed to parse motor value for " + key + ": " + valueStr);
                 }
             }
+
             // Skip comma
             while (i < content.length() && content.charAt(i) == ',') {
                 i++;
@@ -259,71 +307,111 @@ public final class MotorDataDecoder {
 
     /**
      * Decode grouped format motor data.
+     * Format: [0xFE magic][groupId][outputCount][float values...]
      */
     private MotorDataFrame decodeGroupedFormat(byte[] rawData) {
         ByteBuffer buffer = ByteBuffer.wrap(rawData);
+
+        // Skip magic byte
+        buffer.get();
+
         int groupId = buffer.get() & 0xFF;
         int outputCount = buffer.get() & 0xFF;
         long timestamp = System.currentTimeMillis();
-        Map<String, Motor> decoded = new HashMap<>();
+
+        Map<String, Motor.Snapshot> snapshots = new HashMap<>();
+
         for (int i = 0; i < outputCount && buffer.remaining() >= 4; i++) {
             float value = buffer.getFloat();
-            // Find motors matching this group and index
+
+            // Find motors matching this group and index, create snapshots
             for (Map.Entry<String, Motor> entry : motorInstances.entrySet()) {
                 Motor motor = entry.getValue();
                 if (motor.getGroupId() == groupId && motor.getOutputIndex() == i) {
-                    updateMotorValue(motor, value);
-                    decoded.put(entry.getKey(), motor);
+                    Motor.Snapshot snapshot = motor.createSnapshot(value, timestamp);
+                    snapshots.put(entry.getKey(), snapshot);
                 }
             }
         }
-        return new MotorDataFrame(decoded, timestamp);
+
+        return MotorDataFrame.fromSnapshots(snapshots, timestamp);
     }
 
     /**
-     * Decode simple format motor data (sequential floats).
+     * Decode simple binary format with header.
+     * Format: [0xFD magic][payload...]
      */
-    private MotorDataFrame decodeSimpleFormat(byte[] rawData) {
+    private MotorDataFrame decodeSimpleBinaryFormat(byte[] rawData) {
         ByteBuffer buffer = ByteBuffer.wrap(rawData);
+
+        // Skip magic byte
+        buffer.get();
+
         long timestamp = System.currentTimeMillis();
-        Map<String, Motor> decoded = new HashMap<>();
+        Map<String, Motor.Snapshot> snapshots = new HashMap<>();
         int index = 0;
+
         while (buffer.remaining() >= 4) {
             float value = buffer.getFloat();
-            // Find motor at this index
+
+            // Find motor at this index, create snapshot
             for (Map.Entry<String, Motor> entry : motorInstances.entrySet()) {
                 Motor motor = entry.getValue();
                 if (motor.getOutputIndex() == index) {
-                    updateMotorValue(motor, value);
-                    decoded.put(entry.getKey(), motor);
+                    Motor.Snapshot snapshot = motor.createSnapshot(value, timestamp);
+                    snapshots.put(entry.getKey(), snapshot);
                     break;
                 }
             }
             index++;
         }
-        return new MotorDataFrame(decoded, timestamp);
+
+        return MotorDataFrame.fromSnapshots(snapshots, timestamp);
     }
 
     /**
-     * Initialize motor instances from registered outputs.
+     * Decode raw float format (legacy - no header).
+     * Format: [float][float][float]...
      */
-    private void initializeMotors() {
-        for (Map.Entry<String, MotorOutputSpec> entry : registeredOutputs.entrySet()) {
-            MotorOutputSpec spec = entry.getValue();
-            Motor motor = spec.createMotor();
-            motorInstances.put(entry.getKey(), motor);
-        }
-    }
-
-    /**
-     * Update a motor with a new value.
-     */
-    private void updateMotorValue(Motor motor, double value) {
+    private MotorDataFrame decodeRawFloatFormat(byte[] rawData) {
+        ByteBuffer buffer = ByteBuffer.wrap(rawData);
         long timestamp = System.currentTimeMillis();
-        if (motor instanceof ServoMotor) {
-            ((ServoMotor) motor).updateValue(value, timestamp);
-        } else if (motor instanceof RotaryMotor) {
-            ((RotaryMotor) motor).updateValue(value, timestamp);
+        Map<String, Motor.Snapshot> snapshots = new HashMap<>();
+        int index = 0;
+
+        while (buffer.remaining() >= 4) {
+            float value = buffer.getFloat();
+
+            // Find motor at this index, create snapshot
+            for (Map.Entry<String, Motor> entry : motorInstances.entrySet()) {
+                Motor motor = entry.getValue();
+                if (motor.getOutputIndex() == index) {
+                    Motor.Snapshot snapshot = motor.createSnapshot(value, timestamp);
+                    snapshots.put(entry.getKey(), snapshot);
+                    break;
+                }
+            }
+            index++;
         }
+
+        return MotorDataFrame.fromSnapshots(snapshots, timestamp);
+    }
+
+    /**
+     * Return the number of registered motors.
+     *
+     * @return motor count
+     */
+    public int getMotorCount() {
+        return motorInstances.size();
+    }
+
+    /**
+     * Check if the decoder has any registered motors.
+     *
+     * @return true if motors are registered
+     */
+    public boolean hasMotors() {
+        return !motorInstances.isEmpty();
     }
 }
