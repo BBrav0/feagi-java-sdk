@@ -34,6 +34,13 @@ import java.util.regex.Pattern;
  * <h2>Thread safety</h2>
  * Instances are immutable after construction and safe to call from any thread.
  *
+ * <h2>Connection behaviour</h2>
+ * Each call to {@link #resolve(String)} opens a new HTTP connection and closes it
+ * when the response is received ({@code HttpURLConnection.disconnect()} is called in
+ * the {@code finally} block, which prevents keep-alive reuse). For a single lookup
+ * this is fine; for repeated lookups in a loop, consider caching the result rather
+ * than calling {@code resolve()} on every iteration.
+ *
  * <h2>Placement</h2>
  * {@code sdk-core/src/main/java/io/feagi/sdk/core/DefaultCorticalAreaResolver.java}
  */
@@ -44,13 +51,20 @@ final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
 
     /**
      * Pre-compiled pattern for valid cortical area IDs.
-     * Rules: ASCII alphanumeric and underscore anywhere; hyphens only in the middle
-     * (not as the first or last character). Examples: {@code "i__inf"}, {@code "v1-motor"}.
+     * Rules:
+     * <ul>
+     *   <li>First character: ASCII letter or digit ({@code [A-Za-z0-9]}) — not underscore
+     *       or hyphen.</li>
+     *   <li>Middle characters (optional): ASCII letter, digit, underscore, or hyphen.</li>
+     *   <li>Last character (if more than one character): ASCII letter or digit — not
+     *       underscore or hyphen.</li>
+     * </ul>
+     * Examples of valid IDs: {@code "i__inf"}, {@code "v1-motor"}, {@code "x"}.
+     * Examples of invalid IDs: {@code "_bad"}, {@code "bad-"}, {@code "-bad"}.
      * Defined once here — both {@link #resolve} and {@link #buildUrl} use it.
-     * Update the pattern here only; it is the single source of truth.
      */
     static final Pattern VALID_CORTICAL_ID =
-            Pattern.compile("[A-Za-z0-9_]([A-Za-z0-9_\\-]*[A-Za-z0-9_])?");
+            Pattern.compile("[A-Za-z0-9]([A-Za-z0-9_\\-]*[A-Za-z0-9])?");
 
     /**
      * Matches {@code "cortical_dimensions": [w, h, d]} in a JSON response.

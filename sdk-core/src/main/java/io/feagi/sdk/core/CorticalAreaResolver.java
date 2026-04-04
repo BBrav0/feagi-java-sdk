@@ -118,6 +118,10 @@ public interface CorticalAreaResolver {
     /**
      * One-shot resolve using default localhost settings.
      * Equivalent to {@code CorticalAreaResolver.create().resolve(corticalAreaId)}.
+     *
+     * @apiNote Each call to this method constructs a new resolver instance and opens a
+     *          new TCP connection. For repeated lookups, prefer {@link #create()} to reuse
+     *          connection configuration and avoid repeated DNS lookups and TCP handshakes.
      */
     static Optional<CorticalDimensions> resolveOnce(String corticalAreaId) {
         return create().resolve(corticalAreaId);
@@ -125,6 +129,9 @@ public interface CorticalAreaResolver {
 
     /**
      * One-shot resolve with explicit host and port.
+     *
+     * @apiNote Each call opens a new TCP connection — see {@link #resolveOnce(String)}
+     *          for details. Prefer {@link #create(String, int)} for repeated lookups.
      */
     static Optional<CorticalDimensions> resolveOnce(String corticalAreaId, String host, int port) {
         return create(host, port).resolve(corticalAreaId);
@@ -132,6 +139,9 @@ public interface CorticalAreaResolver {
 
     /**
      * One-shot resolve with explicit host, port, and timeout.
+     *
+     * @apiNote Each call opens a new TCP connection — see {@link #resolveOnce(String)}
+     *          for details. Prefer {@link #create(String, int, Duration)} for repeated lookups.
      */
     static Optional<CorticalDimensions> resolveOnce(
             String corticalAreaId, String host, int port, Duration timeout) {

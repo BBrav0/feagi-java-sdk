@@ -294,6 +294,13 @@ class CorticalAreaResolverTest {
     }
 
     @Test
+    void resolve_areaIdWithLeadingUnderscore_throws() {
+        // First character must be alphanumeric — leading underscore is rejected
+        assertThrows(IllegalArgumentException.class,
+                () -> CorticalAreaResolver.resolveOnce("_bad", "localhost", 8000));
+    }
+
+    @Test
     void resolve_areaIdWithLeadingHyphen_throws() {
         assertThrows(IllegalArgumentException.class,
                 () -> CorticalAreaResolver.resolveOnce("-bad", "localhost", 8000));
@@ -395,67 +402,72 @@ class CorticalAreaResolverTest {
                 "Connection-refused must return Optional.empty(), not throw");
     }
 
-    // ── httpGet — non-200/404 status codes (#3) ───────────────────────────────
+    // ── httpGet — non-200/404 status codes (#2) ───────────────────────────────
+    // Uses a raw ServerSocket + Thread rather than com.sun.net.httpserver.HttpServer
+    // to avoid the internal JDK API that may be restricted across JDK versions.
+
+    /**
+     * Starts a minimal single-request HTTP server on an ephemeral port that responds
+     * with the given status code and then closes. The {@code ServerSocket} is bound
+     * on the calling thread before the worker thread starts, so the returned port is
+     * guaranteed to be listening by the time the caller uses it.
+     */
+    private static int serveFixedStatus(int statusCode) throws Exception {
+        // Bind on the calling thread — port is known and socket is listening before we return.
+        java.net.ServerSocket ss = new java.net.ServerSocket(0);
+        int port = ss.getLocalPort();
+
+        Thread t = new Thread(() -> {
+            try (java.net.ServerSocket server = ss;
+                 java.net.Socket conn = server.accept()) {
+                // Read until the end of the HTTP request headers (blank line "\r\n\r\n").
+                // Must block here — in.available() returns 0 until the client sends data,
+                // so a non-blocking drain would close the socket before the client connects.
+                java.io.InputStream in = conn.getInputStream();
+                java.io.OutputStream out = conn.getOutputStream();
+                StringBuilder req = new StringBuilder();
+                int c;
+                while ((c = in.read()) != -1) {
+                    req.append((char) c);
+                    if (req.length() >= 4 &&
+                            req.substring(req.length() - 4).equals("\r\n\r\n")) {
+                        break; // end of headers — safe to respond
+                    }
+                }
+                String response = "HTTP/1.0 " + statusCode + " Status\r\n"
+                        + "Content-Length: 0\r\n\r\n";
+                out.write(response.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                out.flush();
+            } catch (Exception ignored) {}
+        });
+        t.setDaemon(true);
+        t.start();
+        return port;
+    }
 
     @Test
     void httpGet_500response_throwsFeagiSdkException() throws Exception {
-        com.sun.net.httpserver.HttpServer server =
-                com.sun.net.httpserver.HttpServer.create(
-                        new java.net.InetSocketAddress(0), 0);
-        server.createContext("/v1/genome/cortical_area/i__inf", exchange -> {
-            exchange.sendResponseHeaders(500, -1);
-            exchange.close();
-        });
-        server.start();
-        try {
-            int port = server.getAddress().getPort();
-            String url = DefaultCorticalAreaResolver.buildUrl("http", "127.0.0.1", port, "i__inf");
-            assertThrows(FeagiSdkException.class,
-                    () -> DefaultCorticalAreaResolver.httpGet(url, Duration.ofSeconds(2)));
-        } finally {
-            server.stop(0);
-        }
+        int port = serveFixedStatus(500);
+        String url = DefaultCorticalAreaResolver.buildUrl("http", "127.0.0.1", port, "i__inf");
+        assertThrows(FeagiSdkException.class,
+                () -> DefaultCorticalAreaResolver.httpGet(url, Duration.ofSeconds(2)));
     }
 
     @Test
     void httpGet_503response_throwsFeagiSdkException() throws Exception {
-        com.sun.net.httpserver.HttpServer server =
-                com.sun.net.httpserver.HttpServer.create(
-                        new java.net.InetSocketAddress(0), 0);
-        server.createContext("/v1/genome/cortical_area/i__inf", exchange -> {
-            exchange.sendResponseHeaders(503, -1);
-            exchange.close();
-        });
-        server.start();
-        try {
-            int port = server.getAddress().getPort();
-            String url = DefaultCorticalAreaResolver.buildUrl("http", "127.0.0.1", port, "i__inf");
-            assertThrows(FeagiSdkException.class,
-                    () -> DefaultCorticalAreaResolver.httpGet(url, Duration.ofSeconds(2)));
-        } finally {
-            server.stop(0);
-        }
+        int port = serveFixedStatus(503);
+        String url = DefaultCorticalAreaResolver.buildUrl("http", "127.0.0.1", port, "i__inf");
+        assertThrows(FeagiSdkException.class,
+                () -> DefaultCorticalAreaResolver.httpGet(url, Duration.ofSeconds(2)));
     }
 
     @Test
     void httpGet_404response_returnsEmpty() throws Exception {
-        com.sun.net.httpserver.HttpServer server =
-                com.sun.net.httpserver.HttpServer.create(
-                        new java.net.InetSocketAddress(0), 0);
-        server.createContext("/v1/genome/cortical_area/i__inf", exchange -> {
-            exchange.sendResponseHeaders(404, -1);
-            exchange.close();
-        });
-        server.start();
-        try {
-            int port = server.getAddress().getPort();
-            String url = DefaultCorticalAreaResolver.buildUrl("http", "127.0.0.1", port, "i__inf");
-            Optional<String> result =
-                    DefaultCorticalAreaResolver.httpGet(url, Duration.ofSeconds(2));
-            assertTrue(result.isEmpty());
-        } finally {
-            server.stop(0);
-        }
+        int port = serveFixedStatus(404);
+        String url = DefaultCorticalAreaResolver.buildUrl("http", "127.0.0.1", port, "i__inf");
+        Optional<String> result =
+                DefaultCorticalAreaResolver.httpGet(url, Duration.ofSeconds(2));
+        assertTrue(result.isEmpty());
     }
 
     // ── Integration shape test (skipped without live FEAGI) ──────────────────
