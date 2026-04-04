@@ -111,6 +111,12 @@ class CorticalAreaResolverTest {
     }
 
     @Test
+    void buildUrl_httpsScheme() {
+        String url = DefaultCorticalAreaResolver.buildUrl("https", "feagi-host", 443, "i__inf");
+        assertEquals("https://feagi-host:443/v1/genome/cortical_area/i__inf", url);
+    }
+
+    @Test
     void resolve_hostWithInjectedPath_isRejectedByValidation() {
         // resolve() validates corticalAreaId before calling buildUrl.
         // A path-traversal cortical area ID must be caught at the validation step.
@@ -300,20 +306,16 @@ class CorticalAreaResolverTest {
     }
 
     @Test
-    void resolve_areaIdWithInternalHyphen_isValid() {
-        // Internal hyphens are allowed — e.g. "v1-motor"
-        // Verify the regex accepts them (no network call; validation is at construction)
-        CorticalAreaResolver resolver = CorticalAreaResolver.create("localhost", 8000);
-        // Just confirm no IAE is thrown from the ID validation step
-        // (the actual resolve() call will fail with IOException / empty for unreachable host)
-        assertDoesNotThrow(() -> {
-            try {
-                resolver.resolve("v1-motor");
-            } catch (Exception e) {
-                // Network failure is expected in tests — only IAE would indicate a bug
-                if (e instanceof IllegalArgumentException) throw e;
-            }
-        });
+    void resolve_areaIdWithInternalHyphen_matchesValidPattern() {
+        // Verifies the regex accepts internal hyphens without a network call.
+        // Testing the pattern directly is sufficient — the network path is covered
+        // by the HttpServer-backed tests.
+        assertTrue(DefaultCorticalAreaResolver.VALID_CORTICAL_ID
+                .matcher("v1-motor").matches(),
+                "Internal hyphens must be accepted by VALID_CORTICAL_ID");
+        assertTrue(DefaultCorticalAreaResolver.VALID_CORTICAL_ID
+                .matcher("i__inf").matches(),
+                "Double-underscore IDs must be accepted");
     }
 
     @Test

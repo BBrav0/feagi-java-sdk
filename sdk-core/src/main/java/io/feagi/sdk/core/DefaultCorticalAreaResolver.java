@@ -24,8 +24,9 @@ import java.util.regex.Pattern;
  * Default {@link CorticalAreaResolver} implementation backed by
  * {@code java.net.HttpURLConnection}.
  *
- * <p>Obtain instances via {@link CorticalAreaResolver#create()} rather than constructing
- * this class directly.
+ * <p>Package-private — obtain instances via {@link CorticalAreaResolver#create()} rather
+ * than constructing this class directly. The {@code create()} factory methods are the
+ * public API; this class is an implementation detail.
  *
  * <h2>No runtime dependencies</h2>
  * Uses only {@code java.net.HttpURLConnection} — no third-party HTTP library required.
@@ -36,7 +37,7 @@ import java.util.regex.Pattern;
  * <h2>Placement</h2>
  * {@code sdk-core/src/main/java/io/feagi/sdk/core/DefaultCorticalAreaResolver.java}
  */
-public final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
+final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
 
     private static final Logger LOG =
             Logger.getLogger(DefaultCorticalAreaResolver.class.getName());
@@ -63,13 +64,21 @@ public final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
      *       break on nested objects.</li>
      *   <li>Handles optional whitespace around {@code :} and inside the array.</li>
      * </ul>
-     * Known limitation: if the literal text {@code "cortical_dimensions": [w, h, d]}
-     * appears inside a JSON string value, the regex will still match it. This is
-     * acceptable given FEAGI API response shapes; replace with a full JSON parser if
-     * the response format becomes more complex.
+     *
+     * <p>Captures only non-negative integers ({@code \\d+}, no leading minus). Negative
+     * values would be rejected by {@link CorticalDimensions} anyway, but excluding them
+     * at the regex level surfaces a cleaner "missing or malformed" message rather than a
+     * wrapped {@code IllegalArgumentException}. Zero is accepted by the regex and rejected
+     * by the constructor — the constructor's "must be >= 1" message is more informative
+     * than a generic parse failure for that specific case.
+     *
+     * <p>Known limitation: if the literal text {@code "cortical_dimensions": [w, h, d]}
+     * appears inside a JSON string value, the regex will still match it. Acceptable given
+     * FEAGI API response shapes; replace with a proper JSON parser if responses become
+     * more complex.
      */
     static final Pattern DIMENSIONS_PATTERN = Pattern.compile(
-            "\"cortical_dimensions\"\\s*:\\s*\\[\\s*(-?\\d+)\\s*,\\s*(-?\\d+)\\s*,\\s*(-?\\d+)\\s*]");
+            "\"cortical_dimensions\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*]");
 
     private final String host;
     private final int    port;
