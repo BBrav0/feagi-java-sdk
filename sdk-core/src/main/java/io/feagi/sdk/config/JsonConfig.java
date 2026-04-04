@@ -21,10 +21,11 @@ import io.feagi.sdk.core.FeagiEndpoints;
 import io.feagi.sdk.pns.inputs.BaseInput;
 import io.feagi.sdk.pns.outputs.BaseOutput;
 
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.time.Duration;
@@ -122,7 +123,7 @@ public final class JsonConfig {
             "synapse_space", config.getSynapseSpace()
         ));
 
-        try (FileWriter writer = new FileWriter(outputPath.toFile())) {
+        try (Writer writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
             GSON.toJson(jsonMap, writer);
         }
     }
@@ -142,7 +143,7 @@ public final class JsonConfig {
             throw new IOException("JSON file not found: " + jsonPath);
         }
 
-        try (FileReader reader = new FileReader(jsonPath.toFile())) {
+        try (Reader reader = Files.newBufferedReader(jsonPath, StandardCharsets.UTF_8)) {
             Map<?, ?> jsonMap = GSON.fromJson(reader, Map.class);
 
             if (jsonMap == null) {
@@ -169,7 +170,7 @@ public final class JsonConfig {
             Files.createDirectories(parent);
         }
 
-        try (FileWriter writer = new FileWriter(outputPath.toFile())) {
+        try (Writer writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
             GSON.toJson(config, writer);
         }
     }
@@ -189,7 +190,7 @@ public final class JsonConfig {
             throw new IOException("JSON file not found: " + jsonPath);
         }
 
-        try (FileReader reader = new FileReader(jsonPath.toFile())) {
+        try (Reader reader = Files.newBufferedReader(jsonPath, StandardCharsets.UTF_8)) {
             return GSON.fromJson(reader, AgentConfig.class);
         }
     }
