@@ -313,9 +313,14 @@ public final class AgentCapabilities {
          *
          * @param motorUnit motor unit config
          * @return this builder
+         * @throws IllegalStateException if addMotorUnit() was already called
          */
         public Builder motorUnit(MotorUnitConfig motorUnit) {
             this.motorUnit = Objects.requireNonNull(motorUnit, "motorUnit must not be null");
+            if (!this.motorUnits.isEmpty()) {
+                throw new IllegalStateException(
+                        "Cannot call motorUnit() after addMotorUnit() was called. Use either motorUnit() or addMotorUnit(), not both.");
+            }
             return this;
         }
 
@@ -324,9 +329,14 @@ public final class AgentCapabilities {
          *
          * @param motorUnit motor unit config to add
          * @return this builder
+         * @throws IllegalStateException if motorUnit() was already called
          */
         public Builder addMotorUnit(MotorUnitConfig motorUnit) {
             Objects.requireNonNull(motorUnit, "motorUnit must not be null");
+            if (this.motorUnit != null) {
+                throw new IllegalStateException(
+                        "Cannot call addMotorUnit() after motorUnit() was set. Use either motorUnit() or addMotorUnit(), not both.");
+            }
             this.motorUnits.add(motorUnit);
             return this;
         }
