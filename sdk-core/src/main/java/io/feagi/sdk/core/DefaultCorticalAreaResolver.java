@@ -171,6 +171,9 @@ final class DefaultCorticalAreaResolver implements CorticalAreaResolver {
      * @throws FeagiSdkException on unexpected HTTP status (not 200 or 404)
      */
     static Optional<String> httpGet(String url, Duration timeout) throws IOException {
+        // URI.create() throws unchecked IllegalArgumentException for syntactically invalid
+        // URLs. This is unreachable in practice: buildUrl() uses the multi-arg URI constructor
+        // which percent-encodes components, guaranteeing a well-formed URL string here.
         URL urlObj = URI.create(url).toURL();
         HttpURLConnection conn = (HttpURLConnection) urlObj.openConnection();
         try {

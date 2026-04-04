@@ -63,8 +63,14 @@ public interface CorticalAreaResolver {
      * configured host and port.
      *
      * @param corticalAreaId FEAGI cortical area identifier (e.g. {@code "i__inf"});
-     *                       must not be null, blank, or contain characters outside
-     *                       {@code [A-Za-z0-9_-]}
+     *                       must not be null or blank. Character rules (enforced by
+     *                       {@code VALID_CORTICAL_ID}):
+     *                       <ul>
+     *                         <li>First character: ASCII letter or digit ({@code [A-Za-z0-9]})</li>
+     *                         <li>Middle characters: ASCII letter, digit, underscore, or hyphen</li>
+     *                         <li>Last character (if length > 1): ASCII letter or digit</li>
+     *                       </ul>
+     *                       Leading/trailing hyphens and underscores are rejected.
      * @return dimensions if the area was found, {@link Optional#empty()} for 404 or
      *         network error (see class Javadoc for the distinction)
      * @throws FeagiSdkException     if the response is malformed
