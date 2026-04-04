@@ -7,37 +7,36 @@ package io.feagi.sdk.core;
 
 /**
  * Motor socket configuration aligned with FEAGI agent settings.
- *
- * <p>Used with a ZMQ {@code PULL} socket in {@link io.feagi.sdk.core.transport.ZmqTransport}. ZMQ
- * {@code CONFLATE} is not supported on {@code PULL} sockets in libzmq/jeromq, so this type only
- * carries options that apply to the current transport shape ({@code rcvHwm}, {@code lingerMs}).
  */
 public final class MotorSocketConfig {
-    private final int rcvHwm;
+    private final int subscribeHwm;
     private final int lingerMs;
+    private final boolean immediate;
 
     /**
      * Create a motor socket configuration.
      *
-     * @param rcvHwm ZMQ receive high-water mark (must be >= 0)
+     * @param subscribeHwm ZMQ high-water mark for subscribe socket (must be >= 0)
      * @param lingerMs linger duration in ms (must be >= 0)
+     * @param immediate whether to enable ZMQ immediate mode
      */
-    public MotorSocketConfig(int rcvHwm, int lingerMs) {
-        if (rcvHwm < 0) {
-            throw new IllegalArgumentException("rcvHwm must be >= 0");
+    public MotorSocketConfig(int subscribeHwm, int lingerMs, boolean immediate) {
+        if (subscribeHwm < 0) {
+            throw new IllegalArgumentException("subscribeHwm must be >= 0");
         }
         if (lingerMs < 0) {
             throw new IllegalArgumentException("lingerMs must be >= 0");
         }
-        this.rcvHwm = rcvHwm;
+        this.subscribeHwm = subscribeHwm;
         this.lingerMs = lingerMs;
+        this.immediate = immediate;
     }
 
     /**
-     * Return receive high-water mark.
+     * Return subscribe high-water mark.
      */
-    public int rcvHwm() {
-        return rcvHwm;
+    public int subscribeHwm() {
+        return subscribeHwm;
     }
 
     /**
@@ -45,5 +44,12 @@ public final class MotorSocketConfig {
      */
     public int lingerMs() {
         return lingerMs;
+    }
+
+    /**
+     * Return immediate mode flag.
+     */
+    public boolean immediate() {
+        return immediate;
     }
 }

@@ -5,13 +5,49 @@
 
 package io.feagi.sdk.core;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 /**
  * Declared agent capabilities (vision, motor, visualization, sensory, and custom JSON).
+ *
+ * <p>This class supports both the legacy capability format and the FEAGI 2.0
+ * {@code vision_unit} / {@code motor_unit} format for compatibility with the
+ * Python SDK.</p>
+ *
+ * <p>FEAGI 2.0 format example:
+ * <pre>{@code
+ * // Vision unit format
+ * AgentCapabilities caps = AgentCapabilities.builder()
+ *     .visionUnit(VisionUnitConfig.builder()
+ *         .modality("camera")
+ *         .resolution(640, 480)
+ *         .channels(3)
+ *         .unit(0)
+ *         .group(0)
+ *         .build())
+ *     .motorUnit(MotorUnitConfig.builder()
+ *         .type("servo")
+ *         .range(0.0, 180.0)
+ *         .unit(0)
+ *         .group(1)
+ *         .build())
+ *     .build();
+ *
+ * // Multiple motor units format
+ * AgentCapabilities caps = AgentCapabilities.builder()
+ *     .visionUnit(vision)
+ *     .addMotorUnit(servoMotor)
+ *     .addMotorUnit(rotaryMotor)
+ *     .build();
+ * }</pre>
+ *
+ * @see VisionUnitConfig
+ * @see MotorUnitConfig
  */
 public final class AgentCapabilities {
     private final VisionCapability vision;
@@ -20,6 +56,13 @@ public final class AgentCapabilities {
     private final SensoryCapability sensory;
     private final Map<String, String> customCapabilitiesJson;
 
+    // FEAGI 2.0 vision_unit support
+    private final VisionUnitConfig visionUnit;
+
+    // FEAGI 2.0 motor_unit / motor_units support
+    private final MotorUnitConfig motorUnit;
+    private final List<MotorUnitConfig> motorUnits;
+
     private AgentCapabilities(Builder builder) {
         this.vision = builder.vision;
         this.motor = builder.motor;
@@ -27,6 +70,9 @@ public final class AgentCapabilities {
         this.sensory = builder.sensory;
         this.customCapabilitiesJson = Collections.unmodifiableMap(new LinkedHashMap<>(
                 builder.customCapabilitiesJson));
+        this.visionUnit = builder.visionUnit;
+        this.motorUnit = builder.motorUnit;
+        this.motorUnits = Collections.unmodifiableList(new ArrayList<>(builder.motorUnits));
         validateAtLeastOne();
     }
 
@@ -70,6 +116,60 @@ public final class AgentCapabilities {
      */
     public Map<String, String> customCapabilitiesJson() {
         return customCapabilitiesJson;
+    }
+
+    /**
+     * Return the FEAGI 2.0 vision unit configuration (nullable).
+     *
+     * @return vision unit config, or null if using legacy format
+     */
+    public VisionUnitConfig visionUnit() {
+        return visionUnit;
+    }
+
+    /**
+     * Return the FEAGI 2.0 primary motor unit configuration (nullable).
+     *
+     * @return motor unit config, or null if using legacy format or motor_units
+     */
+    public MotorUnitConfig motorUnit() {
+        return motorUnit;
+    }
+
+    /**
+     * Return the FEAGI 2.0 multiple motor units list.
+     *
+     * @return unmodifiable list of motor unit configs
+     */
+    public List<MotorUnitConfig> motorUnits() {
+        return motorUnits;
+    }
+
+    /**
+     * Check if using FEAGI 2.0 vision_unit format.
+     *
+     * @return true if visionUnit is set
+     */
+    public boolean hasVisionUnit() {
+        return visionUnit != null;
+    }
+
+    /**
+     * Check if using FEAGI 2.0 motor_unit format (single).
+     *
+     * @return true if motorUnit is set and motorUnits is empty
+     */
+    public boolean hasMotorUnit() {
+        return motorUnit != null && motorUnits.isEmpty();
+    }
+
+    /**
+     * Check if using FEAGI 2.0 motor_units format (multiple).
+     *
+     * @return true if motorUnits is not empty
+     */
+    public boolean hasMotorUnits() {
+        return !motorUnits.isEmpty();
     }
 
     /**
@@ -122,13 +222,12 @@ public final class AgentCapabilities {
     }
 
     private void validateAtLeastOne() {
-        if (vision == null
-                && motor == null
-                && visualization == null
-                && sensory == null
-                && customCapabilitiesJson.isEmpty()) {
+        boolean hasLegacyCapability = (vision != null || motor != null || visualization != null || sensory != null || !customCapabilitiesJson.isEmpty());
+        boolean hasFeagi2Capability = (visionUnit != null || motorUnit != null || !motorUnits.isEmpty());
+
+        if (!hasLegacyCapability && !hasFeagi2Capability) {
             throw new IllegalArgumentException(
-                    "Agent must declare at least one capability");
+                    "Agent must declare at least one capability (legacy or FEAGI 2.0 format)");
         }
     }
 
@@ -141,6 +240,11 @@ public final class AgentCapabilities {
         private VisualizationCapability visualization;
         private SensoryCapability sensory;
         private final Map<String, String> customCapabilitiesJson = new LinkedHashMap<>();
+
+        // FEAGI 2.0 vision_unit / motor_unit support
+        private VisionUnitConfig visionUnit;
+        private MotorUnitConfig motorUnit;
+        private final List<MotorUnitConfig> motorUnits = new ArrayList<>();
 
         private Builder() {}
 
@@ -190,6 +294,50 @@ public final class AgentCapabilities {
                 throw new IllegalArgumentException("jsonValue must not be empty");
             }
             customCapabilitiesJson.put(key, jsonValue);
+            return this;
+        }
+
+        /**
+         * Set the FEAGI 2.0 vision_unit configuration.
+         *
+         * @param visionUnit vision unit config
+         * @return this builder
+         */
+        public Builder visionUnit(VisionUnitConfig visionUnit) {
+            this.visionUnit = Objects.requireNonNull(visionUnit, "visionUnit must not be null");
+            return this;
+        }
+
+        /**
+         * Set the FEAGI 2.0 motor_unit configuration (single motor unit).
+         *
+         * @param motorUnit motor unit config
+         * @return this builder
+         * @throws IllegalStateException if addMotorUnit() was already called
+         */
+        public Builder motorUnit(MotorUnitConfig motorUnit) {
+            this.motorUnit = Objects.requireNonNull(motorUnit, "motorUnit must not be null");
+            if (!this.motorUnits.isEmpty()) {
+                throw new IllegalStateException(
+                        "Cannot call motorUnit() after addMotorUnit() was called. Use either motorUnit() or addMotorUnit(), not both.");
+            }
+            return this;
+        }
+
+        /**
+         * Add a FEAGI 2.0 motor_unit to the motor_units list.
+         *
+         * @param motorUnit motor unit config to add
+         * @return this builder
+         * @throws IllegalStateException if motorUnit() was already called
+         */
+        public Builder addMotorUnit(MotorUnitConfig motorUnit) {
+            Objects.requireNonNull(motorUnit, "motorUnit must not be null");
+            if (this.motorUnit != null) {
+                throw new IllegalStateException(
+                        "Cannot call addMotorUnit() after motorUnit() was set. Use either motorUnit() or addMotorUnit(), not both.");
+            }
+            this.motorUnits.add(motorUnit);
             return this;
         }
 
