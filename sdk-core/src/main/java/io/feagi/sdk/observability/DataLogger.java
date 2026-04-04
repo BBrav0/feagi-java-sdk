@@ -5,24 +5,27 @@
 
 package io.feagi.sdk.observability;
 
-import java.io.FileWriter;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Instant;
+import java.nio.file.StandardOpenOption;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
 /**
@@ -58,11 +61,12 @@ import java.util.logging.Logger;
  * @see Monitor
  * @see MetricsCollector
  */
-public class DataLogger implements Monitor {
+public class DataLogger implements Monitor, AutoCloseable {
 
     private static final Logger LOGGER = Logger.getLogger(DataLogger.class.getName());
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
         DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
+    private static final Gson GSON = new GsonBuilder().create();
 
     private final Path outputFile;
     private final Format format;
@@ -73,13 +77,14 @@ public class DataLogger implements Monitor {
     private final int maxSampleSize;
     private final boolean enabled;
 
-    private final List<Map<String, Object>> entries;
+    private final ConcurrentLinkedQueue<Map<String, Object>> entries;
     private PrintWriter fileHandle;
     private PrintWriter csvWriter;
-    private long packetCounter;
+    private final AtomicLong packetCounter;
     private final Random random;
+    private final Object fileLock = new Object();
 
-    private boolean csvHeaderWritten;
+    private volatile boolean csvHeaderWritten;
 
     /**
      * Output format for data logging.
@@ -109,9 +114,9 @@ public class DataLogger implements Monitor {
         this.maxSampleSize = builder.maxSampleSize > 0 ? builder.maxSampleSize : 10;
         this.enabled = builder.enabled;
 
-        this.entries = new ArrayList<>();
+        this.entries = new ConcurrentLinkedQueue<>();
         this.random = new Random();
-        this.packetCounter = 0;
+        this.packetCounter = new AtomicLong(0);
         this.csvHeaderWritten = false;
 
         // Create output directory if needed
@@ -120,11 +125,11 @@ public class DataLogger implements Monitor {
             Files.createDirectories(parentDir);
         }
 
-        // Open file based on format
+        // Open file based on format with UTF-8 encoding
         if (this.format == Format.JSONL) {
-            this.fileHandle = new PrintWriter(new FileWriter(this.outputFile.toFile(), false));
+            this.fileHandle = new PrintWriter(Files.newBufferedWriter(this.outputFile, StandardCharsets.UTF_8));
         } else if (this.format == Format.CSV) {
-            this.fileHandle = new PrintWriter(new FileWriter(this.outputFile.toFile(), false));
+            this.fileHandle = new PrintWriter(Files.newBufferedWriter(this.outputFile, StandardCharsets.UTF_8));
             // Write header
             writeCsvHeader();
         }
@@ -189,11 +194,9 @@ public class DataLogger implements Monitor {
             return;
         }
 
-        packetCounter++;
-
         Map<String, Object> entry = new HashMap<>();
         entry.put("timestamp", formatTimestamp());
-        entry.put("packet_id", packetCounter);
+        entry.put("packet_id", packetCounter.incrementAndGet());
         entry.put("type", "sensory_input");
 
         // Extract fields
@@ -243,11 +246,9 @@ public class DataLogger implements Monitor {
             return;
         }
 
-        packetCounter++;
-
         Map<String, Object> entry = new HashMap<>();
         entry.put("timestamp", formatTimestamp());
-        entry.put("packet_id", packetCounter);
+        entry.put("packet_id", packetCounter.incrementAndGet());
         entry.put("type", "motor_output");
 
         // Extract fields
@@ -283,16 +284,18 @@ public class DataLogger implements Monitor {
         Objects.requireNonNull(entry, "entry must not be null");
 
         if (format == Format.JSONL) {
-            // JSON Lines format
-            if (fileHandle != null) {
-                fileHandle.println(mapToJsonLine(entry));
-                fileHandle.flush();
+            // JSON Lines format - synchronized file access, using Gson for serialization
+            synchronized (fileLock) {
+                if (fileHandle != null) {
+                    fileHandle.println(GSON.toJson(entry));
+                    fileHandle.flush();
+                }
             }
         } else if (format == Format.JSON) {
-            // JSON array format (accumulate in memory)
+            // JSON array format (accumulate in memory - ConcurrentLinkedQueue is thread-safe)
             entries.add(entry);
         } else if (format == Format.CSV) {
-            // CSV format
+            // CSV format - synchronized file access
             writeCsvEntry(entry);
         }
     }
@@ -303,29 +306,31 @@ public class DataLogger implements Monitor {
      * @param entry the log entry
      */
     private void writeCsvEntry(Map<String, Object> entry) {
-        if (fileHandle == null) return;
+        synchronized (fileLock) {
+            if (fileHandle == null) return;
 
-        // Ensure header is written
-        if (!csvHeaderWritten) {
-            writeCsvHeader();
+            // Ensure header is written
+            if (!csvHeaderWritten) {
+                writeCsvHeader();
+            }
+
+            Object corticalAreasObj = entry.get("cortical_areas");
+            String corticalAreasStr = "";
+            if (corticalAreasObj instanceof List) {
+                corticalAreasStr = String.join(",", (List<String>) corticalAreasObj);
+            }
+
+            fileHandle.printf(Locale.US, "%s,%s,%s,%d,%d,%.2f,%d%n",
+                entry.getOrDefault("timestamp", ""),
+                entry.getOrDefault("type", ""),
+                corticalAreasStr,
+                getLongValue(entry, "neuron_count"),
+                getLongValue(entry, "packet_size_bytes"),
+                getDoubleValue(entry, "duration_ms"),
+                getLongValue(entry, "command_count")
+            );
+            fileHandle.flush();
         }
-
-        Object corticalAreasObj = entry.get("cortical_areas");
-        String corticalAreasStr = "";
-        if (corticalAreasObj instanceof List) {
-            corticalAreasStr = String.join(",", (List<String>) corticalAreasObj);
-        }
-
-        fileHandle.printf(Locale.US, "%s,%s,%s,%d,%d,%.2f,%d%n",
-            entry.getOrDefault("timestamp", ""),
-            entry.getOrDefault("type", ""),
-            corticalAreasStr,
-            getLongValue(entry, "neuron_count"),
-            getLongValue(entry, "packet_size_bytes"),
-            getDoubleValue(entry, "duration_ms"),
-            getLongValue(entry, "command_count")
-        );
-        fileHandle.flush();
     }
 
     /**
@@ -359,116 +364,44 @@ public class DataLogger implements Monitor {
     }
 
     /**
-     * Converts map to JSON line string.
-     *
-     * @param map the map to convert
-     * @return JSON string
-     */
-    private String mapToJsonLine(Map<String, Object> map) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("{");
-        boolean first = true;
-
-        for (Map.Entry<String, Object> entry : map.entrySet()) {
-            if (!first) sb.append(",");
-            first = false;
-
-            sb.append("\"").append(escapeJson(entry.getKey())).append("\":");
-            Object value = entry.getValue();
-            sb.append(valueToJson(value));
-        }
-
-        sb.append("}");
-        return sb.toString();
-    }
-
-    /**
-     * Converts object to JSON value string.
-     *
-     * @param value the value
-     * @return JSON string representation
-     */
-    @SuppressWarnings("unchecked")
-    private String valueToJson(Object value) {
-        if (value == null) {
-            return "null";
-        } else if (value instanceof String) {
-            return "\"" + escapeJson((String) value) + "\"";
-        } else if (value instanceof Number || value instanceof Boolean) {
-            return value.toString();
-        } else if (value instanceof List) {
-            StringBuilder sb = new StringBuilder();
-            sb.append("[");
-            boolean first = true;
-            for (Object item : (List<?>) value) {
-                if (!first) sb.append(",");
-                first = false;
-                sb.append(valueToJson(item));
-            }
-            sb.append("]");
-            return sb.toString();
-        } else if (value instanceof Map) {
-            StringBuilder sb = new StringBuilder();
-            sb.append("{");
-            boolean first = true;
-            for (Map.Entry<?, ?> entry : ((Map<String, Object>) value).entrySet()) {
-                if (!first) sb.append(",");
-                first = false;
-                sb.append("\"").append(escapeJson((String) entry.getKey())).append("\":");
-                sb.append(valueToJson(entry.getValue()));
-            }
-            sb.append("}");
-            return sb.toString();
-        } else {
-            return "\"" + escapeJson(value.toString()) + "\"";
-        }
-    }
-
-    /**
-     * Escapes special characters for JSON string.
-     *
-     * @param s the string to escape
-     * @return escaped string
-     */
-    private String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-    }
-
-    /**
      * Closes the log file and flushes data.
      *
      * @throws IOException if write fails
      */
+    @Override
     public void close() throws IOException {
         if (format == Format.JSON && !entries.isEmpty()) {
-            // Write accumulated entries to JSON file
-            try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile.toFile()))) {
+            // Write accumulated entries to JSON file using Gson
+            // Snapshot the queue to avoid concurrent modification
+            List<Map<String, Object>> snapshot = new ArrayList<>(entries);
+            try (PrintWriter writer = new PrintWriter(
+                    Files.newBufferedWriter(outputFile, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))) {
                 writer.println("[");
-                for (int i = 0; i < entries.size(); i++) {
+                int size = snapshot.size();
+                int i = 0;
+                for (Map<String, Object> entry : snapshot) {
                     writer.print("  ");
-                    writer.println(mapToJsonLine(entries.get(i)));
-                    if (i < entries.size() - 1) {
+                    writer.print(GSON.toJson(entry));
+                    if (i < size - 1) {
                         writer.println(",");
                     } else {
                         writer.println();
                     }
+                    i++;
                 }
                 writer.println("]");
             }
         }
 
-        if (fileHandle != null) {
-            fileHandle.close();
-            fileHandle = null;
+        synchronized (fileLock) {
+            if (fileHandle != null) {
+                fileHandle.close();
+                fileHandle = null;
+            }
         }
 
         if (enabled) {
-            LOGGER.info("Data logger closed: " + packetCounter + " packets logged");
+            LOGGER.info("Data logger closed: " + packetCounter.get() + " packets logged");
         }
     }
 
@@ -478,7 +411,7 @@ public class DataLogger implements Monitor {
      * @return packet count
      */
     public long getPacketCount() {
-        return packetCounter;
+        return packetCounter.get();
     }
 
     /**
