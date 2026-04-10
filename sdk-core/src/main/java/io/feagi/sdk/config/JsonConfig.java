@@ -257,7 +257,7 @@ public final class JsonConfig {
             .profilingEnabled(getBool(performance, "profiling_enabled", source))
             .logLevel(getString(logging, "level", source))
             .fileLogging(getBool(logging, "file_logging", source))
-            .serviceStartupTimeout(Duration.ofSeconds((long) getDouble(timeouts, "service_startup", source)))
+            .serviceStartupTimeout(Duration.ofMillis((long) (getDouble(timeouts, "service_startup", source) * 1000)))
             .neuronSpace(getInt(connectome, "neuron_space", source))
             .synapseSpace(getInt(connectome, "synapse_space", source))
             .build();

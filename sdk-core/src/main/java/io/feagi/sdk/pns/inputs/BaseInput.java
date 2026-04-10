@@ -38,7 +38,7 @@ public abstract class BaseInput<T> {
      * Registration state flag.
      * Tracks whether this input has been registered with the cache.
      */
-    private boolean registered = false;
+    private volatile boolean registered = false;
 
     /**
      * Creates a new BaseInput with the specified group ID.

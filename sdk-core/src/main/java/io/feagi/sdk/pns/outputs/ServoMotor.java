@@ -327,8 +327,13 @@ public class ServoMotor extends BaseOutput {
          *
          * @param minAngle the minimum angle in degrees
          * @return this builder
+         * @throws IllegalStateException if maxAngle is already set and minAngle >= maxAngle
          */
         public Builder minAngle(double minAngle) {
+            if (this.maxAngle != 0 && minAngle >= this.maxAngle) {
+                throw new IllegalArgumentException(
+                    "minAngle must be less than maxAngle, got [" + minAngle + ", " + this.maxAngle + "]");
+            }
             this.minAngle = minAngle;
             return this;
         }
@@ -338,8 +343,13 @@ public class ServoMotor extends BaseOutput {
          *
          * @param maxAngle the maximum angle in degrees
          * @return this builder
+         * @throws IllegalStateException if minAngle is already set and minAngle >= maxAngle
          */
         public Builder maxAngle(double maxAngle) {
+            if (this.minAngle != 0 && this.minAngle >= maxAngle) {
+                throw new IllegalArgumentException(
+                    "maxAngle must be greater than minAngle, got [" + this.minAngle + ", " + maxAngle + "]");
+            }
             this.maxAngle = maxAngle;
             return this;
         }
@@ -359,10 +369,14 @@ public class ServoMotor extends BaseOutput {
         /**
          * Set the gain (amplification factor).
          *
-         * @param gain the gain value (should be > 0)
+         * @param gain the gain value (must be positive)
          * @return this builder
+         * @throws IllegalArgumentException if gain is not positive
          */
         public Builder gain(double gain) {
+            if (gain <= 0) {
+                throw new IllegalArgumentException("gain must be positive, got: " + gain);
+            }
             this.gain = gain;
             return this;
         }
@@ -370,10 +384,15 @@ public class ServoMotor extends BaseOutput {
         /**
          * Set the incremental step ratio.
          *
-         * @param ratio the step ratio (0.0 to 1.0)
+         * @param ratio the step ratio (must be in range (0.0, 1.0])
          * @return this builder
+         * @throws IllegalArgumentException if ratio is not in valid range
          */
         public Builder incrementalStepRatio(double ratio) {
+            if (ratio <= 0 || ratio > 1.0) {
+                throw new IllegalArgumentException(
+                    "incrementalStepRatio must be in range (0.0, 1.0], got: " + ratio);
+            }
             this.incrementalStepRatio = ratio;
             return this;
         }

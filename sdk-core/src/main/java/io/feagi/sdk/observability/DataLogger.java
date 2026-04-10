@@ -76,13 +76,16 @@ public class DataLogger implements Monitor, AutoCloseable {
     private final boolean includeDataSamples;
     private final int maxSampleSize;
     private final boolean enabled;
+    private final int maxEntries;
+    private final WhenFull whenFull;
 
     private final ConcurrentLinkedQueue<Map<String, Object>> entries;
     private PrintWriter fileHandle;
-    private PrintWriter csvWriter;
     private final AtomicLong packetCounter;
+    private final AtomicLong droppedEntries;
     private final Random random;
     private final Object fileLock = new Object();
+    private volatile boolean closed;
 
     private volatile boolean csvHeaderWritten;
 
@@ -96,6 +99,16 @@ public class DataLogger implements Monitor, AutoCloseable {
         JSONL,
         /** CSV tabular format */
         CSV
+    }
+
+    /**
+     * Behavior when maxEntries limit is reached (JSON format only).
+     */
+    public enum WhenFull {
+        /** Drop oldest entries when limit is reached */
+        DROP_OLDEST,
+        /** Drop new entries when limit is reached */
+        DROP_NEWEST
     }
 
     /**
@@ -113,10 +126,13 @@ public class DataLogger implements Monitor, AutoCloseable {
         this.includeDataSamples = builder.includeDataSamples;
         this.maxSampleSize = builder.maxSampleSize > 0 ? builder.maxSampleSize : 10;
         this.enabled = builder.enabled;
+        this.maxEntries = builder.maxEntries;
+        this.whenFull = builder.whenFull;
 
         this.entries = new ConcurrentLinkedQueue<>();
         this.random = new Random();
         this.packetCounter = new AtomicLong(0);
+        this.droppedEntries = new AtomicLong(0);
         this.csvHeaderWritten = false;
 
         // Create output directory if needed
@@ -292,7 +308,21 @@ public class DataLogger implements Monitor, AutoCloseable {
                 }
             }
         } else if (format == Format.JSON) {
-            // JSON array format (accumulate in memory - ConcurrentLinkedQueue is thread-safe)
+            // JSON array format (accumulate in memory - enforce maxEntries limit)
+            if (maxEntries > 0) {
+                // Check if we're at the limit
+                while (entries.size() >= maxEntries) {
+                    if (whenFull == WhenFull.DROP_OLDEST) {
+                        // Remove oldest entry to make room
+                        entries.poll();
+                        droppedEntries.incrementAndGet();
+                    } else {
+                        // DROP_NEWEST - skip this entry
+                        droppedEntries.incrementAndGet();
+                        return;
+                    }
+                }
+            }
             entries.add(entry);
         } else if (format == Format.CSV) {
             // CSV format - synchronized file access
@@ -370,6 +400,10 @@ public class DataLogger implements Monitor, AutoCloseable {
      */
     @Override
     public void close() throws IOException {
+        if (closed) {
+            return;  // Idempotent close
+        }
+
         if (format == Format.JSON && !entries.isEmpty()) {
             // Write accumulated entries to JSON file using Gson
             // Snapshot the queue to avoid concurrent modification
@@ -391,6 +425,7 @@ public class DataLogger implements Monitor, AutoCloseable {
                 }
                 writer.println("]");
             }
+            entries.clear();  // Clear entries to prevent re-writing on second close()
         }
 
         synchronized (fileLock) {
@@ -401,8 +436,14 @@ public class DataLogger implements Monitor, AutoCloseable {
         }
 
         if (enabled) {
-            LOGGER.info("Data logger closed: " + packetCounter.get() + " packets logged");
+            String msg = "Data logger closed: " + packetCounter.get() + " packets logged";
+            if (droppedEntries.get() > 0) {
+                msg += ", " + droppedEntries.get() + " entries dropped (maxEntries limit reached)";
+            }
+            LOGGER.info(msg);
         }
+
+        closed = true;
     }
 
     /**
@@ -412,6 +453,15 @@ public class DataLogger implements Monitor, AutoCloseable {
      */
     public long getPacketCount() {
         return packetCounter.get();
+    }
+
+    /**
+     * Returns the number of entries dropped due to maxEntries limit (JSON format only).
+     *
+     * @return dropped entry count
+     */
+    public long getDroppedEntryCount() {
+        return droppedEntries.get();
     }
 
     /**
@@ -426,6 +476,8 @@ public class DataLogger implements Monitor, AutoCloseable {
         private boolean includeDataSamples = false;
         private int maxSampleSize = 10;
         private boolean enabled = true;
+        private int maxEntries = 0;  // 0 = unlimited
+        private WhenFull whenFull = WhenFull.DROP_OLDEST;
 
         /**
          * Sets the output file path.
@@ -512,6 +564,38 @@ public class DataLogger implements Monitor, AutoCloseable {
          */
         public Builder enabled(boolean enabled) {
             this.enabled = enabled;
+            return this;
+        }
+
+        /**
+         * Sets the maximum number of entries to keep in memory (JSON format only).
+         *
+         * <p>When the limit is reached, the behavior is determined by {@link #whenFull(WhenFull)}.
+         * Default is 0 (unlimited).</p>
+         *
+         * @param maxEntries maximum entries (0 = unlimited, must be >= 0)
+         * @return this builder
+         * @throws IllegalArgumentException if maxEntries is negative
+         */
+        public Builder maxEntries(int maxEntries) {
+            if (maxEntries < 0) {
+                throw new IllegalArgumentException("maxEntries must be >= 0, got: " + maxEntries);
+            }
+            this.maxEntries = maxEntries;
+            return this;
+        }
+
+        /**
+         * Sets the behavior when maxEntries limit is reached (JSON format only).
+         *
+         * <p>Default is {@link WhenFull#DROP_OLDEST}.</p>
+         *
+         * @param whenFull the behavior when full
+         * @return this builder
+         * @throws NullPointerException if whenFull is null
+         */
+        public Builder whenFull(WhenFull whenFull) {
+            this.whenFull = Objects.requireNonNull(whenFull, "whenFull must not be null");
             return this;
         }
 

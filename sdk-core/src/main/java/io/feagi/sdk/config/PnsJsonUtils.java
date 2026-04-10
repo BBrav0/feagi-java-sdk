@@ -24,10 +24,11 @@ import io.feagi.sdk.pns.outputs.OutputTextStream;
 import io.feagi.sdk.pns.outputs.RotaryMotor;
 import io.feagi.sdk.pns.outputs.ServoMotor;
 
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -305,7 +306,7 @@ public final class PnsJsonUtils {
             Files.createDirectories(parent);
         }
 
-        try (FileWriter writer = new FileWriter(outputPath.toFile())) {
+        try (Writer writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
             GSON.toJson(obj, writer);
         }
     }
@@ -317,7 +318,7 @@ public final class PnsJsonUtils {
             throw new IOException("JSON file not found: " + jsonPath);
         }
 
-        try (FileReader reader = new FileReader(jsonPath.toFile())) {
+        try (Reader reader = Files.newBufferedReader(jsonPath, StandardCharsets.UTF_8)) {
             return GSON.fromJson(reader, clazz);
         }
     }
