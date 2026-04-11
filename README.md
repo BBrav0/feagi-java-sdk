@@ -27,6 +27,29 @@ Recommended placement for the bridge sources:
 ./gradlew build
 ```
 
+### Maven Central publication
+This repository now includes a Maven multi-module build for publication:
+- Parent POM: `pom.xml`
+- Module POMs: `sdk-core/pom.xml`, `sdk-engine/pom.xml`, `sdk-native/pom.xml`, `sdk-cli/pom.xml`
+- Release workflow: `.github/workflows/publish-maven-central.yml`
+
+Before publishing, create a Sonatype namespace for `org.feagi` and configure these GitHub secrets:
+- `OSSRH_USERNAME`
+- `OSSRH_TOKEN`
+- `MAVEN_GPG_PRIVATE_KEY` (base64-encoded armored private key)
+- `MAVEN_GPG_PASSPHRASE`
+
+Local signed deployment command:
+```bash
+mvn -Prelease clean deploy
+```
+
+Tag-triggered CI deployment:
+```bash
+git tag v0.0.1
+git push origin v0.0.1
+```
+
 ### Native dependency model (planned)
 - Publish native libs from `feagi-java-ffi` as **platform classifier artifacts** (e.g., `linux-aarch64`, `linux-x86_64`, `osx-aarch64`, `windows-x86_64`).
 - `sdk-native` will be responsible for loading the correct native library and enforcing the ABI handshake.
