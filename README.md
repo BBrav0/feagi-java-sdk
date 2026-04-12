@@ -33,21 +33,23 @@ This repository now includes a Maven multi-module build for publication:
 - Module POMs: `sdk-core/pom.xml`, `sdk-engine/pom.xml`, `sdk-native/pom.xml`, `sdk-cli/pom.xml`
 - Release workflow: `.github/workflows/publish-maven-central.yml`
 
-Before publishing, create a Sonatype namespace for `org.feagi` and configure these GitHub secrets:
+Before publishing, create and verify a Sonatype Central namespace for `org.feagi`, then configure these GitHub secrets:
 - `OSSRH_USERNAME`
 - `OSSRH_TOKEN`
 - `MAVEN_GPG_PRIVATE_KEY` (base64-encoded armored private key)
 - `MAVEN_GPG_PASSPHRASE`
+
+`OSSRH_USERNAME` and `OSSRH_TOKEN` must be populated with the token-based `username` and `password` values from the Sonatype Central token settings snippet.
 
 Local signed deployment command:
 ```bash
 mvn -Prelease clean deploy
 ```
 
-Tag-triggered CI deployment:
+Release-triggered CI deployment:
 ```bash
-git tag v0.0.1
-git push origin v0.0.1
+# Create and publish GitHub release 0.0.1
+# This triggers .github/workflows/publish-maven-central.yml
 ```
 
 ### Native dependency model (planned)
