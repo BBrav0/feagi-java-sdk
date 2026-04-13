@@ -1,0 +1,95 @@
+name: Publish to Maven Central
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ffi_version:
+        description: 'feagi-java-ffi release tag to fetch native binaries from'
+        required: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+        run: echo "$GPG_PRIVATE_KEY" | base64 --decode | gpg --batch --import
+
+      - name: Resolve FFI version
+        run: echo "FFI_VERSION=${{ inputs.ffi_version || github.event.release.tag_name || 'latest' }}" >> $GITHUB_ENV
+
+      - name: Download native binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          declare -A PLATFORM_FILES=(
+            ["linux-x86_64"]="libfeagi_java_ffi.so"
+            ["linux-aarch64"]="libfeagi_java_ffi.so"
+            ["osx-x86_64"]="libfeagi_java_ffi.dylib"
+            ["osx-aarch64"]="libfeagi_java_ffi.dylib"
+            ["windows-x86_64"]="feagi_java_ffi.dll"
+          )
+
+          for platform in "${!PLATFORM_FILES[@]}"; do
+            file="${PLATFORM_FILES[$platform]}"
+            dir="sdk-native/src/main/resources/native/${platform}"
+            mkdir -p "$dir"
+            echo "Downloading ${file} for ${platform}..."
+            if ! gh release download "$FFI_VERSION" \
+              --repo feagi/feagi-java-ffi \
+              --pattern "${platform}/${file}" \
+              --dir "$dir"; then
+              echo "::error::Failed to download native binaries for ${platform}"
+              exit 1
+            fi
+          done
+
+      - name: Verify native binary downloads
+        run: |
+          set -euo pipefail
+
+          FILES=(
+            "sdk-native/src/main/resources/native/linux-x86_64/libfeagi_java_ffi.so"
+            "sdk-native/src/main/resources/native/linux-aarch64/libfeagi_java_ffi.so"
+            "sdk-native/src/main/resources/native/osx-x86_64/libfeagi_java_ffi.dylib"
+            "sdk-native/src/main/resources/native/osx-aarch64/libfeagi_java_ffi.dylib"
+            "sdk-native/src/main/resources/native/windows-x86_64/feagi_java_ffi.dll"
+          )
+
+          for f in "${FILES[@]}"; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Missing or empty native binary: $f"
+              exit 1
+            fi
+            echo "✓ $f ($(stat --printf='%s' "$f") bytes)"
+          done
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Build and publish
+        env:
+          ORG_GRADLE_PROJECT_signingKeyId: ${{ secrets.MAVEN_GPG_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          ORG_GRADLE_PROJECT_ossrhUsername: ${{ secrets.OSSRH_USERNAME }}
+          ORG_GRADLE_PROJECT_ossrhPassword: ${{ secrets.OSSRH_TOKEN }}
+        run: ./gradlew publish
