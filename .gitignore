@@ -32,6 +32,11 @@ hs_err_pid*
 *.dll
 *.jnilib
 
+# Allow placeholder native libs for platform-classifier JARs
+!sdk-native/src/main/resources/native/**/*.so
+!sdk-native/src/main/resources/native/**/*.dylib
+!sdk-native/src/main/resources/native/**/*.dll
+
 # FEAGI runtime (created by `feagi init`)
 .feagi/
 
