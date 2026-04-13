@@ -15,6 +15,24 @@ public enum AgentType {
     MOTOR,
     BOTH,
     VISUALIZATION,
-    INFRASTRUCTURE
+    INFRASTRUCTURE;
+
+    /**
+     * Check if this agent type requires sensory socket configuration.
+     *
+     * @return true if sensory socket is required (SENSORY or BOTH)
+     */
+    public boolean needsSensory() {
+        return this == SENSORY || this == BOTH;
+    }
+
+    /**
+     * Check if this agent type requires motor socket configuration.
+     *
+     * @return true if motor socket is required (MOTOR or BOTH)
+     */
+    public boolean needsMotor() {
+        return this == MOTOR || this == BOTH;
+    }
 }
 

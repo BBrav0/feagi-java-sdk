@@ -10,6 +10,10 @@ java {
     }
 }
 
+tasks.withType<JavaCompile> {
+    options.encoding = "UTF-8"
+}
+
 sourceSets {
     test {
         java.setSrcDirs(listOf("tests"))
@@ -88,4 +92,12 @@ signing {
 
 dependencies {
     // Intentionally minimal for the skeleton.
+    implementation("org.zeromq:jeromq:0.6.0")
+    implementation("com.google.code.gson:gson:2.11.0")
+
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

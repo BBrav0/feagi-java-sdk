@@ -50,3 +50,6 @@ hs_err_pid*
 # Verification artifacts
 *.jsh
 feagi-discovery-verification-log.txt
+
+# Python SDK reference (legacy path) — local only
+/python sdk for reference/

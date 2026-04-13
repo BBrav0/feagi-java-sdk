@@ -1,0 +1,126 @@
+/*
+ * Copyright 2026 Neuraville Inc.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package io.feagi.sdk.core;
+
+import java.time.Duration;
+import java.util.Objects;
+
+/**
+ * Shared validation helpers for WebSocket configuration classes.
+ *
+ * <p>Package-private utility class to avoid duplication of validation logic
+ * across {@link WebSocketClientConfig} and {@link WebSocketRelayConfig}.
+ */
+final class WebSocketConfigValidation {
+
+    private WebSocketConfigValidation() {
+        // Utility class, prevent instantiation
+    }
+
+    /**
+     * Validate that a string is non-null and non-blank.
+     *
+     * @param value the string to validate
+     * @param name the parameter name for error messages
+     * @return the validated string
+     * @throws NullPointerException if value is null
+     * @throws IllegalArgumentException if value is empty or whitespace-only
+     */
+    static String requireNonEmptyString(String value, String name) {
+        Objects.requireNonNull(value, name + " must not be null");
+        if (value.isBlank()) {
+            throw new IllegalArgumentException(name + " must not be blank");
+        }
+        return value;
+    }
+
+    /**
+     * Validate that a port number is in the valid range (1-65535).
+     *
+     * @param value the port number to validate
+     * @param name the parameter name for error messages
+     * @return the validated port number
+     * @throws IllegalArgumentException if port is out of range
+     */
+    static int requireValidPort(int value, String name) {
+        if (value < 1 || value > 65535) {
+            throw new IllegalArgumentException(name + " must be between 1 and 65535, got " + value);
+        }
+        return value;
+    }
+
+    /**
+     * Validate that a long value is positive ({@code > 0}).
+     *
+     * @param value the value to validate
+     * @param name the parameter name for error messages
+     * @return the validated value
+     * @throws IllegalArgumentException if value is not positive
+     */
+    static long requirePositive(long value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be > 0");
+        }
+        return value;
+    }
+
+    /**
+     * Validate that a long value is non-negative ({@code >= 0}).
+     *
+     * @param value the value to validate
+     * @param name the parameter name for error messages
+     * @return the validated value
+     * @throws IllegalArgumentException if value is negative
+     */
+    static long requireNonNegative(long value, String name) {
+        if (value < 0) {
+            throw new IllegalArgumentException(name + " must be >= 0");
+        }
+        return value;
+    }
+
+    /**
+     * Validate a {@link Duration} is non-null, strictly positive, and representable as at least one
+     * whole millisecond when converted with {@link Duration#toMillis()} (no sub-millisecond-only
+     * values, which would truncate to 0 ms).
+     */
+    static Duration requirePositiveDurationRepresentableAsMillis(Duration value, String name) {
+        Objects.requireNonNull(value, name + " must not be null");
+        if (value.isZero() || value.isNegative()) {
+            throw new IllegalArgumentException(name + " must be > 0");
+        }
+        if (value.toMillis() <= 0) {
+            throw new IllegalArgumentException(
+                    name + " must be at least 1 millisecond; sub-millisecond values are not supported");
+        }
+        return value;
+    }
+
+    /**
+     * Validate a {@link Duration} is non-null and not negative.
+     */
+    static Duration requireNonNegativeDuration(Duration value, String name) {
+        Objects.requireNonNull(value, name + " must not be null");
+        if (value.isNegative()) {
+            throw new IllegalArgumentException(name + " must be >= 0");
+        }
+        return value;
+    }
+
+    /**
+     * Reject a non-zero {@link Duration} that would truncate to 0 milliseconds (sub-millisecond
+     * positive values). {@link Duration#ZERO} is allowed.
+     */
+    static void rejectSubMillisecondNonZeroDuration(Duration value, String name) {
+        if (value.isZero()) {
+            return;
+        }
+        if (value.toMillis() <= 0) {
+            throw new IllegalArgumentException(
+                    name + " must be zero or at least 1 millisecond; sub-millisecond values are not supported");
+        }
+    }
+}

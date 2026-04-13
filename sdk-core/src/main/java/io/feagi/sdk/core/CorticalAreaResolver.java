@@ -1,0 +1,156 @@
+/*
+ * Copyright 2026 Neuraville Inc.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package io.feagi.sdk.core;
+
+import java.time.Duration;
+import java.util.Optional;
+
+/**
+ * Resolves cortical area dimensions by querying the FEAGI REST API.
+ *
+ * <h2>Usage — static convenience (no instance needed)</h2>
+ * <pre>{@code
+ * // Default localhost:8000
+ * Optional<CorticalDimensions> dims = CorticalAreaResolver.resolveOnce("i__inf");
+ *
+ * // Explicit host and port
+ * Optional<CorticalDimensions> dims = CorticalAreaResolver.resolveOnce("i__inf", "feagi-host", 8000);
+ * }</pre>
+ *
+ * <h2>Usage — injected instance (testable)</h2>
+ * <pre>{@code
+ * // In production
+ * CorticalAreaResolver resolver = CorticalAreaResolver.create();
+ *
+ * // In tests — pass a lambda or mock
+ * CorticalAreaResolver resolver = id -> Optional.of(new CorticalDimensions(10, 10, 1));
+ * }</pre>
+ *
+ * <h2>Return contract</h2>
+ * Returns {@link Optional#empty()} in two distinct cases:
+ * <ul>
+ *   <li><b>Area not found (404):</b> logged at {@code FINE}.</li>
+ *   <li><b>Network error:</b> logged at {@code WARNING} with the full stack trace.
+ *       The host may be unreachable, the port wrong, or the connection timed out.</li>
+ * </ul>
+ * Both cases return {@code empty} so callers can retry without a try/catch.
+ * Callers who need to distinguish the two should enable {@code WARNING}-level logging.
+ * Throws {@link FeagiSdkException} only for malformed responses (unexpected HTTP status,
+ * invalid JSON structure).
+ *
+ * <h2>Placement</h2>
+ * {@code sdk-core/src/main/java/io/feagi/sdk/core/CorticalAreaResolver.java}
+ */
+@FunctionalInterface
+public interface CorticalAreaResolver {
+
+    /** Default FEAGI REST API host. */
+    String DEFAULT_HOST = "127.0.0.1";
+
+    /** Default FEAGI REST API port. */
+    int DEFAULT_PORT = 8000;
+
+    /** Default connection + read timeout applied to each HTTP request. */
+    Duration DEFAULT_TIMEOUT = Duration.ofSeconds(5);
+
+    // ── Instance API ──────────────────────────────────────────────────────────
+
+    /**
+     * Resolve dimensions for the given cortical area ID using this resolver's
+     * configured host and port.
+     *
+     * @param corticalAreaId FEAGI cortical area identifier (e.g. {@code "i__inf"});
+     *                       must not be null or blank. Character rules (enforced by
+     *                       {@code VALID_CORTICAL_ID}):
+     *                       <ul>
+     *                         <li>First character: ASCII letter or digit ({@code [A-Za-z0-9]})</li>
+     *                         <li>Middle characters: ASCII letter, digit, underscore, or hyphen</li>
+     *                         <li>Last character (if length > 1): ASCII letter or digit</li>
+     *                       </ul>
+     *                       Leading/trailing hyphens and underscores are rejected.
+     * @return dimensions if the area was found, {@link Optional#empty()} for 404 or
+     *         network error (see class Javadoc for the distinction)
+     * @throws FeagiSdkException     if the response is malformed
+     * @throws IllegalArgumentException if {@code corticalAreaId} is invalid
+     */
+    Optional<CorticalDimensions> resolve(String corticalAreaId);
+
+    // ── Static factory ────────────────────────────────────────────────────────
+
+    /**
+     * Create a resolver targeting {@value #DEFAULT_HOST}:{@value #DEFAULT_PORT}
+     * over plain HTTP with {@link #DEFAULT_TIMEOUT}.
+     *
+     * <p><b>Note:</b> the default scheme is plain {@code http}. For TLS-secured FEAGI
+     * deployments use {@link #createSecure(String, int)}.
+     */
+    static CorticalAreaResolver create() {
+        return create(DEFAULT_HOST, DEFAULT_PORT, DEFAULT_TIMEOUT);
+    }
+
+    /**
+     * Create a plain-HTTP resolver targeting the specified host and port.
+     */
+    static CorticalAreaResolver create(String host, int port) {
+        return create(host, port, DEFAULT_TIMEOUT);
+    }
+
+    /**
+     * Create a plain-HTTP resolver with explicit host, port, and timeout.
+     */
+    static CorticalAreaResolver create(String host, int port, Duration timeout) {
+        return new DefaultCorticalAreaResolver(host, port, timeout, "http");
+    }
+
+    /**
+     * Create an HTTPS resolver targeting the specified host and port.
+     */
+    static CorticalAreaResolver createSecure(String host, int port) {
+        return createSecure(host, port, DEFAULT_TIMEOUT);
+    }
+
+    /**
+     * Create an HTTPS resolver with explicit host, port, and timeout.
+     */
+    static CorticalAreaResolver createSecure(String host, int port, Duration timeout) {
+        return new DefaultCorticalAreaResolver(host, port, timeout, "https");
+    }
+
+    // ── Static convenience ────────────────────────────────────────────────────
+
+    /**
+     * One-shot resolve using default localhost settings.
+     * Equivalent to {@code CorticalAreaResolver.create().resolve(corticalAreaId)}.
+     *
+     * @apiNote Each call to this method constructs a new resolver instance and opens a
+     *          new TCP connection. For repeated lookups, prefer {@link #create()} to reuse
+     *          connection configuration and avoid repeated DNS lookups and TCP handshakes.
+     */
+    static Optional<CorticalDimensions> resolveOnce(String corticalAreaId) {
+        return create().resolve(corticalAreaId);
+    }
+
+    /**
+     * One-shot resolve with explicit host and port.
+     *
+     * @apiNote Each call opens a new TCP connection — see {@link #resolveOnce(String)}
+     *          for details. Prefer {@link #create(String, int)} for repeated lookups.
+     */
+    static Optional<CorticalDimensions> resolveOnce(String corticalAreaId, String host, int port) {
+        return create(host, port).resolve(corticalAreaId);
+    }
+
+    /**
+     * One-shot resolve with explicit host, port, and timeout.
+     *
+     * @apiNote Each call opens a new TCP connection — see {@link #resolveOnce(String)}
+     *          for details. Prefer {@link #create(String, int, Duration)} for repeated lookups.
+     */
+    static Optional<CorticalDimensions> resolveOnce(
+            String corticalAreaId, String host, int port, Duration timeout) {
+        return create(host, port, timeout).resolve(corticalAreaId);
+    }
+}

@@ -25,6 +25,7 @@ public final class AgentConfig {
     private final int registrationRetries;
     private final Duration retryBackoff;
     private final SensorySocketConfig sensorySocketConfig;
+    private final MotorSocketConfig motorSocketConfig;
 
     /**
      * Create an immutable agent configuration.
@@ -39,7 +40,8 @@ public final class AgentConfig {
      * @param connectionTimeout connection timeout for requests
      * @param registrationRetries registration retry attempts
      * @param retryBackoff retry backoff duration
-     * @param sensorySocketConfig sensory socket configuration
+     * @param sensorySocketConfig sensory socket configuration (required for SENSORY/BOTH agents)
+     * @param motorSocketConfig motor socket configuration (required for MOTOR/BOTH agents)
      */
     public AgentConfig(
             String agentId,
@@ -50,7 +52,8 @@ public final class AgentConfig {
             Duration connectionTimeout,
             int registrationRetries,
             Duration retryBackoff,
-            SensorySocketConfig sensorySocketConfig
+            SensorySocketConfig sensorySocketConfig,
+            MotorSocketConfig motorSocketConfig
     ) {
         Objects.requireNonNull(agentId, "agentId must not be null");
         if (agentId.isEmpty()) {
@@ -69,8 +72,21 @@ public final class AgentConfig {
         }
         this.registrationRetries = registrationRetries;
         this.retryBackoff = requirePositive(retryBackoff, "retryBackoff");
-        this.sensorySocketConfig = Objects.requireNonNull(
-                sensorySocketConfig, "sensorySocketConfig must not be null");
+
+        // Conditional validation based on agent type using AgentType helper methods
+        if (agentType.needsSensory()) {
+            this.sensorySocketConfig = Objects.requireNonNull(sensorySocketConfig,
+                    "sensorySocketConfig is required for " + agentType + " agents");
+        } else {
+            this.sensorySocketConfig = sensorySocketConfig;
+        }
+
+        if (agentType.needsMotor()) {
+            this.motorSocketConfig = Objects.requireNonNull(motorSocketConfig,
+                    "motorSocketConfig is required for " + agentType + " agents");
+        } else {
+            this.motorSocketConfig = motorSocketConfig;
+        }
 
         this.endpoints.validateForAgentType(agentType);
         this.capabilities.validateForAgentType(agentType);
@@ -150,6 +166,13 @@ public final class AgentConfig {
      */
     public SensorySocketConfig sensorySocketConfig() {
         return sensorySocketConfig;
+    }
+
+    /**
+     * Return motor socket configuration.
+     */
+    public MotorSocketConfig motorSocketConfig() {
+        return motorSocketConfig;
     }
 }
 
