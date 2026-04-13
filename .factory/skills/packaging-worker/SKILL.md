@@ -48,6 +48,7 @@ For build configuration:
 
 ### 4. Implement
 
+- **CRITICAL: When creating or modifying Java source files, ALWAYS use the Create tool to write the ENTIRE file content. Do NOT use Edit/MultiEdit for Java files — it can corrupt them with diff markers. Write the complete file from scratch using Create.**
 - Follow existing code style (immutable types, fail-fast, no hardcoded defaults)
 - Use `osx` for macOS (never `darwin`) in all classifier names and resource paths
 - GroupId: `org.feagi`, Version: `0.0.1`
