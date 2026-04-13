@@ -1,0 +1,8 @@
+commands:
+  build: cmd /c ".\gradlew.bat build"
+  test: cmd /c ".\gradlew.bat :sdk-core:test :sdk-native:test"
+  test_core: cmd /c ".\gradlew.bat :sdk-core:test"
+  test_native: cmd /c ".\gradlew.bat :sdk-native:test"
+  publish_local: cmd /c ".\gradlew.bat publishToMavenLocal"
+  tasks_publishing: cmd /c ".\gradlew.bat tasks --group=publishing"
+  clean: cmd /c ".\gradlew.bat clean"
