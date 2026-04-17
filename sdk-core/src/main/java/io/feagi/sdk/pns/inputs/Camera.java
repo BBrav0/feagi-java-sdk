@@ -60,7 +60,7 @@ public class Camera extends BaseInput<byte[]> {
     /**
      * Current frame buffer.
      */
-    private byte[] currentFrame;
+    private volatile byte[] currentFrame;
 
     /**
      * Creates a new Camera input with the specified configuration.
