@@ -34,7 +34,7 @@ class FeagiCliTest {
         int exitCode = cli.execute("--version");
 
         assertEquals(0, exitCode);
-        assertTrue(out.toString().contains("FEAGI CLI v0.0.1-beta.0"));
+        assertTrue(out.toString().contains("FEAGI CLI v0.0.1"));
     }
 
     @Test

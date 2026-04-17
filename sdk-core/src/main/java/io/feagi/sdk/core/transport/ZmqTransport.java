@@ -137,7 +137,7 @@ public class ZmqTransport implements Transport {
             if (motorEndpoint != null && !motorEndpoint.isEmpty()) {
                 motorSocket = context.createSocket(SocketType.PULL);
                 MotorSocketConfig mCfg = Objects.requireNonNull(motorCfgNullable, "motorSocketConfig");
-                motorSocket.setRcvHWM(mCfg.rcvHwm());
+                motorSocket.setRcvHWM(mCfg.subscribeHwm());
                 motorSocket.setLinger(mCfg.lingerMs());
                 LOG.info("Connecting ZMQ PULL to motor endpoint: " + motorEndpoint);
                 motorSocket.connect(motorEndpoint);

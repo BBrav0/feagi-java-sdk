@@ -3,8 +3,8 @@ plugins {
 }
 
 allprojects {
-    group = "io.feagi"
-    version = "0.0.1-beta.0"
+    group = "org.feagi"
+    version = "0.0.1"
 }
 
 subprojects {
