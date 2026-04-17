@@ -296,8 +296,8 @@ public class ServoMotor extends BaseOutput {
      * Builder for ServoMotor configuration.
      */
     public static final class Builder {
-        private double minAngle = 0.0;
-        private double maxAngle = 180.0;
+        private double minAngle = Double.NaN;
+        private double maxAngle = Double.NaN;
         private Encoding encoding = Encoding.ABSOLUTE;
         private double gain = 1.0;
         private double incrementalStepRatio = 0.05;
@@ -327,10 +327,10 @@ public class ServoMotor extends BaseOutput {
          *
          * @param minAngle the minimum angle in degrees
          * @return this builder
-         * @throws IllegalStateException if maxAngle is already set and minAngle >= maxAngle
+         * @throws IllegalArgumentException if maxAngle is already set and minAngle >= maxAngle
          */
         public Builder minAngle(double minAngle) {
-            if (this.maxAngle != 0 && minAngle >= this.maxAngle) {
+            if (!Double.isNaN(this.maxAngle) && minAngle >= this.maxAngle) {
                 throw new IllegalArgumentException(
                     "minAngle must be less than maxAngle, got [" + minAngle + ", " + this.maxAngle + "]");
             }
@@ -343,10 +343,10 @@ public class ServoMotor extends BaseOutput {
          *
          * @param maxAngle the maximum angle in degrees
          * @return this builder
-         * @throws IllegalStateException if minAngle is already set and minAngle >= maxAngle
+         * @throws IllegalArgumentException if minAngle is already set and minAngle >= maxAngle
          */
         public Builder maxAngle(double maxAngle) {
-            if (this.minAngle != 0 && this.minAngle >= maxAngle) {
+            if (!Double.isNaN(this.minAngle) && this.minAngle >= maxAngle) {
                 throw new IllegalArgumentException(
                     "maxAngle must be greater than minAngle, got [" + this.minAngle + ", " + maxAngle + "]");
             }
@@ -401,9 +401,28 @@ public class ServoMotor extends BaseOutput {
          * Build the ServoMotor instance.
          *
          * @return a new ServoMotor with the configured values
+         * @throws IllegalArgumentException if minAngle >= maxAngle
          */
         public ServoMotor build() {
-            return new ServoMotor(this);
+            // Apply defaults if not set
+            double finalMinAngle = Double.isNaN(this.minAngle) ? 0.0 : this.minAngle;
+            double finalMaxAngle = Double.isNaN(this.maxAngle) ? 180.0 : this.maxAngle;
+
+            // Validate range
+            if (finalMinAngle >= finalMaxAngle) {
+                throw new IllegalArgumentException(
+                    "minAngle must be less than maxAngle, got [" + finalMinAngle + ", " + finalMaxAngle + "]");
+            }
+
+            // Create a new builder with validated values for the constructor
+            Builder validated = new Builder();
+            validated.minAngle = finalMinAngle;
+            validated.maxAngle = finalMaxAngle;
+            validated.encoding = this.encoding;
+            validated.gain = this.gain;
+            validated.incrementalStepRatio = this.incrementalStepRatio;
+
+            return new ServoMotor(validated);
         }
     }
 }

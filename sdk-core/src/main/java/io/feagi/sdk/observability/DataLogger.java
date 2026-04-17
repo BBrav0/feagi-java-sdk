@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
@@ -85,7 +87,8 @@ public class DataLogger implements Monitor, AutoCloseable {
     private final AtomicLong droppedEntries;
     private final Random random;
     private final Object fileLock = new Object();
-    private volatile boolean closed;
+    private final AtomicBoolean closed;
+    private final AtomicInteger entryCount;  // Track entry count to avoid O(n) size() calls
 
     private volatile boolean csvHeaderWritten;
 
@@ -133,6 +136,8 @@ public class DataLogger implements Monitor, AutoCloseable {
         this.random = new Random();
         this.packetCounter = new AtomicLong(0);
         this.droppedEntries = new AtomicLong(0);
+        this.closed = new AtomicBoolean(false);
+        this.entryCount = new AtomicInteger(0);
         this.csvHeaderWritten = false;
 
         // Create output directory if needed
@@ -310,12 +315,14 @@ public class DataLogger implements Monitor, AutoCloseable {
         } else if (format == Format.JSON) {
             // JSON array format (accumulate in memory - enforce maxEntries limit)
             if (maxEntries > 0) {
-                // Check if we're at the limit
-                while (entries.size() >= maxEntries) {
+                // Check if we're at the limit (note: not atomic, may temporarily exceed)
+                while (entryCount.get() >= maxEntries) {
                     if (whenFull == WhenFull.DROP_OLDEST) {
                         // Remove oldest entry to make room
-                        entries.poll();
-                        droppedEntries.incrementAndGet();
+                        if (entries.poll() != null) {
+                            entryCount.decrementAndGet();
+                            droppedEntries.incrementAndGet();
+                        }
                     } else {
                         // DROP_NEWEST - skip this entry
                         droppedEntries.incrementAndGet();
@@ -324,6 +331,7 @@ public class DataLogger implements Monitor, AutoCloseable {
                 }
             }
             entries.add(entry);
+            entryCount.incrementAndGet();
         } else if (format == Format.CSV) {
             // CSV format - synchronized file access
             writeCsvEntry(entry);
@@ -396,36 +404,48 @@ public class DataLogger implements Monitor, AutoCloseable {
     /**
      * Closes the log file and flushes data.
      *
+     * <p>This method is idempotent and thread-safe. Multiple calls will only process
+     * the close operation once. Callers must stop writing entries before calling close()
+     * to ensure all entries are flushed.</p>
+     *
      * @throws IOException if write fails
      */
     @Override
     public void close() throws IOException {
-        if (closed) {
-            return;  // Idempotent close
+        // Use CAS for idempotent close - ensures only one thread proceeds
+        if (!closed.compareAndSet(false, true)) {
+            return;  // Already closed by another thread
         }
 
-        if (format == Format.JSON && !entries.isEmpty()) {
+        if (format == Format.JSON) {
             // Write accumulated entries to JSON file using Gson
-            // Snapshot the queue to avoid concurrent modification
-            List<Map<String, Object>> snapshot = new ArrayList<>(entries);
-            try (PrintWriter writer = new PrintWriter(
-                    Files.newBufferedWriter(outputFile, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))) {
-                writer.println("[");
-                int size = snapshot.size();
-                int i = 0;
-                for (Map<String, Object> entry : snapshot) {
-                    writer.print("  ");
-                    writer.print(GSON.toJson(entry));
-                    if (i < size - 1) {
-                        writer.println(",");
-                    } else {
-                        writer.println();
-                    }
-                    i++;
-                }
-                writer.println("]");
+            // Drain the queue under synchronization to avoid race conditions
+            List<Map<String, Object>> snapshot;
+            synchronized (fileLock) {
+                snapshot = new ArrayList<>(entries);
+                entries.clear();
+                entryCount.set(0);
             }
-            entries.clear();  // Clear entries to prevent re-writing on second close()
+
+            if (!snapshot.isEmpty()) {
+                try (PrintWriter writer = new PrintWriter(
+                        Files.newBufferedWriter(outputFile, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))) {
+                    writer.println("[");
+                    int size = snapshot.size();
+                    int i = 0;
+                    for (Map<String, Object> entry : snapshot) {
+                        writer.print("  ");
+                        writer.print(GSON.toJson(entry));
+                        if (i < size - 1) {
+                            writer.println(",");
+                        } else {
+                            writer.println();
+                        }
+                        i++;
+                    }
+                    writer.println("]");
+                }
+            }
         }
 
         synchronized (fileLock) {
@@ -442,8 +462,6 @@ public class DataLogger implements Monitor, AutoCloseable {
             }
             LOGGER.info(msg);
         }
-
-        closed = true;
     }
 
     /**

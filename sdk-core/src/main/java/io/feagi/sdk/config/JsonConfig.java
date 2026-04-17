@@ -116,6 +116,7 @@ public final class JsonConfig {
             "file_logging", config.isFileLogging()
         ));
         jsonMap.put("timeouts", Map.of(
+            // service_startup timeout in seconds (e.g., 1.5 = 1500ms)
             "service_startup", config.getServiceStartupTimeout().toMillis() / 1000.0
         ));
         jsonMap.put("connectome", Map.of(
@@ -257,6 +258,7 @@ public final class JsonConfig {
             .profilingEnabled(getBool(performance, "profiling_enabled", source))
             .logLevel(getString(logging, "level", source))
             .fileLogging(getBool(logging, "file_logging", source))
+            // service_startup timeout in seconds (e.g., 1.5 = 1500ms)
             .serviceStartupTimeout(Duration.ofMillis((long) (getDouble(timeouts, "service_startup", source) * 1000)))
             .neuronSpace(getInt(connectome, "neuron_space", source))
             .synapseSpace(getInt(connectome, "synapse_space", source))
