@@ -59,9 +59,9 @@ public final class VisionUnitConfig {
      * Convenience alias for matching docs that use resolution(w, h).
      */
     public static final class Builder {
-        private String modality;
-        private int width;
-        private int height;
+        private String modality = "camera";
+        private int width = 640;
+        private int height = 480;
         private int channels = 3;
         private int unit = 0;
         private int group = 0;
@@ -107,6 +107,35 @@ public final class VisionUnitConfig {
         public VisionUnitConfig build() {
             return new VisionUnitConfig(this);
         }
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof VisionUnitConfig that)) return false;
+        return width == that.width
+            && height == that.height
+            && channels == that.channels
+            && unit == that.unit
+            && group == that.group
+            && Objects.equals(modality, that.modality);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(modality, width, height, channels, unit, group);
+    }
+
+    @Override
+    public String toString() {
+        return "VisionUnitConfig{"
+            + "modality='" + modality + '\''
+            + ", width=" + width
+            + ", height=" + height
+            + ", channels=" + channels
+            + ", unit=" + unit
+            + ", group=" + group
+            + '}';
     }
 
     private static String requireNonEmpty(String value, String name) {
