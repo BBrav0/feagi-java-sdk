@@ -30,8 +30,8 @@ val feagiFfiIncludeDir = feagiFfiDir.resolve("include")
 val feagiFfiLibDir     = feagiFfiDir.resolve("target/release")
 
 // Detect cmake availability at configuration time.
-// Returns true only if cmake is found on the system PATH and exits successfully.
-val cmakeAvailable: Boolean = try {
+// Returns true only if BOTH the feagi-java-ffi include directory exists AND cmake is found on PATH.
+val cmakeAvailable: Boolean = feagiFfiIncludeDir.exists() && try {
     val process = ProcessBuilder("cmake", "--version")
         .redirectErrorStream(true)
         .start()
