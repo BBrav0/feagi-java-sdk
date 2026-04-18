@@ -27,6 +27,48 @@ tasks.test {
 tasks.jar {
     exclude("native/**")
 }
+
+// --- Platform-classified native JARs ---
+// Each task produces a JAR containing only the native lib for its platform.
+// These mirror the artifacts produced by maven-assembly-plugin for local verification.
+
+val nativeResourcesDir = file("src/main/resources")
+
+val platforms = listOf(
+    "linux-x86_64",
+    "linux-aarch64",
+    "osx-x86_64",
+    "osx-aarch64",
+    "windows-x86_64"
+)
+
+// Helper to convert platform string to a Gradle task name (camelCase).
+// e.g. "linux-x86_64" -> "LinuxX8664", final task name "jarLinuxX8664"
+fun platformToTaskSuffix(platform: String): String =
+    platform.split("-", "_")
+        .joinToString("") { part -> part.replaceFirstChar { it.uppercaseChar() } }
+
+val classifiedJarTasks = platforms.map { platform ->
+    val taskSuffix = platformToTaskSuffix(platform)
+    tasks.register<Jar>("jar${taskSuffix}") {
+        group = "build"
+        description = "Produces a platform-classified JAR containing only $platform native library."
+        archiveClassifier.set(platform)
+        // Include only the native/<platform>/ directory from resources.
+        from(nativeResourcesDir) {
+            include("native/$platform/**")
+        }
+        // No Java classes — native-only JAR.
+        destinationDirectory.set(layout.buildDirectory.dir("libs"))
+    }
+}
+
+// Aggregate task that builds all 5 classified native JARs.
+tasks.register("nativeJars") {
+    group = "build"
+    description = "Produces all 5 platform-classified native JARs for sdk-native."
+    dependsOn(classifiedJarTasks)
+}
 val nativeBuildDir = layout.buildDirectory.dir("native")
 val cmakeSourceDir = file("src/main/cpp")
 
