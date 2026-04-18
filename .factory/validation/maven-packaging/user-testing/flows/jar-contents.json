@@ -1,0 +1,122 @@
+{
+  "groupId": "jar-contents",
+  "testedAt": "2026-04-18T17:45:00Z",
+  "isolation": {
+    "projectRoot": "C:\\Users\\bendc\\Documents\\GitHub\\feagi-java-sdk",
+    "buildArtifactsDir": "C:\\Users\\bendc\\Documents\\GitHub\\feagi-java-sdk\\sdk-native\\build\\libs",
+    "mode": "read-only validation"
+  },
+  "toolsUsed": ["jar tf", "dir", "findstr", "PowerShell"],
+  "assertions": [
+    {
+      "id": "VAL-PKG-001",
+      "title": "Five platform-classified JARs produced for sdk-native",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "List files in sdk-native/build/libs/",
+          "expected": "5 classified JARs: sdk-native-0.0.1-linux-x86_64.jar, sdk-native-0.0.1-linux-aarch64.jar, sdk-native-0.0.1-osx-x86_64.jar, sdk-native-0.0.1-osx-aarch64.jar, sdk-native-0.0.1-windows-x86_64.jar",
+          "observed": "All 5 classified JARs present: sdk-native-0.0.1-linux-x86_64.jar (654 bytes), sdk-native-0.0.1-linux-aarch64.jar (654 bytes), sdk-native-0.0.1-osx-x86_64.jar (659 bytes), sdk-native-0.0.1-osx-aarch64.jar (654 bytes), sdk-native-0.0.1-windows-x86_64.jar (669 bytes). Main JAR sdk-native-0.0.1.jar (25943 bytes) also present."
+        }
+      ],
+      "evidence": {
+        "files": ["maven-packaging/jar-contents/VAL-PKG-001-jar-listing.txt"],
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PKG-002",
+      "title": "Each classified JAR contains ONLY its platform's native library",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "jar tf sdk-native-0.0.1-linux-x86_64.jar",
+          "expected": "Only META-INF/ and native/linux-x86_64/libfeagi_java_ffi.so",
+          "observed": "META-INF/, META-INF/MANIFEST.MF, native/, native/linux-x86_64/, native/linux-x86_64/libfeagi_java_ffi.so — exactly as expected. No .class files, no other platform libs."
+        },
+        {
+          "action": "jar tf sdk-native-0.0.1-linux-aarch64.jar",
+          "expected": "Only META-INF/ and native/linux-aarch64/libfeagi_java_ffi.so",
+          "observed": "META-INF/, META-INF/MANIFEST.MF, native/, native/linux-aarch64/, native/linux-aarch64/libfeagi_java_ffi.so — exactly as expected."
+        },
+        {
+          "action": "jar tf sdk-native-0.0.1-osx-x86_64.jar",
+          "expected": "Only META-INF/ and native/osx-x86_64/libfeagi_java_ffi.dylib",
+          "observed": "META-INF/, META-INF/MANIFEST.MF, native/, native/osx-x86_64/, native/osx-x86_64/libfeagi_java_ffi.dylib — exactly as expected."
+        },
+        {
+          "action": "jar tf sdk-native-0.0.1-osx-aarch64.jar",
+          "expected": "Only META-INF/ and native/osx-aarch64/libfeagi_java_ffi.dylib",
+          "observed": "META-INF/, META-INF/MANIFEST.MF, native/, native/osx-aarch64/, native/osx-aarch64/libfeagi_java_ffi.dylib — exactly as expected."
+        },
+        {
+          "action": "jar tf sdk-native-0.0.1-windows-x86_64.jar",
+          "expected": "Only META-INF/ and native/windows-x86_64/feagi_java_ffi.dll",
+          "observed": "META-INF/, META-INF/MANIFEST.MF, native/, native/windows-x86_64/, native/windows-x86_64/feagi_java_ffi.dll — exactly as expected."
+        }
+      ],
+      "evidence": {
+        "files": ["maven-packaging/jar-contents/VAL-PKG-002-classified-jar-contents.txt"],
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PKG-003",
+      "title": "Main sdk-native JAR contains only Java classes",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "jar tf sdk-native-0.0.1.jar",
+          "expected": "Only .class files under io/feagi/sdk/nativeffi/ and META-INF. No .so, .dylib, .dll, or native/ entries.",
+          "observed": "JAR contains only META-INF/, META-INF/MANIFEST.MF, and 11 .class files under io/feagi/sdk/nativeffi/ (AgentTypeCode, FeagiNativeBindings, FeagiNativeLibrary, MotorUnitCode, NativeFeagiAgentClient, NativeSmokeTest, SensoryUnitCode, plus inner classes). No native library files present."
+        },
+        {
+          "action": "jar tf sdk-native-0.0.1.jar | findstr /I /R \"\\.so$ \\.dylib$ \\.dll$ ^native/\"",
+          "expected": "Zero matches (exit code 1 from findstr)",
+          "observed": "Exit code 1 — zero matches. No native libraries or native/ directory entries found in main JAR."
+        }
+      ],
+      "evidence": {
+        "files": ["maven-packaging/jar-contents/VAL-PKG-003-main-jar-contents.txt"],
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-001",
+      "title": "End-to-end Gradle build produces verifiable classified JARs",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Verify gradlew build succeeded (pre-confirmed by parent agent)",
+          "expected": "BUILD SUCCESSFUL with exit code 0",
+          "observed": "Build was pre-confirmed successful by parent agent. Build artifacts are present in sdk-native/build/libs/."
+        },
+        {
+          "action": "Verify classified JARs exist after build",
+          "expected": "All 5 platform-classified JARs present in build/libs/",
+          "observed": "All 5 classified JARs confirmed present: linux-x86_64, linux-aarch64, osx-x86_64, osx-aarch64, windows-x86_64."
+        },
+        {
+          "action": "Verify classified JAR contents via jar tf",
+          "expected": "Each classified JAR contains only its platform native lib + META-INF",
+          "observed": "All 5 classified JARs contain exactly their platform-specific native library at native/<platform>/<libname> plus META-INF entries. No .class files, no cross-platform contamination. Main JAR contains only Java classes with no native libs."
+        }
+      ],
+      "evidence": {
+        "files": [
+          "maven-packaging/jar-contents/VAL-PKG-001-jar-listing.txt",
+          "maven-packaging/jar-contents/VAL-PKG-002-classified-jar-contents.txt",
+          "maven-packaging/jar-contents/VAL-PKG-003-main-jar-contents.txt"
+        ],
+        "consoleErrors": "none"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 4 assertions: all 4 passed. VAL-PKG-001 confirmed all 5 platform-classified JARs exist. VAL-PKG-002 confirmed each classified JAR contains only its platform's native library (no .class files, no cross-platform contamination). VAL-PKG-003 confirmed the main sdk-native JAR contains only Java .class files with no native libraries. VAL-CROSS-001 confirmed end-to-end build produces correctly structured classified JARs."
+}
