@@ -1,0 +1,115 @@
+{
+  "milestone": "foundation",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cmd /c \"cd /d C:\\Users\\bendc\\Documents\\GitHub\\feagi-java-sdk && gradlew.bat clean build 2>&1\"",
+      "exitCode": 0,
+      "notes": "BUILD SUCCESSFUL - 24 tasks executed, 960 tests total (0 failures, 0 errors, 2 skipped). One informational note about unchecked operations in sdk-core (not an error)."
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cmd /c \"cd /d C:\\Users\\bendc\\Documents\\GitHub\\feagi-java-sdk && gradlew.bat clean build 2>&1\"",
+      "exitCode": 0,
+      "notes": "Java compilation (compileJava + compileTestJava) passed for all modules: sdk-core, sdk-native, sdk-engine, sdk-cli. No compilation errors."
+    },
+    "lint": {
+      "passed": true,
+      "command": "cmd /c \"cd /d C:\\Users\\bendc\\Documents\\GitHub\\feagi-java-sdk && gradlew.bat clean build 2>&1\"",
+      "exitCode": 0,
+      "notes": "No separate lint tool configured. Gradle build includes compilation warnings check. No encoding/unmappable character warnings. One 'unchecked or unsafe operations' note (informational, not a lint failure)."
+    }
+  },
+  "reviewsSummary": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "fix-gradle-cmake-hook",
+      "severity": "non_blocking",
+      "description": "ProcessBuilder.waitFor() has no timeout parameter when checking cmake --version. Could hang indefinitely in edge case."
+    },
+    {
+      "featureId": "fix-gradle-cmake-hook",
+      "severity": "non_blocking",
+      "description": "Else-branch log message says 'cmake not found on PATH' but after commit 9ec76d7, the check also fails when feagiFfiIncludeDir doesn't exist. Message is slightly misleading."
+    },
+    {
+      "featureId": "fix-gradle-cmake-hook",
+      "severity": "non_blocking",
+      "description": "sdk-native/build.gradle.kts ends without trailing newline."
+    },
+    {
+      "featureId": "fix-motor-unit-config-tests",
+      "severity": "non_blocking",
+      "description": "equals() tests only cover one inequality case (type differs). Missing: equals(null), equals(different-type), and inequality tests for each individual field."
+    },
+    {
+      "featureId": "fix-motor-unit-config-tests",
+      "severity": "non_blocking",
+      "description": "No test for NaN range values in MotorUnitConfig, though the constructor validates against NaN."
+    },
+    {
+      "featureId": "fix-remaining-stale-tests",
+      "severity": "non_blocking",
+      "description": "VisionUnitConfig now has hardcoded builder defaults (modality='camera', width=640, height=480), which conflicts with CLAUDE.md's 'No hardcoded defaults' convention."
+    },
+    {
+      "featureId": "verify-full-green-build",
+      "severity": "non_blocking",
+      "description": "Else-branch log message says 'cmake not found on PATH' but doesn't mention the FFI directory existence check. Misleading when cmake is available but FFI dir is missing."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Remove the outdated TODO-style note in Testing & Validation Guidance: 'The sdk-native `build` task has a `dependsOn(\"cmakeBuild\")` hook that will fail without cmake — this must be made conditional'. This is now resolved. Replace with: 'The sdk-native cmake build hook is conditional — cmake tasks only run when both cmake is on PATH and the feagi-java-ffi include directory exists.'",
+      "evidence": "Features fix-gradle-cmake-hook (cc75f4e) and verify-full-green-build (9ec76d7) implemented the conditional. Two reviewers flagged the outdated AGENTS.md note.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention note: 'When fixing test compilation errors, be aware that compileTestJava compiles ALL test files in a module together. A worker may need to fix test files outside its feature scope to pass compilation. If doing so, document this in the handoff and note which other features' work was completed.'",
+      "evidence": "fix-motor-unit-config-tests worker (e8be614) had to fix 4 additional test files (AgentCapabilitiesUnitSupportTest, BaseAgentTest, FeagiClientConfigTest, ZmqTransportTest) beyond its scope to pass compileTestJava. This made 3 subsequent features (fix-capabilities-unit-support-tests, fix-constructor-tests) effectively no-ops. Two reviewers flagged this pattern.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify the 'No hardcoded defaults' convention: specify whether it applies to all config types or only to connection/transport config (hosts, ports, timeouts). VisionUnitConfig now has builder defaults (modality='camera', width=640, height=480) which is ergonomic but contradicts the stated convention. Consider: 'No hardcoded defaults for connection parameters (hosts, ports, timeouts). Sensible defaults are acceptable for capability configuration types (VisionUnitConfig, MotorUnitConfig) where industry-standard values exist.'",
+      "evidence": "VisionUnitConfig.java has hardcoded defaults added in commit 16c23b5 to support existing test expectations. CLAUDE.md says 'No hardcoded defaults: Callers must supply hosts, ports, timeouts explicitly.' One reviewer flagged the contradiction.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "When decomposing features for a milestone, group test files by compilation unit (module) rather than by logical scope. Features that modify test files in the same module have an implicit dependency because compileTestJava is module-scoped. Either: (1) assign all test fixes for a module to one feature, or (2) explicitly order features within a module and note that earlier features may complete later features' work.",
+      "evidence": "fix-motor-unit-config-tests, fix-capabilities-unit-support-tests, fix-constructor-tests all targeted sdk-core test files. The first worker fixed all of them because compileTestJava required it, making the other two features redundant no-ops.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Two different patterns for equals() exist in the codebase: pattern matching instanceof vs traditional getClass() comparison. AGENTS.md doesn't specify which to use.",
+      "reason": "ambiguous — Both patterns are valid for final classes in Java 17. The newer pattern matching approach is cleaner and is being consistently used in newer code. No action needed; the codebase will naturally converge on the newer pattern."
+    },
+    {
+      "observation": "NativeFeagiAgentClient.java contains ~460 em-dash Unicode characters (U+2014) in comments.",
+      "reason": "already-documented — The UTF-8 encoding setting now handles these correctly. No action needed."
+    },
+    {
+      "observation": "verify-full-green-build feature used java-worker skill but only changed build.gradle.kts — config-worker would have been more appropriate.",
+      "reason": "ambiguous — The feature also included verification of the full build (running gradlew clean build), which is within java-worker scope. The skill assignment was suboptimal but didn't cause any issues. Not actionable for AGENTS.md."
+    },
+    {
+      "observation": "config-worker skill procedure matched reality well for fix-gradle-cmake-hook.",
+      "reason": "duplicate — Positive feedback with no actionable change needed."
+    }
+  ],
+  "previousRound": null
+}

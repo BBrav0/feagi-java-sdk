@@ -1,0 +1,26 @@
+{
+  "featureId": "fix-capabilities-unit-support-tests",
+  "reviewedAt": "2026-04-18T20:50:00.000Z",
+  "commitId": "e8be614deebfe6daaaba6840946a8dd12777178b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The AgentCapabilitiesUnitSupportTest.java changes were actually made in the prior commit e8be614 by the fix-motor-unit-config-tests worker (session 4ce912ac), not by this feature's worker. This worker (session 5603a242) correctly identified that the work was already done, verified compilation and all 14 tests pass, and reported success with no new commit. The changes themselves are correct: minRange()/maxRange() properly renamed to minValue()/maxValue(), .bidirectional(true) builder calls removed, assertTrue(second.isBidirectional()) assertion removed, MotorUnitConfig.builder().build() calls updated to include .type(\"servo\") to satisfy fail-fast type validation, and .bidirectional(true) removed from CombinedTests as well. All changes align with the current MotorUnitConfig API.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The fix-motor-unit-config-tests worker (session 4ce912ac) fixed files beyond its scope — it modified AgentCapabilitiesUnitSupportTest.java, BaseAgentTest.java, FeagiClientConfigTest.java, and ZmqTransportTest.java in addition to its assigned MotorUnitConfigTest.java. This caused the fix-capabilities-unit-support-tests feature to find its work already done. While harmless here, this cross-feature scope creep can cause confusion about which commit fulfills which feature.",
+      "evidence": "Commit e8be614 modifies 6 files: MotorUnitConfig.java, MotorUnitConfigTest.java (its actual scope), plus AgentCapabilitiesUnitSupportTest.java, BaseAgentTest.java, FeagiClientConfigTest.java, ZmqTransportTest.java (out of scope). The worker justified this by saying compileTestJava compiles ALL test files together so it had to fix the others to pass its verification step."
+    },
+    {
+      "area": "skills",
+      "observation": "The java-worker skill does not mention how to handle verification steps that depend on shared compilation (e.g., compileTestJava compiles all tests together). Workers may need guidance on whether to fix out-of-scope test files that block compilation, or to use more targeted verification approaches.",
+      "evidence": "fix-motor-unit-config-tests transcript shows the worker fixing 4 additional test files to pass its compileTestJava verification step, effectively completing work assigned to other features."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The AgentCapabilitiesUnitSupportTest.java was already correctly fixed in commit e8be614 by the prior fix-motor-unit-config-tests worker. This worker verified the fix: all stale API references (minRange→minValue, maxRange→maxValue, bidirectional removal) are properly updated, builder calls include required type(\"servo\"), and all 14 tests pass (4 CombinedTests + 3 MotorUnitSingleTests + 3 MotorUnitsMultipleTests + 3 VisionUnitTests + 1 FluentApiTests). No code issues found."
+}

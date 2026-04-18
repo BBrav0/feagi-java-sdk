@@ -1,0 +1,45 @@
+{
+  "featureId": "fix-gradle-cmake-hook",
+  "reviewedAt": "2026-04-18T21:00:00.000Z",
+  "commitId": "cc75f4e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation correctly makes the cmake build hook conditional in sdk-native/build.gradle.kts. The approach uses ProcessBuilder to detect cmake at Gradle configuration time, wrapped in a try-catch for robustness. All cmake-related task registrations (cmakeConfigure, cmakeBuild, nativeSmokeTest) and the build dependsOn hook are wrapped inside an if (cmakeAvailable) block. A follow-up commit (9ec76d7) further refined the check to also verify feagiFfiIncludeDir.exists(), preventing cmake tasks from running when the sibling feagi-java-ffi repo isn't cloned. The else branch emits a helpful lifecycle log message. The implementation matches the feature description and all three expectedBehavior criteria.",
+    "issues": [
+      {
+        "file": "sdk-native/build.gradle.kts",
+        "line": 35,
+        "severity": "non_blocking",
+        "description": "ProcessBuilder.waitFor() has no timeout parameter. If cmake --version were to hang (extremely unlikely in practice), Gradle configuration would block indefinitely. Consider using waitFor(10, TimeUnit.SECONDS) for defense-in-depth."
+      },
+      {
+        "file": "sdk-native/build.gradle.kts",
+        "line": 91,
+        "severity": "non_blocking",
+        "description": "The else-branch log message says 'cmake not found on PATH' but after commit 9ec76d7, the cmakeAvailable check also fails when feagiFfiIncludeDir doesn't exist (even if cmake IS on PATH). The message is slightly misleading in that scenario. Could say 'cmake not found on PATH or feagi-java-ffi include dir not present'."
+      },
+      {
+        "file": "sdk-native/build.gradle.kts",
+        "line": 92,
+        "severity": "non_blocking",
+        "description": "File ends without a trailing newline (visible in git diff as 'No newline at end of file'). Minor style issue."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md already documents that cmake should not be required for gradlew build ('Do not require cmake or Rust toolchain for gradlew build to succeed'). The bullet about sdk-native's dependsOn hook needing to be made conditional is now outdated since this feature resolved it. AGENTS.md could be updated to remove the TODO-style note: 'The sdk-native build task has a dependsOn(\"cmakeBuild\") hook that will fail without cmake — this must be made conditional'.",
+      "evidence": "AGENTS.md Testing & Validation Guidance section, 4th bullet: 'The sdk-native `build` task has a `dependsOn(\"cmakeBuild\")` hook that will fail without cmake — this must be made conditional'"
+    },
+    {
+      "area": "skills",
+      "observation": "Worker followed the config-worker skill procedure correctly: read the feature description, read AGENTS.md, read the current file, planned the change, implemented it, and validated with gradlew build. The skill's procedure matched reality well for this task. skillFeedback.followedProcedure is true with no deviations.",
+      "evidence": "Transcript shows standard sequence: Read mission.md, AGENTS.md, services.yaml, build.gradle.kts, then Edit, then gradlew validation commands."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The cmake conditional implementation is correct and well-structured. It uses ProcessBuilder to detect cmake at Gradle configuration time, wraps all cmake task registrations inside the conditional, and emits a lifecycle log when skipping. A follow-up commit (9ec76d7) added an additional guard checking for the feagi-java-ffi include directory. Three non-blocking issues noted: no timeout on waitFor(), slightly misleading else-branch log message after the FFI dir check was added, and missing trailing newline. None of these are blocking — the feature fully satisfies its requirements and verification steps."
+}
