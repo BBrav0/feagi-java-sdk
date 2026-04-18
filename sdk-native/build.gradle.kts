@@ -21,6 +21,12 @@ tasks.withType<JavaCompile> {
 tasks.test {
     useJUnitPlatform()
 }
+
+// Exclude native/ directory from the default JAR task.
+// Platform-classified JARs (produced by Maven assembly-plugin) include only their platform's native lib.
+tasks.jar {
+    exclude("native/**")
+}
 val nativeBuildDir = layout.buildDirectory.dir("native")
 val cmakeSourceDir = file("src/main/cpp")
 
