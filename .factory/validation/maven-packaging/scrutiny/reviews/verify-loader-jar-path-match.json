@@ -1,0 +1,28 @@
+{
+  "featureId": "verify-loader-jar-path-match",
+  "reviewedAt": "2026-04-18T21:40:00.000Z",
+  "commitId": "84123cd",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The commit adds 44 lines to FeagiNativeLibraryLoaderTest.java: two individual platform path tests (linux-aarch64, osx-x86_64) that were previously missing, plus one comprehensive parametric test that verifies all 5 platform resource paths match the classified JAR entry paths. The worker also ran `gradlew :sdk-native:nativeJars` and verified the actual JAR contents via `jar tf` for all 5 platform JARs plus the main JAR. The implementation is clean, consistent with existing test style, and correctly validates the cross-area concern (VAL-CROSS-004): that a consumer adding sdk-native + a platform-classified JAR will have the native library discoverable by the loader's `extractAndLoad()` method. The resource path formula `native/{platform}/{libfilename}` in the loader matches exactly what the Gradle JAR tasks package. No bugs or edge cases were missed — the verification is thorough and the new tests are well-structured.",
+    "issues": [
+      {
+        "file": "sdk-native/src/test/java/io/feagi/sdk/nativeffi/FeagiNativeLibraryLoaderTest.java",
+        "line": 253,
+        "severity": "non_blocking",
+        "description": "The `allFivePlatformResourcePathsMatchClassifiedJarPaths` test manually reconstructs the resource path formula (`\"native/\" + platform + \"/\" + libFilename`) rather than calling the loader's `extractAndLoad` path logic directly. This is acceptable since `extractAndLoad` is package-private and the path formula is simple string concatenation, but if the loader's path construction ever changed to include additional logic (e.g., version subdirectories), this test would not catch the drift. Consider using JUnit 5 `@ParameterizedTest` with `@MethodSource` or `@CsvSource` for cleaner parameterization instead of the manual for-loop, though this is stylistic only."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "observation": "Worker used `gradlew.bat :sdk-native:nativeJars` extensively during verification, but this command is not in `.factory/services.yaml`. Other Gradle tasks like `jar_core` and `jar_native` are already registered there.",
+      "evidence": "services.yaml has jar_core and jar_native entries but no nativeJars entry. Worker ran nativeJars in verification commands (handoff commandsRun)."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The commit cleanly adds 3 test cases to FeagiNativeLibraryLoaderTest.java that complete platform resource path coverage from 3/5 to 5/5 platforms, plus a comprehensive parametric test asserting all 5 paths match. The worker correctly verified actual JAR contents via `jar tf` on all 5 classified JARs and confirmed they match the loader's expected resource path formula. The implementation follows existing test conventions, has no bugs, and fully satisfies VAL-CROSS-004. One non-blocking observation: the `nativeJars` Gradle task should be added to services.yaml for discoverability."
+}

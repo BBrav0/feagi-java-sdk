@@ -1,0 +1,28 @@
+{
+  "featureId": "gradle-classifier-jars",
+  "reviewedAt": "2026-04-18T21:40:00.000Z",
+  "commitId": "c612905",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation is clean, correct, and fully meets the feature requirements. The worker added 42 lines to sdk-native/build.gradle.kts implementing: (1) a platforms list with all 5 classifier strings matching AGENTS.md convention, (2) a platformToTaskSuffix helper converting platform strings to camelCase for Gradle task names, (3) five dynamically-registered Jar tasks each setting archiveClassifier and including only its platform's native/<platform>/ resources, (4) an aggregate nativeJars task depending on all 5 classified jar tasks. The existing `tasks.jar { exclude(\"native/**\") }` ensures the main JAR contains only .class files. Verified: all 5 classified JARs are produced with correct contents (single native lib per platform under native/<platform>/), main JAR has no native/ entries, and the resource paths match the native loader's expected classpath pattern (native/<platform>/<libFilename>). The nativeJars task runs in ~1s. No tests were needed as this is a build configuration change. Full build (gradlew build) still passes after the change.",
+    "issues": [
+      {
+        "file": "sdk-native/build.gradle.kts",
+        "line": 69,
+        "severity": "non_blocking",
+        "description": "Minor style: there is no blank line between the closing brace of the nativeJars task registration and the `val nativeBuildDir = ...` line. This is a cosmetic gap only and does not affect functionality."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "observation": "The nativeJars Gradle task is not documented in .factory/services.yaml. Since it's a key build task that future workers and validators need to run (e.g., verify-loader-jar-path-match already depends on it), it would be useful to add a `native_jars` command entry.",
+      "evidence": "services.yaml has jar_core and jar_native commands but no entry for nativeJars. The verify-loader-jar-path-match feature (session e7c92d2d) depends on running gradlew :sdk-native:nativeJars."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The gradle-classifier-jars implementation is correct, complete, and well-structured. Five platform-classified Jar tasks are dynamically registered using idiomatic Gradle Kotlin DSL, each producing a JAR with the correct platform classifier and containing only its platform's native library. The main JAR correctly excludes native resources. An aggregate nativeJars task ties them together. The implementation matches the Maven assembly output structure and the native loader's classpath resource path expectations. All verification steps from the feature description are satisfied: nativeJars produces 5 JARs, jar tf shows correct contents, main JAR has no native/ entries, and the full build still passes. Only non-blocking issue: a missing blank line between task blocks (cosmetic)."
+}
