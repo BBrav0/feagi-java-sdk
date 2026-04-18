@@ -24,8 +24,9 @@ Environment variables, external dependencies, and setup notes.
 
 - Pre-built native libs (stub placeholders, 21-36 bytes) exist for 5 platforms
 - Real native libs come from building the `feagi-java-ffi` Rust project (separate repo/build)
-- Current location: `sdk-native/src/test/resources/native/<platform>/`
-- Target location: `sdk-native/src/main/resources/native/<platform>/`
+- Location: `sdk-native/src/main/resources/native/<platform>/` (relocated from test resources)
+- Copies also remain at `sdk-native/src/test/resources/native/<platform>/` for test compatibility
+- `.gitignore` has exception rules to allow tracking native libs in `src/main/resources/native/`
 
 ## Secrets (CI only, not needed locally)
 
