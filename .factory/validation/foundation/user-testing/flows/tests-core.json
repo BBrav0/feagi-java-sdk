@@ -1,0 +1,106 @@
+{
+  "group": "tests-core",
+  "milestone": "foundation",
+  "testedAt": "2026-04-18T20:52:00Z",
+  "isolation": {
+    "projectRoot": "C:\\Users\\bendc\\Documents\\GitHub\\feagi-java-sdk",
+    "surface": "CLI/Build (read-only inspection of pre-built JUnit XML test reports)",
+    "testReportsLocation": "C:\\Users\\bendc\\Documents\\GitHub\\feagi-java-sdk\\sdk-core\\build\\test-results\\test\\"
+  },
+  "toolsUsed": ["Read tool for XML inspection"],
+  "assertions": {
+    "VAL-FOUND-001": {
+      "status": "pass",
+      "title": "MotorUnitConfigTest compiles and passes after API alignment",
+      "evidence": "foundation/tests-core/xml-inspection-summary.txt",
+      "details": "All 3 XML files inspected: BuilderTests (9 tests), EqualsAndHashCodeTests (2 tests), ToStringTests (1 test). Total: 12 tests, 0 failures, 0 errors, 0 skipped. All references to removed/renamed methods are updated. equals()/hashCode()/toString() tests all pass.",
+      "xmlFiles": [
+        "TEST-io.feagi.sdk.core.MotorUnitConfigTest$BuilderTests.xml",
+        "TEST-io.feagi.sdk.core.MotorUnitConfigTest$EqualsAndHashCodeTests.xml",
+        "TEST-io.feagi.sdk.core.MotorUnitConfigTest$ToStringTests.xml"
+      ],
+      "testCounts": { "tests": 12, "failures": 0, "errors": 0, "skipped": 0 }
+    },
+    "VAL-FOUND-002": {
+      "status": "pass",
+      "title": "AgentCapabilitiesUnitSupportTest compiles and passes after API alignment",
+      "evidence": "foundation/tests-core/xml-inspection-summary.txt",
+      "details": "All 5 XML files inspected: CombinedTests (4), FluentApiTests (1), MotorUnitSingleTests (3), MotorUnitsMultipleTests (3), VisionUnitTests (3). Total: 14 tests, 0 failures, 0 errors, 0 skipped. References to bidirectional/minRange/maxRange updated successfully.",
+      "xmlFiles": [
+        "TEST-io.feagi.sdk.core.AgentCapabilitiesUnitSupportTest$CombinedTests.xml",
+        "TEST-io.feagi.sdk.core.AgentCapabilitiesUnitSupportTest$FluentApiTests.xml",
+        "TEST-io.feagi.sdk.core.AgentCapabilitiesUnitSupportTest$MotorUnitSingleTests.xml",
+        "TEST-io.feagi.sdk.core.AgentCapabilitiesUnitSupportTest$MotorUnitsMultipleTests.xml",
+        "TEST-io.feagi.sdk.core.AgentCapabilitiesUnitSupportTest$VisionUnitTests.xml"
+      ],
+      "testCounts": { "tests": 14, "failures": 0, "errors": 0, "skipped": 0 }
+    },
+    "VAL-FOUND-003": {
+      "status": "pass",
+      "title": "BaseAgentTest compiles and passes with updated MotorSocketConfig constructor",
+      "evidence": "foundation/tests-core/xml-inspection-summary.txt",
+      "details": "1 XML file inspected: BaseAgentTest (36 tests). Total: 36 tests, 0 failures, 0 errors, 0 skipped. MotorSocketConfig construction updated from 2-arg to 3-arg. All 36 tests pass (exceeds 27+ requirement).",
+      "xmlFiles": [
+        "TEST-io.feagi.sdk.core.BaseAgentTest.xml"
+      ],
+      "testCounts": { "tests": 36, "failures": 0, "errors": 0, "skipped": 0 }
+    },
+    "VAL-FOUND-004": {
+      "status": "pass",
+      "title": "FeagiClientConfigTest compiles and passes with updated AgentConfig constructor",
+      "evidence": "foundation/tests-core/xml-inspection-summary.txt",
+      "details": "1 XML file inspected: FeagiClientConfigTest (49 tests). Total: 49 tests, 0 failures, 0 errors, 0 skipped. AgentConfig construction updated from 9-arg to 10-arg. All 49 tests pass (exceeds 30+ requirement).",
+      "xmlFiles": [
+        "TEST-io.feagi.sdk.core.FeagiClientConfigTest.xml"
+      ],
+      "testCounts": { "tests": 49, "failures": 0, "errors": 0, "skipped": 0 }
+    },
+    "VAL-FOUND-005": {
+      "status": "pass",
+      "title": "ZmqTransportTest compiles and passes with updated constructors",
+      "evidence": "foundation/tests-core/xml-inspection-summary.txt",
+      "details": "1 XML file inspected: ZmqTransportTest (9 tests). Total: 9 tests, 0 failures, 0 errors, 0 skipped. Both MotorSocketConfig and AgentConfig constructors updated. All 9 transport tests pass (exceeds 8 requirement).",
+      "xmlFiles": [
+        "TEST-io.feagi.sdk.core.transport.ZmqTransportTest.xml"
+      ],
+      "testCounts": { "tests": 9, "failures": 0, "errors": 0, "skipped": 0 }
+    },
+    "VAL-FOUND-009": {
+      "status": "pass",
+      "title": "PnsJsonUtilsTest compiles and passes after MotorUnitConfig API alignment",
+      "evidence": "foundation/tests-core/xml-inspection-summary.txt",
+      "details": "All 10 XML files inspected: CameraExportLoadTests (2), FileOperationsTests (2), InfraredInputExportLoadTests (2), JsonStringConversionTests (2), NumericStreamExportLoadTests (1), OutputNumericStreamExportLoadTests (1), OutputTextStreamExportLoadTests (1), RotaryMotorExportLoadTests (2), ServoMotorExportLoadTests (3), TextStreamExportLoadTests (1). Total: 17 tests, 0 failures, 0 errors, 0 skipped.",
+      "xmlFiles": [
+        "TEST-io.feagi.sdk.config.PnsJsonUtilsTest$CameraExportLoadTests.xml",
+        "TEST-io.feagi.sdk.config.PnsJsonUtilsTest$FileOperationsTests.xml",
+        "TEST-io.feagi.sdk.config.PnsJsonUtilsTest$InfraredInputExportLoadTests.xml",
+        "TEST-io.feagi.sdk.config.PnsJsonUtilsTest$JsonStringConversionTests.xml",
+        "TEST-io.feagi.sdk.config.PnsJsonUtilsTest$NumericStreamExportLoadTests.xml",
+        "TEST-io.feagi.sdk.config.PnsJsonUtilsTest$OutputNumericStreamExportLoadTests.xml",
+        "TEST-io.feagi.sdk.config.PnsJsonUtilsTest$OutputTextStreamExportLoadTests.xml",
+        "TEST-io.feagi.sdk.config.PnsJsonUtilsTest$RotaryMotorExportLoadTests.xml",
+        "TEST-io.feagi.sdk.config.PnsJsonUtilsTest$ServoMotorExportLoadTests.xml",
+        "TEST-io.feagi.sdk.config.PnsJsonUtilsTest$TextStreamExportLoadTests.xml"
+      ],
+      "testCounts": { "tests": 17, "failures": 0, "errors": 0, "skipped": 0 }
+    },
+    "VAL-FOUND-010": {
+      "status": "pass",
+      "title": "RotaryMotorTest compiles and passes",
+      "evidence": "foundation/tests-core/xml-inspection-summary.txt",
+      "details": "All 6 XML files inspected: BuilderTests (4), EqualsAndHashCodeTests (3), MotorCommandTests (4), RegistrationTests (1), SpeedPropertiesTests (3), ToStringTests (1). Total: 16 tests, 0 failures, 0 errors, 0 skipped. References to bidirectional()/isBidirectional() verified working.",
+      "xmlFiles": [
+        "TEST-io.feagi.sdk.pns.outputs.RotaryMotorTest$BuilderTests.xml",
+        "TEST-io.feagi.sdk.pns.outputs.RotaryMotorTest$EqualsAndHashCodeTests.xml",
+        "TEST-io.feagi.sdk.pns.outputs.RotaryMotorTest$MotorCommandTests.xml",
+        "TEST-io.feagi.sdk.pns.outputs.RotaryMotorTest$RegistrationTests.xml",
+        "TEST-io.feagi.sdk.pns.outputs.RotaryMotorTest$SpeedPropertiesTests.xml",
+        "TEST-io.feagi.sdk.pns.outputs.RotaryMotorTest$ToStringTests.xml"
+      ],
+      "testCounts": { "tests": 16, "failures": 0, "errors": 0, "skipped": 0 }
+    }
+  },
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 7 assertions by inspecting 27 JUnit XML report files: all 7 passed. Total: 153 tests, 0 failures, 0 errors, 0 skipped across MotorUnitConfigTest, AgentCapabilitiesUnitSupportTest, BaseAgentTest, FeagiClientConfigTest, ZmqTransportTest, PnsJsonUtilsTest, and RotaryMotorTest."
+}
