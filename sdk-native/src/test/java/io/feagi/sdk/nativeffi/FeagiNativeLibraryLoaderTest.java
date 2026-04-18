@@ -211,6 +211,22 @@ class FeagiNativeLibraryLoaderTest {
     }
 
     @Test
+    void classpathResourcePath_linuxAarch64_correctFormat() {
+        String platform = FeagiNativeLibrary.composePlatform("linux", "aarch64");
+        String libFilename = FeagiNativeLibrary.resolveLibraryFilename("linux");
+        String resourcePath = "native/" + platform + "/" + libFilename;
+        assertEquals("native/linux-aarch64/libfeagi_java_ffi.so", resourcePath);
+    }
+
+    @Test
+    void classpathResourcePath_osxX86_64_correctFormat() {
+        String platform = FeagiNativeLibrary.composePlatform("osx", "x86_64");
+        String libFilename = FeagiNativeLibrary.resolveLibraryFilename("osx");
+        String resourcePath = "native/" + platform + "/" + libFilename;
+        assertEquals("native/osx-x86_64/libfeagi_java_ffi.dylib", resourcePath);
+    }
+
+    @Test
     void classpathResourcePath_osxAarch64_correctFormat() {
         String platform = FeagiNativeLibrary.composePlatform("osx", "aarch64");
         String libFilename = FeagiNativeLibrary.resolveLibraryFilename("osx");
@@ -224,6 +240,34 @@ class FeagiNativeLibraryLoaderTest {
         String libFilename = FeagiNativeLibrary.resolveLibraryFilename("windows");
         String resourcePath = "native/" + platform + "/" + libFilename;
         assertEquals("native/windows-x86_64/feagi_java_ffi.dll", resourcePath);
+    }
+
+    /**
+     * Verify all 5 platform resource paths used by the loader match the paths inside
+     * the classified JARs. This is the key cross-area assertion: a consumer who adds
+     * sdk-native + sdk-native-&lt;platform&gt; classifier dep will have the native lib
+     * discoverable by the loader.
+     */
+    @Test
+    void allFivePlatformResourcePathsMatchClassifiedJarPaths() {
+        // Each entry: {os, arch, expectedJarPath}
+        String[][] platforms = {
+            {"linux",   "x86_64",  "native/linux-x86_64/libfeagi_java_ffi.so"},
+            {"linux",   "aarch64", "native/linux-aarch64/libfeagi_java_ffi.so"},
+            {"osx",     "x86_64",  "native/osx-x86_64/libfeagi_java_ffi.dylib"},
+            {"osx",     "aarch64", "native/osx-aarch64/libfeagi_java_ffi.dylib"},
+            {"windows", "x86_64",  "native/windows-x86_64/feagi_java_ffi.dll"},
+        };
+        for (String[] entry : platforms) {
+            String os = entry[0];
+            String arch = entry[1];
+            String expectedJarPath = entry[2];
+            String platform = FeagiNativeLibrary.composePlatform(os, arch);
+            String libFilename = FeagiNativeLibrary.resolveLibraryFilename(os);
+            String loaderResourcePath = "native/" + platform + "/" + libFilename;
+            assertEquals(expectedJarPath, loaderResourcePath,
+                    "Loader resource path for " + platform + " must match classified JAR entry path");
+        }
     }
 
     // =========================================================================
