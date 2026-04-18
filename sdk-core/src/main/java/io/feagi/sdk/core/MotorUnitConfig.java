@@ -100,6 +100,33 @@ public final class MotorUnitConfig {
         }
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof MotorUnitConfig that)) return false;
+        return Double.compare(that.minValue, minValue) == 0
+            && Double.compare(that.maxValue, maxValue) == 0
+            && unit == that.unit
+            && group == that.group
+            && Objects.equals(type, that.type);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(type, minValue, maxValue, unit, group);
+    }
+
+    @Override
+    public String toString() {
+        return "MotorUnitConfig{"
+            + "type='" + type + '\''
+            + ", minValue=" + minValue
+            + ", maxValue=" + maxValue
+            + ", unit=" + unit
+            + ", group=" + group
+            + '}';
+    }
+
     private static String requireNonEmpty(String value, String name) {
         Objects.requireNonNull(value, name + " must not be null");
         if (value.isEmpty()) {

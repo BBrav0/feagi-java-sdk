@@ -478,7 +478,8 @@ class FeagiClientConfigTest {
                 Duration.ofSeconds(10),
                 5,
                 Duration.ofMillis(250),
-                new SensorySocketConfig(1000, 0, true));
+                new SensorySocketConfig(1000, 0, true),
+                new MotorSocketConfig(1000, 0, true));
 
         FeagiClientConfig clientConfig = FeagiClientConfig.from(agentConfig);
 
