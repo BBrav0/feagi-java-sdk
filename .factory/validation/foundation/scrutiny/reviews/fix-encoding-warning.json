@@ -1,0 +1,21 @@
+{
+  "featureId": "fix-encoding-warning",
+  "reviewedAt": "2026-04-18T20:50:00.000Z",
+  "commitId": "e715fe6",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Minimal, correct fix. The Unicode warning emoji (U+26A0 + U+FE0F) at line 602 of NativeFeagiAgentClient.java was replaced with ASCII '[WARNING]' text. The Gradle build configuration was updated to set `options.encoding = \"UTF-8\"` for all JavaCompile tasks in sdk-native, mirroring the identical pattern already present in sdk-core/build.gradle.kts. Binary analysis confirms no emoji bytes remain. The file still contains ~460 em-dash characters (U+2014) in comments, which are now properly handled by the UTF-8 encoding setting. Both changes are well-placed and follow existing project conventions.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The NativeFeagiAgentClient.java file uses Unicode em-dashes (U+2014) extensively in comments (~460 occurrences). With the UTF-8 encoding now set in Gradle, these compile cleanly, but this convention isn't documented in AGENTS.md. Future workers adding Java files with non-ASCII characters should be aware that the encoding setting is required.",
+      "evidence": "sdk-native/src/main/java/io/feagi/sdk/nativeffi/NativeFeagiAgentClient.java contains ~460 em-dash (U+2014) characters in comments (lines 61, 63, 91, 113, 118, 135, 145, etc.). Both sdk-core and sdk-native build.gradle.kts now have tasks.withType<JavaCompile> { options.encoding = \"UTF-8\" }."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The emoji was correctly replaced with ASCII '[WARNING]' text and the Gradle encoding configuration was properly added, mirroring the existing sdk-core pattern. No remaining encoding issues. The two-file, six-line change is minimal, well-verified, and introduces no bugs or regressions."
+}

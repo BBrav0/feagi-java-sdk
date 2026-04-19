@@ -55,6 +55,8 @@
         <maven.gpg.plugin.version>3.2.4</maven.gpg.plugin.version>
         <central.publishing.plugin.version>0.9.0</central.publishing.plugin.version>
         <build.helper.plugin.version>3.6.0</build.helper.plugin.version>
+        <maven.jar.plugin.version>3.4.2</maven.jar.plugin.version>
+        <maven.assembly.plugin.version>3.7.1</maven.assembly.plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -92,6 +94,16 @@
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
                     <version>${build.helper.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>${maven.jar.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-assembly-plugin</artifactId>
+                    <version>${maven.assembly.plugin.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>

@@ -22,14 +22,15 @@ class MotorUnitConfigTest {
     class BuilderTests {
 
         @Test
-        @DisplayName("should create default MotorUnitConfig")
+        @DisplayName("should create default MotorUnitConfig with explicit type")
         void shouldCreateDefaultMotorUnitConfig() {
-            MotorUnitConfig config = MotorUnitConfig.builder().build();
+            MotorUnitConfig config = MotorUnitConfig.builder()
+                .type("servo")
+                .build();
 
             assertEquals("servo", config.type());
-            assertEquals(0.0, config.minRange());
-            assertEquals(180.0, config.maxRange());
-            assertFalse(config.isBidirectional());
+            assertEquals(0.0, config.minValue());
+            assertEquals(1.0, config.maxValue());
             assertEquals(0, config.unit());
             assertEquals(0, config.group());
         }
@@ -40,15 +41,13 @@ class MotorUnitConfigTest {
             MotorUnitConfig config = MotorUnitConfig.builder()
                 .type("servo")
                 .range(0.0, 180.0)
-                .bidirectional(false)
                 .unit(0)
                 .group(1)
                 .build();
 
             assertEquals("servo", config.type());
-            assertEquals(0.0, config.minRange());
-            assertEquals(180.0, config.maxRange());
-            assertFalse(config.isBidirectional());
+            assertEquals(0.0, config.minValue());
+            assertEquals(180.0, config.maxValue());
             assertEquals(0, config.unit());
             assertEquals(1, config.group());
         }
@@ -59,15 +58,13 @@ class MotorUnitConfigTest {
             MotorUnitConfig config = MotorUnitConfig.builder()
                 .type("rotary")
                 .range(-1.0, 1.0)
-                .bidirectional(true)
                 .unit(1)
                 .group(1)
                 .build();
 
             assertEquals("rotary", config.type());
-            assertEquals(-1.0, config.minRange());
-            assertEquals(1.0, config.maxRange());
-            assertTrue(config.isBidirectional());
+            assertEquals(-1.0, config.minValue());
+            assertEquals(1.0, config.maxValue());
             assertEquals(1, config.unit());
             assertEquals(1, config.group());
         }
@@ -77,17 +74,15 @@ class MotorUnitConfigTest {
         void shouldCreateMotorUnitConfigUsingIndividualSetters() {
             MotorUnitConfig config = MotorUnitConfig.builder()
                 .type("stepper")
-                .minRange(0.0)
-                .maxRange(360.0)
-                .bidirectional(false)
+                .minValue(0.0)
+                .maxValue(360.0)
                 .unit(2)
                 .group(0)
                 .build();
 
             assertEquals("stepper", config.type());
-            assertEquals(0.0, config.minRange());
-            assertEquals(360.0, config.maxRange());
-            assertFalse(config.isBidirectional());
+            assertEquals(0.0, config.minValue());
+            assertEquals(360.0, config.maxValue());
             assertEquals(2, config.unit());
             assertEquals(0, config.group());
         }
@@ -113,12 +108,13 @@ class MotorUnitConfigTest {
         }
 
         @Test
-        @DisplayName("should throw when minRange > maxRange")
+        @DisplayName("should throw when minValue > maxValue")
         void shouldThrowWhenMinRangeIsGreaterThanMaxRange() {
             assertThrows(IllegalArgumentException.class, () ->
                 MotorUnitConfig.builder()
-                    .minRange(180.0)
-                    .maxRange(0.0)
+                    .type("servo")
+                    .minValue(180.0)
+                    .maxValue(0.0)
                     .build()
             );
         }
@@ -128,12 +124,14 @@ class MotorUnitConfigTest {
         void shouldThrowWhenUnitIsOutOfRange() {
             assertThrows(IllegalArgumentException.class, () ->
                 MotorUnitConfig.builder()
+                    .type("servo")
                     .unit(-1)
                     .build()
             );
 
             assertThrows(IllegalArgumentException.class, () ->
                 MotorUnitConfig.builder()
+                    .type("servo")
                     .unit(256)
                     .build()
             );
@@ -144,12 +142,14 @@ class MotorUnitConfigTest {
         void shouldThrowWhenGroupIsOutOfRange() {
             assertThrows(IllegalArgumentException.class, () ->
                 MotorUnitConfig.builder()
+                    .type("servo")
                     .group(-1)
                     .build()
             );
 
             assertThrows(IllegalArgumentException.class, () ->
                 MotorUnitConfig.builder()
+                    .type("servo")
                     .group(256)
                     .build()
             );
@@ -166,7 +166,6 @@ class MotorUnitConfigTest {
             MotorUnitConfig config1 = MotorUnitConfig.builder()
                 .type("servo")
                 .range(0.0, 180.0)
-                .bidirectional(false)
                 .unit(0)
                 .group(1)
                 .build();
@@ -174,7 +173,6 @@ class MotorUnitConfigTest {
             MotorUnitConfig config2 = MotorUnitConfig.builder()
                 .type("servo")
                 .range(0.0, 180.0)
-                .bidirectional(false)
                 .unit(0)
                 .group(1)
                 .build();
@@ -198,22 +196,6 @@ class MotorUnitConfigTest {
 
             assertNotEquals(config1, config2);
         }
-
-        @Test
-        @DisplayName("should not be equal when bidirectional differs")
-        void shouldNotBeEqualWhenBidirectionalDiffers() {
-            MotorUnitConfig config1 = MotorUnitConfig.builder()
-                .type("rotary")
-                .bidirectional(true)
-                .build();
-
-            MotorUnitConfig config2 = MotorUnitConfig.builder()
-                .type("rotary")
-                .bidirectional(false)
-                .build();
-
-            assertNotEquals(config1, config2);
-        }
     }
 
     @Nested
@@ -226,7 +208,6 @@ class MotorUnitConfigTest {
             MotorUnitConfig config = MotorUnitConfig.builder()
                 .type("servo")
                 .range(0.0, 180.0)
-                .bidirectional(false)
                 .unit(0)
                 .group(1)
                 .build();
@@ -235,9 +216,8 @@ class MotorUnitConfigTest {
 
             assertTrue(result.contains("MotorUnitConfig"));
             assertTrue(result.contains("type='servo'"));
-            assertTrue(result.contains("minRange=0.0"));
-            assertTrue(result.contains("maxRange=180.0"));
-            assertTrue(result.contains("bidirectional=false"));
+            assertTrue(result.contains("minValue=0.0"));
+            assertTrue(result.contains("maxValue=180.0"));
         }
     }
 }

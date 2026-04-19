@@ -14,8 +14,60 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
 }
 
+tasks.withType<JavaCompile> {
+    options.encoding = "UTF-8"
+}
+
 tasks.test {
     useJUnitPlatform()
+}
+
+// Exclude native/ directory from the default JAR task.
+// Platform-classified JARs (produced by Maven assembly-plugin) include only their platform's native lib.
+tasks.jar {
+    exclude("native/**")
+}
+
+// --- Platform-classified native JARs ---
+// Each task produces a JAR containing only the native lib for its platform.
+// These mirror the artifacts produced by maven-assembly-plugin for local verification.
+
+val nativeResourcesDir = file("src/main/resources")
+
+val platforms = listOf(
+    "linux-x86_64",
+    "linux-aarch64",
+    "osx-x86_64",
+    "osx-aarch64",
+    "windows-x86_64"
+)
+
+// Helper to convert platform string to a Gradle task name (camelCase).
+// e.g. "linux-x86_64" -> "LinuxX8664", final task name "jarLinuxX8664"
+fun platformToTaskSuffix(platform: String): String =
+    platform.split("-", "_")
+        .joinToString("") { part -> part.replaceFirstChar { it.uppercaseChar() } }
+
+val classifiedJarTasks = platforms.map { platform ->
+    val taskSuffix = platformToTaskSuffix(platform)
+    tasks.register<Jar>("jar${taskSuffix}") {
+        group = "build"
+        description = "Produces a platform-classified JAR containing only $platform native library."
+        archiveClassifier.set(platform)
+        // Include only the native/<platform>/ directory from resources.
+        from(nativeResourcesDir) {
+            include("native/$platform/**")
+        }
+        // No Java classes — native-only JAR.
+        destinationDirectory.set(layout.buildDirectory.dir("libs"))
+    }
+}
+
+// Aggregate task that builds all 5 classified native JARs.
+tasks.register("nativeJars") {
+    group = "build"
+    description = "Produces all 5 platform-classified native JARs for sdk-native."
+    dependsOn(classifiedJarTasks)
 }
 val nativeBuildDir = layout.buildDirectory.dir("native")
 val cmakeSourceDir = file("src/main/cpp")
@@ -25,55 +77,70 @@ val feagiFfiDir        = rootProject.projectDir.resolve("../feagi-java-ffi")
 val feagiFfiIncludeDir = feagiFfiDir.resolve("include")
 val feagiFfiLibDir     = feagiFfiDir.resolve("target/release")
 
-tasks.register<Exec>("cmakeConfigure") {
-    group = "native"
-    description = "Configure CMake for JNI bridge"
-    doFirst { nativeBuildDir.get().asFile.mkdirs() }
-
-    commandLine(
-        "cmake",
-        "-S", cmakeSourceDir.absolutePath,
-        "-B", nativeBuildDir.get().asFile.absolutePath,
-        "-DFEAGI_FFI_INCLUDE_DIR=${feagiFfiIncludeDir.absolutePath}",
-        "-DFEAGI_FFI_LIB_DIR=${feagiFfiLibDir.absolutePath}"
-    )
+// Detect cmake availability at configuration time.
+// Returns true only if BOTH the feagi-java-ffi include directory exists AND cmake is found on PATH.
+val cmakeAvailable: Boolean = feagiFfiIncludeDir.exists() && try {
+    val process = ProcessBuilder("cmake", "--version")
+        .redirectErrorStream(true)
+        .start()
+    process.waitFor() == 0
+} catch (_: Exception) {
+    false
 }
 
-tasks.register<Exec>("cmakeBuild") {
-    group = "native"
-    description = "Build JNI bridge"
-    dependsOn("cmakeConfigure")
+if (cmakeAvailable) {
+    tasks.register<Exec>("cmakeConfigure") {
+        group = "native"
+        description = "Configure CMake for JNI bridge"
+        doFirst { nativeBuildDir.get().asFile.mkdirs() }
 
-    commandLine(
-        "cmake",
-        "--build", nativeBuildDir.get().asFile.absolutePath,
-        "--config", "Release"
-    )
-}
-
-// Hook into normal build
-tasks.named("build") { dependsOn("cmakeBuild") }
-
-// Smoke test runner
-tasks.register<JavaExec>("nativeSmokeTest") {
-    group = "verification"
-    description = "Run ABI smoke test using the built JNI library"
-    dependsOn("cmakeBuild", "classes")
-
-    classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("io.feagi.sdk.nativeffi.NativeSmokeTest")
-
-    // Evaluated at configuration time — just set a placeholder; doFirst overrides it.
-    systemProperty("java.library.path", nativeBuildDir.get().asFile.absolutePath)
-
-    // Windows: ensure Rust DLL is discoverable at runtime
-    environment("PATH", feagiFfiLibDir.absolutePath + ";" + System.getenv("PATH"))
-
-    // doFirst runs AFTER cmakeBuild, so Release/ now exists on Windows.
-    doFirst {
-        val releaseDir = nativeBuildDir.get().asFile.resolve("Release")
-        val jniLibDir = if (releaseDir.exists()) releaseDir else nativeBuildDir.get().asFile
-        systemProperty("java.library.path", jniLibDir.absolutePath)
-        logger.lifecycle("nativeSmokeTest: java.library.path = ${jniLibDir.absolutePath}")
+        commandLine(
+            "cmake",
+            "-S", cmakeSourceDir.absolutePath,
+            "-B", nativeBuildDir.get().asFile.absolutePath,
+            "-DFEAGI_FFI_INCLUDE_DIR=${feagiFfiIncludeDir.absolutePath}",
+            "-DFEAGI_FFI_LIB_DIR=${feagiFfiLibDir.absolutePath}"
+        )
     }
+
+    tasks.register<Exec>("cmakeBuild") {
+        group = "native"
+        description = "Build JNI bridge"
+        dependsOn("cmakeConfigure")
+
+        commandLine(
+            "cmake",
+            "--build", nativeBuildDir.get().asFile.absolutePath,
+            "--config", "Release"
+        )
+    }
+
+    // Hook cmake native build into the standard build lifecycle only when cmake is available.
+    tasks.named("build") { dependsOn("cmakeBuild") }
+
+    // Smoke test runner (only meaningful when cmake is available)
+    tasks.register<JavaExec>("nativeSmokeTest") {
+        group = "verification"
+        description = "Run ABI smoke test using the built JNI library"
+        dependsOn("cmakeBuild", "classes")
+
+        classpath = sourceSets["main"].runtimeClasspath
+        mainClass.set("io.feagi.sdk.nativeffi.NativeSmokeTest")
+
+        // Evaluated at configuration time — just set a placeholder; doFirst overrides it.
+        systemProperty("java.library.path", nativeBuildDir.get().asFile.absolutePath)
+
+        // Windows: ensure Rust DLL is discoverable at runtime
+        environment("PATH", feagiFfiLibDir.absolutePath + ";" + System.getenv("PATH"))
+
+        // doFirst runs AFTER cmakeBuild, so Release/ now exists on Windows.
+        doFirst {
+            val releaseDir = nativeBuildDir.get().asFile.resolve("Release")
+            val jniLibDir = if (releaseDir.exists()) releaseDir else nativeBuildDir.get().asFile
+            systemProperty("java.library.path", jniLibDir.absolutePath)
+            logger.lifecycle("nativeSmokeTest: java.library.path = ${jniLibDir.absolutePath}")
+        }
+    }
+} else {
+    logger.lifecycle("sdk-native: cmake not found on PATH — skipping native JNI build tasks (cmakeConfigure, cmakeBuild).")
 }

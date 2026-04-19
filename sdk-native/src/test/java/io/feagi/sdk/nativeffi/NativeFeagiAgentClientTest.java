@@ -82,7 +82,7 @@ class NativeFeagiAgentClientTest {
                 3,
                 Duration.ofMillis(500),
                 new SensorySocketConfig(1000, 0, true),
-                new MotorSocketConfig(1000, 0)
+                new MotorSocketConfig(1000, 0, false)
         );
     }
 
@@ -366,7 +366,7 @@ class NativeFeagiAgentClientTest {
                 "vision-agent", AgentType.SENSORY, endpoints,
                 AgentCapabilities.builder().vision(vision).build(),
                 Duration.ofSeconds(5), Duration.ofSeconds(10), 3,
-                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true), new MotorSocketConfig(1000, 0));
+                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true), new MotorSocketConfig(1000, 0, false));
 
         assertDoesNotThrow(() -> new NativeFeagiAgentClient(config));
     }
@@ -383,7 +383,7 @@ class NativeFeagiAgentClientTest {
                 "motor-agent", AgentType.MOTOR, endpoints,
                 AgentCapabilities.builder().motor(motor).build(),
                 Duration.ofSeconds(5), Duration.ofSeconds(10), 3,
-                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true), new MotorSocketConfig(1000, 0));
+                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true), new MotorSocketConfig(1000, 0, false));
 
         assertDoesNotThrow(() -> new NativeFeagiAgentClient(config));
     }
@@ -402,7 +402,7 @@ class NativeFeagiAgentClientTest {
                 "multi-motor-agent", AgentType.MOTOR, endpoints,
                 AgentCapabilities.builder().motor(motor).build(),
                 Duration.ofSeconds(5), Duration.ofSeconds(10), 3,
-                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true), new MotorSocketConfig(1000, 0));
+                Duration.ofMillis(500), new SensorySocketConfig(1000, 0, true), new MotorSocketConfig(1000, 0, false));
 
         assertDoesNotThrow(() -> new NativeFeagiAgentClient(config));
     }
@@ -532,7 +532,8 @@ class NativeFeagiAgentClientTest {
                 Duration.ofSeconds(10),  // connectionTimeout
                 5,                       // registrationRetries — 6 total attempts
                 Duration.ofMillis(100),  // retryBackoff
-                new SensorySocketConfig(1000, 0, true));
+                new SensorySocketConfig(1000, 0, true),
+                new MotorSocketConfig(1000, 0, false));
         var client = new NativeFeagiAgentClient(cfg);
         assertEquals(5, cfg.registrationRetries());
         assertDoesNotThrow(client::close);
@@ -557,7 +558,8 @@ class NativeFeagiAgentClientTest {
                 Duration.ofSeconds(10),
                 3,
                 Duration.ofMillis(500),
-                new SensorySocketConfig(1000, 0, true));
+                new SensorySocketConfig(1000, 0, true),
+                new MotorSocketConfig(1000, 0, false));
         var client = new NativeFeagiAgentClient(cfg);
         assertEquals(Duration.ZERO, cfg.heartbeatInterval());
         assertDoesNotThrow(client::close);
@@ -582,7 +584,8 @@ class NativeFeagiAgentClientTest {
                 Duration.ofSeconds(10),
                 3,
                 Duration.ofMillis(500),
-                new SensorySocketConfig(1000, 0, true));
+                new SensorySocketConfig(1000, 0, true),
+                new MotorSocketConfig(1000, 0, false));
         var client = new NativeFeagiAgentClient(cfg);
         assertEquals(Duration.ofSeconds(1), cfg.heartbeatInterval());
         assertDoesNotThrow(client::close);
