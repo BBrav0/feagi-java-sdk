@@ -40,6 +40,71 @@ dependencies {
 }
 ```
 
+### Using the SDK as a Maven Dependency
+
+Add the following to your `pom.xml` to consume the published artifacts:
+
+**sdk-core** (public API types, no native code):
+
+```xml
+<dependency>
+  <groupId>org.feagi</groupId>
+  <artifactId>sdk-core</artifactId>
+  <version>0.0.1</version>
+</dependency>
+```
+
+**sdk-native** (JNI bindings + native library for your platform):
+
+```xml
+<!-- JNI binding classes -->
+<dependency>
+  <groupId>org.feagi</groupId>
+  <artifactId>sdk-native</artifactId>
+  <version>0.0.1</version>
+</dependency>
+
+<!-- Native library for your target platform (choose one classifier) -->
+<dependency>
+  <groupId>org.feagi</groupId>
+  <artifactId>sdk-native</artifactId>
+  <version>0.0.1</version>
+  <classifier>linux-x86_64</classifier>
+</dependency>
+```
+
+The classifier artifact contains the pre-built native library (`.so`, `.dylib`, or `.dll`) for the
+specified platform. The SDK's native loader automatically extracts the library from the classpath at
+runtime — no manual `java.library.path` configuration is required.
+
+**Available platform classifiers:**
+
+| Classifier | Platform |
+|---|---|
+| `linux-x86_64` | Linux, 64-bit x86 |
+| `linux-aarch64` | Linux, 64-bit ARM (e.g. Raspberry Pi 4 / AWS Graviton) |
+| `osx-x86_64` | macOS, Intel |
+| `osx-aarch64` | macOS, Apple Silicon (M1/M2/M3) |
+| `windows-x86_64` | Windows, 64-bit x86 |
+
+**Gradle (Kotlin DSL) equivalent:**
+
+```kotlin
+dependencies {
+    implementation("org.feagi:sdk-core:0.0.1")
+    implementation("org.feagi:sdk-native:0.0.1")
+
+    // Choose the classifier matching your target platform:
+    runtimeOnly("org.feagi:sdk-native:0.0.1:linux-x86_64")
+    // runtimeOnly("org.feagi:sdk-native:0.0.1:linux-aarch64")
+    // runtimeOnly("org.feagi:sdk-native:0.0.1:osx-x86_64")
+    // runtimeOnly("org.feagi:sdk-native:0.0.1:osx-aarch64")
+    // runtimeOnly("org.feagi:sdk-native:0.0.1:windows-x86_64")
+}
+```
+
+---
+
 ### Maven Central publication
 This repository now includes a Maven multi-module build for publication:
 - Parent POM: `pom.xml`

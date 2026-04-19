@@ -1,0 +1,50 @@
+{
+  "flowId": "ci-workflow-assertions",
+  "testedAt": "2026-04-18T18:07:00Z",
+  "assertions": {
+    "VAL-CI-001": {
+      "status": "pass",
+      "evidence": "Workflow YAML contains 'on: release: types: [published]' (line 27-28) and 'workflow_dispatch:' (line 29) with 'inputs: native_binary_source:' block (lines 30-37) including description, required: true, default: 'local', and type: string.",
+      "details": "Both trigger configurations are present and correctly structured. The workflow_dispatch input allows users to specify 'local' (default) or a remote URL for native binary downloads."
+    },
+    "VAL-CI-002": {
+      "status": "pass",
+      "evidence": "Step 'Download native binaries' (lines 61-97) uses the workflow_dispatch input value as BASE_URL, downloads binaries for all 5 platforms (linux-x86_64, linux-aarch64, osx-x86_64, osx-aarch64, windows-x86_64) using curl, and places them in 'sdk-native/src/main/resources/native/<platform>/<libname>'. The step uses a platform-to-filename mapping (PLATFORM_LIBS associative array) with correct library names per platform.",
+      "details": "Download logic iterates over all 5 platforms, creates destination directories with mkdir -p, and uses curl -fsSL to fetch binaries from <BASE_URL>/<platform>/<libname>. Failure to download any binary causes exit 1."
+    },
+    "VAL-CI-003": {
+      "status": "pass",
+      "evidence": "The download step has conditional: if: ${{ github.event.inputs.native_binary_source != 'local' && github.event.inputs.native_binary_source != '' }} (line 64). When input is 'local' (the default) or empty, the download step is skipped entirely.",
+      "details": "For release-triggered runs (not workflow_dispatch), github.event.inputs.native_binary_source is empty/null, so the condition evaluates false and the download is skipped. For manual dispatch with default 'local', it is also skipped."
+    },
+    "VAL-CI-004": {
+      "status": "pass",
+      "evidence": "Step 'Validate native binaries' (lines 101-133) checks all 5 platforms. It builds a MISSING array of files that don't exist (using [ ! -f ... ]), and if any are missing, prints descriptive errors listing each missing file with resolution guidance, then calls 'exit 1'. This step runs unconditionally (no 'if' condition), so it validates for both local and remote scenarios.",
+      "details": "The validation step uses the same PLATFORM_LIBS associative array as the download step, checks each expected file at NATIVE_ROOT/<platform>/<libname>, and on success prints a confirmation with checkmarks for all 5 platforms."
+    },
+    "VAL-CI-005": {
+      "status": "pass",
+      "evidence": "Step 'Publish signed artifacts' (lines 153-167) runs: mvn -B -Dgpg.passphrase=... --batch-mode --no-transfer-progress -Dgpg.pinEntryMode=loopback -Prelease clean deploy. The '-Prelease' flag activates the release profile in the root pom.xml which configures maven-source-plugin (jar-no-fork), maven-javadoc-plugin (jar), and maven-gpg-plugin (sign). The sdk-native pom.xml contains maven-assembly-plugin configuration for 5 platform-classified JARs.",
+      "details": "The workflow comment block for Step 6 explicitly documents that -Prelease activates source JARs, javadoc JARs, GPG signatures, and platform-classified native JARs."
+    },
+    "VAL-CI-006": {
+      "status": "pass",
+      "evidence": "All credential references in the workflow use ${{ secrets.* }} syntax: OSSRH_USERNAME via ${{ secrets.OSSRH_USERNAME }}, OSSRH_TOKEN via ${{ secrets.OSSRH_TOKEN }}, MAVEN_GPG_PRIVATE_KEY via ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}, MAVEN_GPG_PASSPHRASE via ${{ secrets.MAVEN_GPG_PASSPHRASE }}. No hardcoded credentials found. Comments reference secret names descriptively but contain no actual values.",
+      "details": "Grep for 'password|token|username|passphrase|secret|credential' returned only: (1) comment block describing required secrets, (2) setup-java server-username/server-password mapped to env vars MAVEN_USERNAME/MAVEN_PASSWORD, (3) env blocks mapping secrets to environment variables, (4) Maven command referencing the env var. No plaintext credentials anywhere."
+    },
+    "VAL-CI-007": {
+      "status": "pass",
+      "evidence": "Step 'Import GPG key' (lines 137-148) uses: echo \"$GPG_PRIVATE_KEY\" | base64 --decode | gpg --batch --import. The GPG_PRIVATE_KEY env var is sourced from ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}. The Maven deploy command passes -Dgpg.passphrase=\"${MAVEN_GPG_PASSPHRASE}\" where MAVEN_GPG_PASSPHRASE is ${{ secrets.MAVEN_GPG_PASSPHRASE }}. The POM's release profile configures maven-gpg-plugin with gpgArguments: --batch, --pinentry-mode, loopback.",
+      "details": "GPG import uses base64 decode piped to gpg --batch --import. Passphrase is passed via -D flag to Maven. The POM GPG plugin config includes --batch and --pinentry-mode loopback arguments for non-interactive signing."
+    },
+    "VAL-CI-008": {
+      "status": "pass",
+      "evidence": "Step 'Set up JDK 17' (lines 44-56) uses actions/setup-java@v4 with: distribution: temurin, java-version: '17', cache: maven, server-id: central, server-username: MAVEN_USERNAME, server-password: MAVEN_PASSWORD.",
+      "details": "All required configuration is present: JDK 17 Temurin distribution, Maven cache enabled, server-id set to 'central' for Maven Central publishing, and server credentials mapped to environment variables."
+    }
+  },
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["file inspection"],
+  "summary": "Tested 8 assertions: 8 passed, 0 failed, 0 blocked. All CI workflow configurations are correctly implemented."
+}

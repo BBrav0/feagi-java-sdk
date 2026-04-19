@@ -1,0 +1,73 @@
+{
+  "groupId": "path-match",
+  "testedAt": "2026-04-18T17:45:00Z",
+  "isolation": {
+    "projectRoot": "C:\\Users\\bendc\\Documents\\GitHub\\feagi-java-sdk",
+    "classifiedJarsDir": "C:\\Users\\bendc\\Documents\\GitHub\\feagi-java-sdk\\sdk-native\\build\\libs",
+    "nativeLoaderSource": "sdk-native/src/main/java/io/feagi/sdk/nativeffi/FeagiNativeLibrary.java",
+    "readOnly": true
+  },
+  "toolsUsed": ["jar tf", "file reading"],
+  "assertions": [
+    {
+      "id": "VAL-CROSS-004",
+      "title": "Native loader classpath resource paths match classified JAR contents",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Read FeagiNativeLibrary.java and extract the resource path pattern",
+          "expected": "Loader constructs resource paths as 'native/{os}-{arch}/{libfilename}'",
+          "observed": "extractAndLoad() method constructs: resourcePath = \"native/\" + platform + \"/\" + libFilename. Platform is os + \"-\" + arch. OS detection: linux→\"linux\", mac→\"osx\", windows→\"windows\". Arch detection: amd64/x86_64→\"x86_64\", aarch64/arm64→\"aarch64\". Library filenames: linux→\"libfeagi_java_ffi.so\", osx→\"libfeagi_java_ffi.dylib\", windows→\"feagi_java_ffi.dll\"."
+        },
+        {
+          "action": "Run jar tf on sdk-native-0.0.1-linux-x86_64.jar",
+          "expected": "Contains native/linux-x86_64/libfeagi_java_ffi.so",
+          "observed": "Contains: META-INF/, META-INF/MANIFEST.MF, native/, native/linux-x86_64/, native/linux-x86_64/libfeagi_java_ffi.so"
+        },
+        {
+          "action": "Run jar tf on sdk-native-0.0.1-linux-aarch64.jar",
+          "expected": "Contains native/linux-aarch64/libfeagi_java_ffi.so",
+          "observed": "Contains: META-INF/, META-INF/MANIFEST.MF, native/, native/linux-aarch64/, native/linux-aarch64/libfeagi_java_ffi.so"
+        },
+        {
+          "action": "Run jar tf on sdk-native-0.0.1-osx-x86_64.jar",
+          "expected": "Contains native/osx-x86_64/libfeagi_java_ffi.dylib",
+          "observed": "Contains: META-INF/, META-INF/MANIFEST.MF, native/, native/osx-x86_64/, native/osx-x86_64/libfeagi_java_ffi.dylib"
+        },
+        {
+          "action": "Run jar tf on sdk-native-0.0.1-osx-aarch64.jar",
+          "expected": "Contains native/osx-aarch64/libfeagi_java_ffi.dylib",
+          "observed": "Contains: META-INF/, META-INF/MANIFEST.MF, native/, native/osx-aarch64/, native/osx-aarch64/libfeagi_java_ffi.dylib"
+        },
+        {
+          "action": "Run jar tf on sdk-native-0.0.1-windows-x86_64.jar",
+          "expected": "Contains native/windows-x86_64/feagi_java_ffi.dll",
+          "observed": "Contains: META-INF/, META-INF/MANIFEST.MF, native/, native/windows-x86_64/, native/windows-x86_64/feagi_java_ffi.dll"
+        },
+        {
+          "action": "Compare loader resource path pattern with all 5 classified JAR contents",
+          "expected": "All 5 resource paths match exactly",
+          "observed": "All 5 match: linux-x86_64 ✓, linux-aarch64 ✓, osx-x86_64 ✓, osx-aarch64 ✓, windows-x86_64 ✓"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "N/A (CLI-based validation)",
+        "network": "N/A",
+        "files": ["maven-packaging/path-match/VAL-CROSS-004-path-comparison.txt"],
+        "jarContents": {
+          "sdk-native-0.0.1-linux-x86_64.jar": ["META-INF/", "META-INF/MANIFEST.MF", "native/", "native/linux-x86_64/", "native/linux-x86_64/libfeagi_java_ffi.so"],
+          "sdk-native-0.0.1-linux-aarch64.jar": ["META-INF/", "META-INF/MANIFEST.MF", "native/", "native/linux-aarch64/", "native/linux-aarch64/libfeagi_java_ffi.so"],
+          "sdk-native-0.0.1-osx-x86_64.jar": ["META-INF/", "META-INF/MANIFEST.MF", "native/", "native/osx-x86_64/", "native/osx-x86_64/libfeagi_java_ffi.dylib"],
+          "sdk-native-0.0.1-osx-aarch64.jar": ["META-INF/", "META-INF/MANIFEST.MF", "native/", "native/osx-aarch64/", "native/osx-aarch64/libfeagi_java_ffi.dylib"],
+          "sdk-native-0.0.1-windows-x86_64.jar": ["META-INF/", "META-INF/MANIFEST.MF", "native/", "native/windows-x86_64/", "native/windows-x86_64/feagi_java_ffi.dll"]
+        },
+        "loaderPattern": "resourcePath = \"native/\" + platform + \"/\" + libFilename (line in extractAndLoad method)"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 1 assertion: 1 passed. The native loader's resource path pattern (native/{platform}/{libfilename}) exactly matches the paths inside all 5 classified JARs. A consumer adding sdk-native + a platform-classified dependency will have the native library discoverable by the loader."
+}

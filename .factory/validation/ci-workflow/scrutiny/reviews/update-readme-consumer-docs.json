@@ -1,0 +1,21 @@
+{
+  "featureId": "update-readme-consumer-docs",
+  "reviewedAt": "2026-04-18T22:05:00.000Z",
+  "commitId": "ef32ff4",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "README.md was updated with a well-structured 'Using the SDK as a Maven Dependency' section inserted between 'Build (local)' and 'Maven Central publication'. All 6 requirements are met: (1) Maven XML for sdk-core with correct groupId=org.feagi, artifactId=sdk-core, version=0.0.1; (2) Maven XML for sdk-native with both main JAR and classifier example (linux-x86_64); (3) all 5 platform classifiers listed in a clean table; (4) Gradle Kotlin DSL equivalent with implementation/runtimeOnly declarations and all 5 classifiers shown; (5) clear explanation that classifier JARs contain the pre-built native library and the SDK auto-extracts at runtime; (6) existing README content fully preserved (65 insertions, 0 deletions). The section placement is logical, the formatting is clean, and the documentation accurately describes the artifact structure.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The feature description specifies groupId=org.feagi but CLAUDE.md (project instructions) says groupId=io.feagi. The worker correctly used org.feagi per AGENTS.md, but the CLAUDE.md discrepancy is already documented as a known pre-existing issue in AGENTS.md. No action needed.",
+      "evidence": "CLAUDE.md says 'Group: io.feagi'; AGENTS.md 'Known Pre-Existing Issues' section documents this: 'CLAUDE.md references io.feagi as group ID but actual build files use org.feagi'. README correctly uses org.feagi."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Clean pass. The README update correctly documents Maven and Gradle dependency snippets for sdk-core and sdk-native with platform classifiers. All 5 classifiers are listed, the explanation of classifier JARs is accurate, and existing content is preserved. No blocking or non-blocking issues found."
+}

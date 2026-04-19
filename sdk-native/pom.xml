@@ -48,6 +48,95 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <!-- Exclude native libs from the main (unclassified) JAR -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>native/**</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!-- Produce 5 platform-classified JARs, each containing only that platform's native lib -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>native-linux-x86_64</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <descriptors>
+                                <descriptor>src/assembly/linux-x86_64.xml</descriptor>
+                            </descriptors>
+                            <classifier>linux-x86_64</classifier>
+                            <appendAssemblyId>false</appendAssemblyId>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>native-linux-aarch64</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <descriptors>
+                                <descriptor>src/assembly/linux-aarch64.xml</descriptor>
+                            </descriptors>
+                            <classifier>linux-aarch64</classifier>
+                            <appendAssemblyId>false</appendAssemblyId>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>native-osx-x86_64</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <descriptors>
+                                <descriptor>src/assembly/osx-x86_64.xml</descriptor>
+                            </descriptors>
+                            <classifier>osx-x86_64</classifier>
+                            <appendAssemblyId>false</appendAssemblyId>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>native-osx-aarch64</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <descriptors>
+                                <descriptor>src/assembly/osx-aarch64.xml</descriptor>
+                            </descriptors>
+                            <classifier>osx-aarch64</classifier>
+                            <appendAssemblyId>false</appendAssemblyId>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>native-windows-x86_64</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <descriptors>
+                                <descriptor>src/assembly/windows-x86_64.xml</descriptor>
+                            </descriptors>
+                            <classifier>windows-x86_64</classifier>
+                            <appendAssemblyId>false</appendAssemblyId>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>
