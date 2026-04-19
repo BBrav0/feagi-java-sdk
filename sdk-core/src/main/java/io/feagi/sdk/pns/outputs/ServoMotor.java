@@ -296,8 +296,8 @@ public class ServoMotor extends BaseOutput {
      * Builder for ServoMotor configuration.
      */
     public static final class Builder {
-        private double minAngle = 0.0;
-        private double maxAngle = 180.0;
+        private double minAngle = Double.NaN;
+        private double maxAngle = Double.NaN;
         private Encoding encoding = Encoding.ABSOLUTE;
         private double gain = 1.0;
         private double incrementalStepRatio = 0.05;
@@ -327,8 +327,13 @@ public class ServoMotor extends BaseOutput {
          *
          * @param minAngle the minimum angle in degrees
          * @return this builder
+         * @throws IllegalArgumentException if maxAngle is already set and minAngle >= maxAngle
          */
         public Builder minAngle(double minAngle) {
+            if (!Double.isNaN(this.maxAngle) && minAngle >= this.maxAngle) {
+                throw new IllegalArgumentException(
+                    "minAngle must be less than maxAngle, got [" + minAngle + ", " + this.maxAngle + "]");
+            }
             this.minAngle = minAngle;
             return this;
         }
@@ -338,8 +343,13 @@ public class ServoMotor extends BaseOutput {
          *
          * @param maxAngle the maximum angle in degrees
          * @return this builder
+         * @throws IllegalArgumentException if minAngle is already set and minAngle >= maxAngle
          */
         public Builder maxAngle(double maxAngle) {
+            if (!Double.isNaN(this.minAngle) && this.minAngle >= maxAngle) {
+                throw new IllegalArgumentException(
+                    "maxAngle must be greater than minAngle, got [" + this.minAngle + ", " + maxAngle + "]");
+            }
             this.maxAngle = maxAngle;
             return this;
         }
@@ -359,10 +369,14 @@ public class ServoMotor extends BaseOutput {
         /**
          * Set the gain (amplification factor).
          *
-         * @param gain the gain value (should be > 0)
+         * @param gain the gain value (must be positive)
          * @return this builder
+         * @throws IllegalArgumentException if gain is not positive
          */
         public Builder gain(double gain) {
+            if (gain <= 0) {
+                throw new IllegalArgumentException("gain must be positive, got: " + gain);
+            }
             this.gain = gain;
             return this;
         }
@@ -370,10 +384,15 @@ public class ServoMotor extends BaseOutput {
         /**
          * Set the incremental step ratio.
          *
-         * @param ratio the step ratio (0.0 to 1.0)
+         * @param ratio the step ratio (must be in range (0.0, 1.0])
          * @return this builder
+         * @throws IllegalArgumentException if ratio is not in valid range
          */
         public Builder incrementalStepRatio(double ratio) {
+            if (ratio <= 0 || ratio > 1.0) {
+                throw new IllegalArgumentException(
+                    "incrementalStepRatio must be in range (0.0, 1.0], got: " + ratio);
+            }
             this.incrementalStepRatio = ratio;
             return this;
         }
@@ -382,9 +401,28 @@ public class ServoMotor extends BaseOutput {
          * Build the ServoMotor instance.
          *
          * @return a new ServoMotor with the configured values
+         * @throws IllegalArgumentException if minAngle >= maxAngle
          */
         public ServoMotor build() {
-            return new ServoMotor(this);
+            // Apply defaults if not set
+            double finalMinAngle = Double.isNaN(this.minAngle) ? 0.0 : this.minAngle;
+            double finalMaxAngle = Double.isNaN(this.maxAngle) ? 180.0 : this.maxAngle;
+
+            // Validate range
+            if (finalMinAngle >= finalMaxAngle) {
+                throw new IllegalArgumentException(
+                    "minAngle must be less than maxAngle, got [" + finalMinAngle + ", " + finalMaxAngle + "]");
+            }
+
+            // Create a new builder with validated values for the constructor
+            Builder validated = new Builder();
+            validated.minAngle = finalMinAngle;
+            validated.maxAngle = finalMaxAngle;
+            validated.encoding = this.encoding;
+            validated.gain = this.gain;
+            validated.incrementalStepRatio = this.incrementalStepRatio;
+
+            return new ServoMotor(validated);
         }
     }
 }
