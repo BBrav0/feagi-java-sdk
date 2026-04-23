@@ -314,24 +314,27 @@ public class DataLogger implements Monitor, AutoCloseable {
             }
         } else if (format == Format.JSON) {
             // JSON array format (accumulate in memory - enforce maxEntries limit)
-            if (maxEntries > 0) {
-                // Check if we're at the limit (note: not atomic, may temporarily exceed)
-                while (entryCount.get() >= maxEntries) {
-                    if (whenFull == WhenFull.DROP_OLDEST) {
-                        // Remove oldest entry to make room
-                        if (entries.poll() != null) {
-                            entryCount.decrementAndGet();
+            // Synchronize the entire check-evict-add sequence to prevent TOCTOU races
+            synchronized (fileLock) {
+                if (maxEntries > 0) {
+                    // Evict oldest entries if at limit (only for DROP_OLDEST mode)
+                    while (entryCount.get() >= maxEntries) {
+                        if (whenFull == WhenFull.DROP_OLDEST) {
+                            // Remove oldest entry to make room
+                            if (entries.poll() != null) {
+                                entryCount.decrementAndGet();
+                                droppedEntries.incrementAndGet();
+                            }
+                        } else {
+                            // DROP_NEWEST - skip this entry
                             droppedEntries.incrementAndGet();
+                            return;
                         }
-                    } else {
-                        // DROP_NEWEST - skip this entry
-                        droppedEntries.incrementAndGet();
-                        return;
                     }
                 }
+                entries.add(entry);
+                entryCount.incrementAndGet();
             }
-            entries.add(entry);
-            entryCount.incrementAndGet();
         } else if (format == Format.CSV) {
             // CSV format - synchronized file access
             writeCsvEntry(entry);
