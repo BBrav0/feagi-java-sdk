@@ -2,13 +2,13 @@
 
 **Build AI agents that learn like biological brains**
 
-[![Java 17+](https://img.shields.io/badge/Java-17+-blue.svg)](https://openjdk.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Maven Central](https://img.shields.io/maven-central/v/io.feagi/sdk-core.svg?label=Maven%20Central)](https://central.sonatype.com/search?q=g:io.feagi)
+[![Java 17+](https://img.shields.io/badge/Java-17+-blue.svg)](https://openjdk.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Maven Central](https://img.shields.io/maven-central/v/io.feagi/sdk-core.svg?label=Maven%20Central)](https://central.sonatype.com/search?q=feagi)
 
 ---
 
 ## Quick Install
 
-The FEAGI Java SDK is available on [Maven Central](https://central.sonatype.com/search?q=g:io.feagi). Add the following dependencies to your project:
+The FEAGI Java SDK is available on [Maven Central](https://central.sonatype.com/search?q=feagi). Add the following dependencies to your project:
 
 ### Gradle (Kotlin DSL)
 
@@ -37,36 +37,6 @@ dependencies {
 ```
 
 ### Maven
-### Maven Central publication
-This repository now includes a Maven multi-module build for publication:
-- Parent POM: `pom.xml`
-- Module POMs: `sdk-core/pom.xml`, `sdk-engine/pom.xml`, `sdk-native/pom.xml`, `sdk-cli/pom.xml`
-- Release workflow: `.github/workflows/publish-maven-central.yml`
-
-Before publishing, create and verify a Sonatype Central namespace for `org.feagi`, then configure these GitHub secrets:
-- `OSSRH_USERNAME`
-- `OSSRH_TOKEN`
-- `MAVEN_GPG_PRIVATE_KEY` (base64-encoded armored private key)
-- `MAVEN_GPG_PASSPHRASE`
-
-`OSSRH_USERNAME` and `OSSRH_TOKEN` must be populated with the token-based `username` and `password` values from the Sonatype Central token settings snippet.
-
-Local signed deployment command:
-```bash
-mvn -Prelease clean deploy
-```
-
-Release-triggered CI deployment:
-```bash
-# Create and publish GitHub release 0.0.1
-# This triggers .github/workflows/publish-maven-central.yml
-```
-
-### Native dependency model (planned)
-- Publish native libs from `feagi-java-ffi` as **platform classifier artifacts** (e.g., `linux-aarch64`, `linux-x86_64`, `osx-aarch64`, `windows-x86_64`).
-- `sdk-native` will be responsible for loading the correct native library and enforcing the ABI handshake.
-
-### Maven Dependencies
 
 ```xml
 <dependencies>
