@@ -6,24 +6,36 @@
 package io.feagi.sdk.core;
 
 /**
- * Supported transport modes for FEAGI agent communication.
+ * Supported transport backends.
  */
 public enum TransportMode {
-    /** ZMQ transport (TCP-based) */
-    ZMQ("zmq"),
-    /** WebSocket transport (WS-based) */
-    WEBSOCKET("websocket");
+    ZMQ,
+    WEBSOCKET;
 
-    private final String preferenceString;
-
-    TransportMode(String preferenceString) {
-        this.preferenceString = preferenceString;
+    /**
+     * Parse a transport mode from caller input.
+     *
+     * @param value transport name (e.g. "zmq" or "websocket")
+     * @return resolved mode
+     */
+    public static TransportMode from(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("transport must not be null or blank");
+        }
+        return switch (value.trim().toLowerCase()) {
+            case "zmq" -> ZMQ;
+            case "websocket", "ws", "wss" -> WEBSOCKET;
+            default -> throw new IllegalArgumentException("Unsupported transport: " + value);
+        };
     }
 
     /**
-     * Return the transport preference string for native binding use.
+     * Return FEAGI registration preference string.
      */
     public String toPreferenceString() {
-        return preferenceString;
+        return switch (this) {
+            case ZMQ -> "zmq";
+            case WEBSOCKET -> "websocket";
+        };
     }
 }

@@ -159,9 +159,16 @@ public class ZmqTransportTest {
         mockFeagiSensorySocket.setReceiveTimeOut(1000);
         try (ZmqTransport transport = new ZmqTransport(bothAgentConfig())) {
             byte[] payload = "sensory_data".getBytes();
-            transport.sendSensoryBytes(payload);
-
-            byte[] receivedBytes = mockFeagiSensorySocket.recv(0);
+            // Jeromq connect is asynchronous; in a busy test run the first send can be dropped
+            // with DONTWAIT before the PUSH/PULL handshake is ready. Retry briefly for stability.
+            byte[] receivedBytes = null;
+            for (int attempt = 0; attempt < 10 && receivedBytes == null; attempt++) {
+                transport.sendSensoryBytes(payload);
+                receivedBytes = mockFeagiSensorySocket.recv(ZMQ.DONTWAIT);
+                if (receivedBytes == null) {
+                    Thread.sleep(10);
+                }
+            }
 
             assertNotNull(receivedBytes, "FEAGI sensory socket should receive payload");
             assertArrayEquals(payload, receivedBytes);

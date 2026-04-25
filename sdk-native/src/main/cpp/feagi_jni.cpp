@@ -597,36 +597,45 @@ Java_io_feagi_sdk_nativeffi_FeagiNativeBindings_feagiClientReceiveMotorBuffer(
                 "outBufHandle and outHasData must not be null");
         return static_cast<jint>(FEAGI_STATUS_NULL_POINTER);
     }
+    if (h == 0) {
+        return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
+    }
+    if (env->GetArrayLength(outBufHandle) < 1 || env->GetArrayLength(outHasData) < 1) {
+        return static_cast<jint>(FEAGI_STATUS_INVALID_ARGUMENT);
+    }
     FeagiByteBufferHandle* buf = nullptr;
     bool hasData = false;
     FeagiStatus r = feagi_client_receive_motor_buffer(
             JLONG_TO_PTR(FeagiAgentClientHandle, h), &buf, &hasData);
     if (r == FEAGI_STATUS_OK) {
-        // Write back the handle and flag only on success — on failure, buf may be
-        // non-null depending on the ABI's error contract and should not be surfaced
-        // to Java as a valid handle (it may be dangling or partially initialised).
-        jlong jl = PTR_TO_JLONG(buf);
-        env->SetLongArrayRegion(outBufHandle, 0, 1, &jl);
+        // On OK, ownership of buf transfers to JNI/Java. Publish hasData first so
+        // the native handle is only surfaced after both JNI writes succeed.
         jboolean jd = static_cast<jboolean>(hasData);
         env->SetBooleanArrayRegion(outHasData, 0, 1, &jd);
+        if (env->ExceptionCheck()) {
+            feagi_buffer_free(buf);
+            return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+        }
+        jlong jl = PTR_TO_JLONG(buf);
+        env->SetLongArrayRegion(outBufHandle, 0, 1, &jl);
+        if (env->ExceptionCheck()) {
+            feagi_buffer_free(buf);
+            return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+        }
     } else {
-        // Defensive free on error path.
-        //
-        // feagi_java_ffi.h does not document whether out_buf is null or a valid
-        // allocated pointer when the function returns a non-OK status. We treat it
-        // defensively: if buf is non-null we free it to avoid a leak, on the assumption
-        // that a non-null pointer from the Rust side is always safe to free.
-        //
-        // If the ABI is ever clarified to guarantee "out_buf is always null on error",
-        // this free can be removed. If it is clarified to "out_buf is always garbage on
-        // error", this free must be removed to avoid UB — update this comment and remove
-        // the free in that case.
-        if (buf) feagi_buffer_free(buf);
+        // On non-OK, the ABI does not guarantee ownership/validity of out_buf.
+        // Never free buf on this path to avoid invalid-free/double-free UB.
         // Zero out the output arrays so Java callers never see a stale or dangling value.
         jlong zero = 0L;
         jboolean jfalse = JNI_FALSE;
         env->SetLongArrayRegion(outBufHandle, 0, 1, &zero);
+        if (env->ExceptionCheck()) {
+            return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+        }
         env->SetBooleanArrayRegion(outHasData, 0, 1, &jfalse);
+        if (env->ExceptionCheck()) {
+            return static_cast<jint>(FEAGI_STATUS_ALLOCATION_FAILED);
+        }
     }
     return static_cast<jint>(r);
 }

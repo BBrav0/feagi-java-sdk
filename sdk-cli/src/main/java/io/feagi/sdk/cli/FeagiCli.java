@@ -37,7 +37,7 @@ public final class FeagiCli implements Callable<Integer> {
 
     private static final Logger LOG = Logger.getLogger(FeagiCli.class.getName());
 
-    static final String VERSION = "FEAGI CLI v0.0.1-beta.0";
+    static final String VERSION = "FEAGI CLI v0.0.1";
 
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
