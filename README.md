@@ -2,24 +2,24 @@
 
 **Build AI agents that learn like biological brains**
 
-[![Java 17+](https://img.shields.io/badge/Java-17+-blue.svg)](https://openjdk.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Maven Central](https://img.shields.io/maven-central/v/io.feagi/sdk-core.svg?label=Maven%20Central)](https://central.sonatype.com/search?q=feagi)
+[![Java 17+](https://img.shields.io/badge/Java-17+-blue.svg)](https://openjdk.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Maven Central](https://img.shields.io/maven-central/v/org.feagi/sdk-core.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/org.feagi/sdk-core)
 
 ---
 
 ## Quick Install
 
-The FEAGI Java SDK is available on [Maven Central](https://central.sonatype.com/search?q=feagi). Add the following dependencies to your project:
+The FEAGI Java SDK is available on [Maven Central](https://central.sonatype.com/artifact/org.feagi/sdk-core). Add the following dependencies to your project:
 
 ### Gradle (Kotlin DSL)
 
 ```kotlin
 dependencies {
-    implementation("io.feagi:sdk-core:0.0.1")
-    implementation("io.feagi:sdk-native:0.0.1")
+    implementation("org.feagi:sdk-core:0.0.1")
+    implementation("org.feagi:sdk-native:0.0.1")
     // Optional: Engine control
-    implementation("io.feagi:sdk-engine:0.0.1")
+    implementation("org.feagi:sdk-engine:0.0.1")
     // Optional: CLI tools
-    implementation("io.feagi:sdk-cli:0.0.1")
+    implementation("org.feagi:sdk-cli:0.0.1")
 }
 ```
 
@@ -27,12 +27,12 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'io.feagi:sdk-core:0.0.1'
-    implementation 'io.feagi:sdk-native:0.0.1'
+    implementation 'org.feagi:sdk-core:0.0.1'
+    implementation 'org.feagi:sdk-native:0.0.1'
     // Optional: Engine control
-    implementation 'io.feagi:sdk-engine:0.0.1'
+    implementation 'org.feagi:sdk-engine:0.0.1'
     // Optional: CLI tools
-    implementation 'io.feagi:sdk-cli:0.0.1'
+    implementation 'org.feagi:sdk-cli:0.0.1'
 }
 ```
 
@@ -41,31 +41,31 @@ dependencies {
 ```xml
 <dependencies>
     <dependency>
-        <groupId>io.feagi</groupId>
+        <groupId>org.feagi</groupId>
         <artifactId>sdk-core</artifactId>
         <version>0.0.1</version>
     </dependency>
     <dependency>
-        <groupId>io.feagi</groupId>
+        <groupId>org.feagi</groupId>
         <artifactId>sdk-native</artifactId>
         <version>0.0.1</version>
     </dependency>
     <!-- Optional: Engine control -->
     <dependency>
-        <groupId>io.feagi</groupId>
+        <groupId>org.feagi</groupId>
         <artifactId>sdk-engine</artifactId>
         <version>0.0.1</version>
     </dependency>
     <!-- Optional: CLI tools -->
     <dependency>
-        <groupId>io.feagi</groupId>
+        <groupId>org.feagi</groupId>
         <artifactId>sdk-cli</artifactId>
         <version>0.0.1</version>
     </dependency>
 </dependencies>
 ```
 
-> **Note**: Check [Maven Central](https://central.sonatype.com/search?q=g:io.feagi) for the latest version.
+> **Note**: Check [Maven Central](https://central.sonatype.com/search?q=g:org.feagi) for the latest version.
 
 ---
 
@@ -232,10 +232,10 @@ motor_port = 5564
 The simplest agent example - connect, send sensory data, receive motor commands:
 
 ```java
-import io.feagi.sdk.core.pns.BrainInput;
-import io.feagi.sdk.core.pns.BrainOutput;
-import io.feagi.sdk.core.pns.BrainInputConfig;
-import io.feagi.sdk.core.BrainOutputConfig;
+import org.feagi.sdk.core.pns.BrainInput;
+import org.feagi.sdk.core.pns.BrainOutput;
+import org.feagi.sdk.core.pns.BrainInputConfig;
+import org.feagi.sdk.core.BrainOutputConfig;
 
 public class MinimalAgent {
     public static void main(String[] args) throws Exception {
@@ -297,10 +297,10 @@ public class MinimalAgent {
 The Java SDK provides PNS input/output devices equivalent to the Python SDK:
 
 ```java
-import io.feagi.sdk.pns.inputs.Camera;
-import io.feagi.sdk.core.motor.ServoMotor;
-import io.feagi.sdk.core.pns.BrainInput;
-import io.feagi.sdk.core.pns.BrainOutput;
+import org.feagi.sdk.pns.inputs.Camera;
+import org.feagi.sdk.core.motor.ServoMotor;
+import org.feagi.sdk.core.pns.BrainInput;
+import org.feagi.sdk.core.pns.BrainOutput;
 
 // Register devices
 Camera camera = Camera.builder()
@@ -343,8 +343,8 @@ while (running) {
 `BaseAgent` provides a standard agent lifecycle:
 
 ```java
-import io.feagi.sdk.agent.BaseAgent;
-import io.feagi.sdk.core.*;
+import org.feagi.sdk.agent.BaseAgent;
+import org.feagi.sdk.core.*;
 
 public class MyRobotAgent extends BaseAgent {
     public MyRobotAgent() {
@@ -406,8 +406,8 @@ public class MyRobotAgent extends BaseAgent {
 #### Metrics Collection
 
 ```java
-import io.feagi.sdk.observability.MetricsCollector;
-import io.feagi.sdk.observability.Monitor;
+import org.feagi.sdk.observability.MetricsCollector;
+import org.feagi.sdk.observability.Monitor;
 
 MetricsCollector metrics = new MetricsCollector();
 
@@ -427,7 +427,7 @@ metrics.exportCsv("metrics.csv");
 #### Data Logging
 
 ```java
-import io.feagi.sdk.observability.DataLogger;
+import org.feagi.sdk.observability.DataLogger;
 
 DataLogger logger = new DataLogger.Builder()
     .outputFile("agent_data.jsonl")
