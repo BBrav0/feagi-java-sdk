@@ -2,7 +2,70 @@
 
 **Build AI agents that learn like biological brains**
 
-[![Java 17+](https://img.shields.io/badge/Java-17+-blue.svg)](https://openjdk.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Java 17+](https://img.shields.io/badge/Java-17+-blue.svg)](https://openjdk.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Maven Central](https://img.shields.io/maven-central/v/io.feagi/sdk-core.svg?label=Maven%20Central)](https://central.sonatype.com/search?q=g:io.feagi)
+
+---
+
+## Quick Install
+
+The FEAGI Java SDK is available on [Maven Central](https://central.sonatype.com/search?q=g:io.feagi). Add the following dependencies to your project:
+
+### Gradle (Kotlin DSL)
+
+```kotlin
+dependencies {
+    implementation("io.feagi:sdk-core:0.0.1")
+    implementation("io.feagi:sdk-native:0.0.1")
+    // Optional: Engine control
+    implementation("io.feagi:sdk-engine:0.0.1")
+    // Optional: CLI tools
+    implementation("io.feagi:sdk-cli:0.0.1")
+}
+```
+
+### Gradle (Groovy DSL)
+
+```groovy
+dependencies {
+    implementation 'io.feagi:sdk-core:0.0.1'
+    implementation 'io.feagi:sdk-native:0.0.1'
+    // Optional: Engine control
+    implementation 'io.feagi:sdk-engine:0.0.1'
+    // Optional: CLI tools
+    implementation 'io.feagi:sdk-cli:0.0.1'
+}
+```
+
+### Maven
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>io.feagi</groupId>
+        <artifactId>sdk-core</artifactId>
+        <version>0.0.1</version>
+    </dependency>
+    <dependency>
+        <groupId>io.feagi</groupId>
+        <artifactId>sdk-native</artifactId>
+        <version>0.0.1</version>
+    </dependency>
+    <!-- Optional: Engine control -->
+    <dependency>
+        <groupId>io.feagi</groupId>
+        <artifactId>sdk-engine</artifactId>
+        <version>0.0.1</version>
+    </dependency>
+    <!-- Optional: CLI tools -->
+    <dependency>
+        <groupId>io.feagi</groupId>
+        <artifactId>sdk-cli</artifactId>
+        <version>0.0.1</version>
+    </dependency>
+</dependencies>
+```
+
+> **Note**: Check [Maven Central](https://central.sonatype.com/search?q=g:io.feagi) for the latest version.
 
 ---
 
@@ -27,36 +90,6 @@ FEAGI serves as the core neural runtime behind **Neurorobotics Studio**, powerin
 
 ## Installation
 
-### Gradle Dependencies
-
-```kotlin
-dependencies {
-    implementation("io.feagi:sdk-core:0.1.0")
-    implementation("io.feagi:sdk-native:0.1.0")
-    // Optional: Engine control
-    implementation("io.feagi:sdk-engine:0.1.0")
-    // Optional: CLI tools
-    implementation("io.feagi:sdk-cli:0.1.0")
-}
-```
-
-### Maven Dependencies
-
-```xml
-<dependencies>
-    <dependency>
-        <groupId>io.feagi</groupId>
-        <artifactId>sdk-core</artifactId>
-        <version>0.1.0</version>
-    </dependency>
-    <dependency>
-        <groupId>io.feagi</groupId>
-        <artifactId>sdk-native</artifactId>
-        <version>0.1.0</version>
-    </dependency>
-</dependencies>
-```
-
 ### Native Library Requirements
 
 The SDK requires the `feagi-java-ffi` native library. For local development, build from source:
@@ -71,6 +104,30 @@ cargo build --release
 export LD_LIBRARY_PATH=$PWD/target/release:$LD_LIBRARY_PATH  # Linux
 export DYLD_LIBRARY_PATH=$PWD/target/release:$DYLD_LIBRARY_PATH  # macOS
 set PATH=%PATH%;%CD%\target\release  # Windows
+```
+
+### Native dependency model (planned)
+- Publish native libs from `feagi-java-ffi` as **platform classifier artifacts** (e.g., `linux-aarch64`, `linux-x86_64`, `osx-aarch64`, `windows-x86_64`).
+- `sdk-native` will be responsible for loading the correct native library and enforcing the ABI handshake.
+
+---
+
+## Publishing to Maven Central (Maintainers Only)
+
+This repository includes a Maven multi-module build for publication:
+- Parent POM: `pom.xml`
+- Module POMs: `sdk-core/pom.xml`, `sdk-engine/pom.xml`, `sdk-native/pom.xml`, `sdk-cli/pom.xml`
+- Release workflow: `.github/workflows/publish-maven-central.yml`
+
+Before publishing, configure these GitHub secrets:
+- `OSSRH_USERNAME`
+- `OSSRH_TOKEN`
+- `MAVEN_GPG_PRIVATE_KEY` (base64-encoded armored private key)
+- `MAVEN_GPG_PASSPHRASE`
+
+Local signed deployment command:
+```bash
+mvn -Prelease clean deploy
 ```
 
 ---
