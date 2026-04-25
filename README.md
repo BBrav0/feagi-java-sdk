@@ -65,7 +65,7 @@ dependencies {
 </dependencies>
 ```
 
-> **Note**: Check [Maven Central](https://central.sonatype.com/search?q=g:org.feagi) for the latest version.
+> **Note**: Check [Maven Central](https://central.sonatype.com/artifact/org.feagi/sdk-core) for the latest version.
 
 ---
 
