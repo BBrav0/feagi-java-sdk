@@ -2,44 +2,41 @@
 
 **Build AI agents that learn like biological brains**
 
-[![Java 17+](https://img.shields.io/badge/Java-17+-blue.svg)](https://openjdk.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Java 17+](https://img.shields.io/badge/Java-17+-blue.svg)](https://openjdk.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Maven Central](https://img.shields.io/maven-central/v/io.feagi/sdk-core.svg?label=Maven%20Central)](https://central.sonatype.com/search?q=g:io.feagi)
 
 ---
 
-## Introduction
+## Quick Install
 
-The FEAGI Java SDK is a library for building FEAGI agents in Java, supporting robotics, simulators, and edge device applications. The SDK provides high-performance I/O backed by Rust via JNI while maintaining a pure Java API.
+The FEAGI Java SDK is available on [Maven Central](https://central.sonatype.com/search?q=g:io.feagi). Add the following dependencies to your project:
 
-**Key Features**:
-- **Rust-backed I/O** - High-performance communication via `feagi-java-ffi`
-- **Java 17+ baseline** - LTS version suitable for robotics environments
-- **Cross-platform** - Supports Linux, macOS, and Windows
-- **Python SDK parity** - Same PNS input/output model as the Python SDK
-- **Observability** - Built-in metrics collection and data logging
-
-### What is FEAGI?
-
-**FEAGI (Framework for Evolutionary Artificial General Intelligence)** is a biologically inspired, modular neural execution engine designed for **embodied AI and robotics**. FEAGI enables spiking-neural-circuit-driven perception, cognition, and control across simulated and physical embodiments, with a strong emphasis on **real-time interaction, modularity, and cross-platform deployment**.
-
-FEAGI serves as the core neural runtime behind **Neurorobotics Studio**, powering a growing ecosystem of reusable neural components ("brains"), tools, and integrations for robotics and physical AI.
-
----
-
-## Installation
-
-### Gradle Dependencies
+### Gradle (Kotlin DSL)
 
 ```kotlin
 dependencies {
-    implementation("io.feagi:sdk-core:0.1.0")
-    implementation("io.feagi:sdk-native:0.1.0")
+    implementation("io.feagi:sdk-core:0.0.1")
+    implementation("io.feagi:sdk-native:0.0.1")
     // Optional: Engine control
-    implementation("io.feagi:sdk-engine:0.1.0")
+    implementation("io.feagi:sdk-engine:0.0.1")
     // Optional: CLI tools
-    implementation("io.feagi:sdk-cli:0.1.0")
+    implementation("io.feagi:sdk-cli:0.0.1")
 }
 ```
 
+### Gradle (Groovy DSL)
+
+```groovy
+dependencies {
+    implementation 'io.feagi:sdk-core:0.0.1'
+    implementation 'io.feagi:sdk-native:0.0.1'
+    // Optional: Engine control
+    implementation 'io.feagi:sdk-engine:0.0.1'
+    // Optional: CLI tools
+    implementation 'io.feagi:sdk-cli:0.0.1'
+}
+```
+
+### Maven
 ### Maven Central publication
 This repository now includes a Maven multi-module build for publication:
 - Parent POM: `pom.xml`
@@ -76,15 +73,52 @@ Release-triggered CI deployment:
     <dependency>
         <groupId>io.feagi</groupId>
         <artifactId>sdk-core</artifactId>
-        <version>0.1.0</version>
+        <version>0.0.1</version>
     </dependency>
     <dependency>
         <groupId>io.feagi</groupId>
         <artifactId>sdk-native</artifactId>
-        <version>0.1.0</version>
+        <version>0.0.1</version>
+    </dependency>
+    <!-- Optional: Engine control -->
+    <dependency>
+        <groupId>io.feagi</groupId>
+        <artifactId>sdk-engine</artifactId>
+        <version>0.0.1</version>
+    </dependency>
+    <!-- Optional: CLI tools -->
+    <dependency>
+        <groupId>io.feagi</groupId>
+        <artifactId>sdk-cli</artifactId>
+        <version>0.0.1</version>
     </dependency>
 </dependencies>
 ```
+
+> **Note**: Check [Maven Central](https://central.sonatype.com/search?q=g:io.feagi) for the latest version.
+
+---
+
+## Introduction
+
+The FEAGI Java SDK is a library for building FEAGI agents in Java, supporting robotics, simulators, and edge device applications. The SDK provides high-performance I/O backed by Rust via JNI while maintaining a pure Java API.
+
+**Key Features**:
+- **Rust-backed I/O** - High-performance communication via `feagi-java-ffi`
+- **Java 17+ baseline** - LTS version suitable for robotics environments
+- **Cross-platform** - Supports Linux, macOS, and Windows
+- **Python SDK parity** - Same PNS input/output model as the Python SDK
+- **Observability** - Built-in metrics collection and data logging
+
+### What is FEAGI?
+
+**FEAGI (Framework for Evolutionary Artificial General Intelligence)** is a biologically inspired, modular neural execution engine designed for **embodied AI and robotics**. FEAGI enables spiking-neural-circuit-driven perception, cognition, and control across simulated and physical embodiments, with a strong emphasis on **real-time interaction, modularity, and cross-platform deployment**.
+
+FEAGI serves as the core neural runtime behind **Neurorobotics Studio**, powering a growing ecosystem of reusable neural components ("brains"), tools, and integrations for robotics and physical AI.
+
+---
+
+## Installation
 
 ### Native Library Requirements
 
@@ -100,6 +134,30 @@ cargo build --release
 export LD_LIBRARY_PATH=$PWD/target/release:$LD_LIBRARY_PATH  # Linux
 export DYLD_LIBRARY_PATH=$PWD/target/release:$DYLD_LIBRARY_PATH  # macOS
 set PATH=%PATH%;%CD%\target\release  # Windows
+```
+
+### Native dependency model (planned)
+- Publish native libs from `feagi-java-ffi` as **platform classifier artifacts** (e.g., `linux-aarch64`, `linux-x86_64`, `osx-aarch64`, `windows-x86_64`).
+- `sdk-native` will be responsible for loading the correct native library and enforcing the ABI handshake.
+
+---
+
+## Publishing to Maven Central (Maintainers Only)
+
+This repository includes a Maven multi-module build for publication:
+- Parent POM: `pom.xml`
+- Module POMs: `sdk-core/pom.xml`, `sdk-engine/pom.xml`, `sdk-native/pom.xml`, `sdk-cli/pom.xml`
+- Release workflow: `.github/workflows/publish-maven-central.yml`
+
+Before publishing, configure these GitHub secrets:
+- `OSSRH_USERNAME`
+- `OSSRH_TOKEN`
+- `MAVEN_GPG_PRIVATE_KEY` (base64-encoded armored private key)
+- `MAVEN_GPG_PASSPHRASE`
+
+Local signed deployment command:
+```bash
+mvn -Prelease clean deploy
 ```
 
 ---
