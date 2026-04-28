@@ -506,4 +506,8 @@ public abstract class BaseAgent implements AutoCloseable {
         }
         client.sendSensoryBytes(payload);
     }
+
+    protected final byte[] pollMotorBytes() {
+        return client.pollMotorBytes();
+    }
 }

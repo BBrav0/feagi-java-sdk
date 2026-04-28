@@ -55,7 +55,11 @@ public final class FeagiNativeLibrary {
             }
 
             try {
-                System.loadLibrary(libraryName);
+                if (libraryName.contains("/") || libraryName.contains("\\")) {
+                    System.load(libraryName);  // full path
+                } else {
+                    System.loadLibrary(libraryName);  // just the name
+                }
             } catch (UnsatisfiedLinkError e) {
                 throw new FeagiSdkException(
                         "Failed to load FEAGI JNI library '" + libraryName + "'. " +

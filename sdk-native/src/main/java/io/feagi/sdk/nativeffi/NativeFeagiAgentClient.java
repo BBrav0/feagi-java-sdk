@@ -344,8 +344,24 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
             applyTimingConfig(cfgHandle);
             applySensorySocketConfig(cfgHandle);
             applyCapabilities(cfgHandle);
-            // TODO: wire feagiConfigSetAgentDescriptor and feagiConfigSetAuthTokenBase64
-            // once AgentConfig exposes manufacturer/agentName/agentVersion/authToken fields.
+            // Agent descriptor — read from env vars or use defaults
+            String manufacturer = System.getenv().getOrDefault("FEAGI_MANUFACTURER", "Neuraville");
+            String agentName = System.getenv().getOrDefault("FEAGI_AGENT_NAME", config.agentId());
+            int agentVersion = Integer.parseInt(System.getenv().getOrDefault("FEAGI_AGENT_VERSION", "1"));
+
+            checkStatus(
+                    FeagiNativeBindings.feagiConfigSetAgentDescriptor(
+                            cfgHandle, manufacturer, agentName, agentVersion),
+                    "feagiConfigSetAgentDescriptor");
+
+            // Auth token — read from env var or use 32 zero bytes as default
+            String authToken = System.getenv().getOrDefault(
+                    "FEAGI_AUTH_TOKEN_B64",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+
+            checkStatus(
+                    FeagiNativeBindings.feagiConfigSetAuthTokenBase64(cfgHandle, authToken),
+                    "feagiConfigSetAuthTokenBase64");
 
             checkStatus(FeagiNativeBindings.feagiConfigValidate(cfgHandle),
                     "feagiConfigValidate");
@@ -599,7 +615,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         });
         heartbeatExecutor.scheduleAtFixedRate(
                 this::sendHeartbeat, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
-        // ⚠️ Warn at startup so callers who set a positive heartbeatInterval without reading
+        // Warn at startup so callers who set a positive heartbeatInterval without reading
         // the sendHeartbeat() comment are alerted to the semantic risk. Remove this warning
         // once feagiClientHeartbeat() is available in feagi_java_ffi.h and wired here.
         LOG.warning("NativeFeagiAgentClient: heartbeat started using empty sensory payload "

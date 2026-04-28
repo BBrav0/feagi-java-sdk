@@ -5,5 +5,6 @@ include(
     ":sdk-native",
     ":sdk-engine",
     ":sdk-cli",
+    ":sdk-demo",
 )
 

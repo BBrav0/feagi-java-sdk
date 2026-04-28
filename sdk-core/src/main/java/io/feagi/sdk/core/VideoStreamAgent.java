@@ -9,11 +9,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.logging.Logger;
+import io.feagi.sdk.video.FbcEncoder;
 
 /**
  * Concrete {@link BaseAgent} for streaming video frames to FEAGI.
@@ -68,9 +71,12 @@ public class VideoStreamAgent extends BaseAgent {
 
     // ── Configuration ──────────────────────────────────────────────────────────
 
-    private final Path videoPath;
+    private Path videoPath;
     private final VideoDecoder decoder;
     private final String channelName;
+    private final FbcEncoder fbcEncoder = new FbcEncoder();
+    private byte[] prevFrame = null;
+    private static final int DIFF_THRESHOLD = 15; // pixel change threshold
 
     // ── State set at open time ────────────────────────────────────────────────
 
@@ -272,6 +278,77 @@ public class VideoStreamAgent extends BaseAgent {
     }
 
     /**
+     * Stream a static image to FEAGI for a fixed duration.
+     * Reads the first frame once then repeats it at the given FPS.
+     * Use this for image files (JPG, PNG, etc.) instead of {@link #run()}.
+     *
+     * <p>Mirrors Python's image streaming logic in {@code example_video_simple.py}.
+     *
+     * @param durationSeconds how long to stream the image
+     * @param fps             frames per second to send
+     * @return number of frames sent
+     * @throws InterruptedException if interrupted
+     */
+    public int runImage(int durationSeconds, int fps) throws InterruptedException {
+        if (!isConnected()) {
+            throw new IllegalStateException(
+                    "Agent '" + agentId() + "' is not connected. Call connect() first.");
+        }
+
+        // Open decoder and read the single frame
+        if (!decoderOpen) {
+            try {
+                initializeHardware();
+                markHardwareInitialized();
+            } catch (Exception e) {
+                LOG.warning("VideoStreamAgent: failed to initialize for image: " + e.getMessage());
+                return 0;
+            }
+        }
+
+        // Read just the first frame
+        RawFrame frame;
+        try {
+            frame = decoder.readFrame();
+        } catch (Exception e) {
+            LOG.warning("VideoStreamAgent: failed to read image frame: " + e.getMessage());
+            closeHardware();
+            return 0;
+        }
+
+        if (frame == null) {
+            LOG.warning("VideoStreamAgent: image file produced no frames");
+            closeHardware();
+            return 0;
+        }
+
+        // Pre-encode once — no need to re-encode the same frame repeatedly
+        Map<String, byte[]> sensorMap = Map.of(channelName, frame.rgbBytes());
+        byte[] payload = serializeSensoryData(sensorMap);
+
+        // Stream the same frame repeatedly for the given duration
+        int totalFrames = durationSeconds * fps;
+        long sleepMs = 1000L / fps;
+        int sent = 0;
+
+        for (int i = 0; i < totalFrames; i++) {
+            if (Thread.currentThread().isInterrupted()) break;
+            if (payload != null) {
+                try {
+                    sendSensoryPayload(payload);
+                    sent++;
+                } catch (Exception e) {
+                    LOG.warning("VideoStreamAgent: image send error at frame " + i + ": " + e.getMessage());
+                }
+            }
+            Thread.sleep(sleepMs);
+        }
+
+        closeHardware();
+        return sent;
+    }
+
+    /**
      * Stream frames with default parameters (entire file, FPS-paced,
      * default progress interval).
      *
@@ -316,6 +393,18 @@ public class VideoStreamAgent extends BaseAgent {
     /** Path to the video file supplied at construction. */
     public Path videoPath() {
         return videoPath;
+    }
+
+        /**
+     * Reset the video file for the next playback without disconnecting.
+     * Call this between loops to swap the source file.
+     * The agent must be connected but not currently streaming.
+     *
+     * @param newPath path to the new video file; must exist
+     */
+    public void resetFile(Path newPath) {
+        closeHardware();
+        this.videoPath = validated(newPath);
     }
 
     // ── Supporting types ──────────────────────────────────────────────────────
@@ -516,6 +605,18 @@ public class VideoStreamAgent extends BaseAgent {
                             + frameNumber + ": " + e.getMessage());
                 }
             }
+            // 2b. Poll motor data and process
+            byte[] motorBytes = pollMotorBytesIfConnected();
+            if (motorBytes != null) {
+                AgentFrame motorFrame = AgentFrame.of(motorBytes);
+                try {
+                    Object commands = mapMotors(motorFrame);
+                    if (commands != null) executeCommands(commands);
+                } catch (Exception e) {
+                    LOG.warning("VideoStreamAgent: motor error at frame "
+                            + frameNumber + ": " + e.getMessage());
+                }
+            }
 
             // 3. Progress reporting (single location — not duplicated anywhere else)
             if (progressInterval > 0 && frameNumber % progressInterval == 0) {
@@ -547,6 +648,137 @@ public class VideoStreamAgent extends BaseAgent {
 
             nextFrame = new Frame(frameNumber, raw.rgbBytes(), raw.width(), raw.height());
         }
+    }
+
+    private byte[] pollMotorBytesIfConnected() {
+        try {
+            return isConnected() ? pollMotorBytes() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static byte[] diffFrames(byte[] curr, byte[] prev, int threshold) {
+        if (prev == null) return curr;
+        byte[] result = new byte[curr.length];
+        for (int i = 0; i < curr.length; i += 3) {
+            int dr = Math.abs((curr[i]   & 0xFF) - (prev[i]   & 0xFF));
+            int dg = Math.abs((curr[i+1] & 0xFF) - (prev[i+1] & 0xFF));
+            int db = Math.abs((curr[i+2] & 0xFF) - (prev[i+2] & 0xFF));
+            int delta = (dr + dg + db) / 3;
+            if (delta >= threshold) {
+                result[i]   = curr[i];
+                result[i+1] = curr[i+1];
+                result[i+2] = curr[i+2];
+            }
+            // else leave as 0 (black = no signal)
+        }
+        return result;
+    }
+
+    @Override
+    protected byte[] serializeSensoryData(Map<String, byte[]> sensorData) {
+        if (sensorData == null || sensorData.isEmpty()) return null;
+        byte[] rgb = sensorData.get(channelName);
+        if (rgb == null || videoProperties == null) return null;
+
+        // Apply frame differencing for webcam/video
+        byte[] processed = diffFrames(rgb, prevFrame, DIFF_THRESHOLD);
+        prevFrame = rgb.clone();
+        rgb = processed;
+
+        int srcW = videoProperties.width();
+        int srcH = videoProperties.height();
+
+        // Images use simple vision (vision_C only)
+        // Videos use segmented vision (all 9 panels)
+        String fileName = videoPath.getFileName().toString().toLowerCase();
+        boolean isImage = fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")
+                || fileName.endsWith(".png") || fileName.endsWith(".bmp");
+
+        if (isImage) {
+            // Images use segmented vision — all 9 panels
+            List<FbcEncoder.CorticalFrame> frames = new ArrayList<>();
+            byte[] center = scaleRgb(rgb, srcW, srcH, 128, 128);
+            frames.add(new FbcEncoder.CorticalFrame(
+                    FbcEncoder.segmentedVisionCorticalId(4), center, 128, 128));
+            int[][] grid = {
+                {0,0},{1,0},{2,0},
+                {0,1},{2,1},
+                {0,2},{1,2},{2,2}
+            };
+            int[] groupIds = {6, 7, 8, 3, 5, 0, 1, 2};
+            for (int i = 0; i < grid.length; i++) {
+                byte[] crop = cropAndScale(rgb, srcW, srcH,
+                        grid[i][0], grid[i][1], 3, 3, 16, 16);
+                frames.add(new FbcEncoder.CorticalFrame(
+                        FbcEncoder.segmentedVisionCorticalId(groupIds[i]), crop, 16, 16));
+            }
+            return fbcEncoder.encodeMultipleFrames(frames);
+        } else {
+             // Webcam/video — send all 9 segmented vision panels
+            List<FbcEncoder.CorticalFrame> frames = new ArrayList<>();
+
+            // Center panel (vision_C, group 4) — full frame scaled down
+            byte[] center = scaleRgb(rgb, srcW, srcH, 128, 128);
+            frames.add(new FbcEncoder.CorticalFrame(
+                    FbcEncoder.segmentedVisionCorticalId(4), center, 128, 128));
+
+            // 8 peripheral panels
+            int[][] grid = {
+                {0,2},{1,2},{2,2},  // BL, BM, BR  → groups 0,1,2
+                {0,1},{2,1},        // ML, MR       → groups 3,5
+                {0,0},{1,0},{2,0}   // TL, TM, TR   → groups 6,7,8
+            };
+            int[] groupIds = {0, 1, 2, 3, 5, 6, 7, 8};
+            for (int i = 0; i < grid.length; i++) {
+                byte[] crop = cropAndScale(rgb, srcW, srcH,
+                        grid[i][0], grid[i][1], 3, 3, 16, 16);
+                frames.add(new FbcEncoder.CorticalFrame(
+                        FbcEncoder.segmentedVisionCorticalId(groupIds[i]), crop, 16, 16));
+            }
+            return fbcEncoder.encodeMultipleFrames(frames);
+        }
+    }
+
+    private static byte[] cropAndScale(byte[] src, int srcW, int srcH,
+            int gridX, int gridY, int gridCols, int gridRows,
+            int dstW, int dstH) {
+        // Source region for this grid cell
+        int regionW = srcW / gridCols;
+        int regionH = srcH / gridRows;
+        int startX  = gridX * regionW;
+        int startY  = gridY * regionH;
+
+        byte[] dst = new byte[dstW * dstH * 3];
+        for (int y = 0; y < dstH; y++) {
+            for (int x = 0; x < dstW; x++) {
+                int srcX = startX + x * regionW / dstW;
+                int srcY = startY + y * regionH / dstH;
+                int srcIdx = (srcY * srcW + srcX) * 3;
+                int dstIdx = (y * dstW + x) * 3;
+                dst[dstIdx]     = src[srcIdx];
+                dst[dstIdx + 1] = src[srcIdx + 1];
+                dst[dstIdx + 2] = src[srcIdx + 2];
+            }
+        }
+        return dst;
+    }
+
+    private static byte[] scaleRgb(byte[] src, int srcW, int srcH, int dstW, int dstH) {
+        byte[] dst = new byte[dstW * dstH * 3];
+        for (int y = 0; y < dstH; y++) {
+            for (int x = 0; x < dstW; x++) {
+                int srcX = x * srcW / dstW;
+                int srcY = y * srcH / dstH;
+                int srcIdx = (srcY * srcW + srcX) * 3;
+                int dstIdx = (y * dstW + x) * 3;
+                dst[dstIdx]     = src[srcIdx];
+                dst[dstIdx + 1] = src[srcIdx + 1];
+                dst[dstIdx + 2] = src[srcIdx + 2];
+            }
+        }
+        return dst;
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────

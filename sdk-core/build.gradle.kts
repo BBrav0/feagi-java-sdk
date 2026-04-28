@@ -21,5 +21,7 @@ sourceSets {
 dependencies {
     // Intentionally minimal for the skeleton.
     implementation("org.zeromq:jeromq:0.6.0")
+    implementation("com.google.code.gson:gson:2.10.1")
+    compileOnly("org.bytedeco:javacv-platform:1.5.10")
 }
 

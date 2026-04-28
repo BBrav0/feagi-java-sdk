@@ -31,9 +31,14 @@ hs_err_pid*
 *.dylib
 *.dll
 *.jnilib
+*.exp
+*.lib
+*.obj
+*.cpp
 
 # FEAGI runtime (created by `feagi init`)
 .feagi/
+.genome/
 
 # AI context file — per-developer, not tracked
 /CLAUDE.md
@@ -41,10 +46,23 @@ hs_err_pid*
 
 # Python SDK reference — local only
 /python-sdk-reference/
+/python sdk for reference/
 
 # Verification artifacts
 *.jsh
 feagi-discovery-verification-log.txt
 
-# Python SDK reference (legacy path) — local only
-/python sdk for reference/
+# Temporary/generated files
+essential_genome.json
+openapi.json
+swagger.html
+
+# Stray files from terminal copy-paste
+Copyright
+Creating
+Microsoft
+cd
+cl
+
+# Native JNI build artifacts
+feagi_jni.*
