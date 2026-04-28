@@ -36,6 +36,11 @@ hs_err_pid*
 *.obj
 *.cpp
 
+# Allow native libs in sdk-native main resources (committed for packaging)
+!sdk-native/src/main/resources/native/**/*.so
+!sdk-native/src/main/resources/native/**/*.dylib
+!sdk-native/src/main/resources/native/**/*.dll
+
 # FEAGI runtime (created by `feagi init`)
 .feagi/
 .genome/

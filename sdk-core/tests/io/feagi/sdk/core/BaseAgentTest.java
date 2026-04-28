@@ -146,7 +146,7 @@ class BaseAgentTest {
                     Duration.ZERO, Duration.ofSeconds(5), 3,
                     Duration.ofMillis(500),
                     new SensorySocketConfig(1000, 0, true),
-                    new MotorSocketConfig(1000, 0));
+                    new MotorSocketConfig(1000, 0, true));
         }
     }
 

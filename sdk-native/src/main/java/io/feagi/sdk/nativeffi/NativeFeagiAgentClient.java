@@ -615,7 +615,7 @@ public final class NativeFeagiAgentClient implements FeagiAgentClient {
         });
         heartbeatExecutor.scheduleAtFixedRate(
                 this::sendHeartbeat, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
-        // Warn at startup so callers who set a positive heartbeatInterval without reading
+        // [WARNING] Warn at startup so callers who set a positive heartbeatInterval without reading
         // the sendHeartbeat() comment are alerted to the semantic risk. Remove this warning
         // once feagiClientHeartbeat() is available in feagi_java_ffi.h and wired here.
         LOG.warning("NativeFeagiAgentClient: heartbeat started using empty sensory payload "

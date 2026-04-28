@@ -1,0 +1,12 @@
+commands:
+  build: cmd /c "cd /d C:\Users\bendc\Documents\GitHub\feagi-java-sdk && gradlew.bat build"
+  compile: cmd /c "cd /d C:\Users\bendc\Documents\GitHub\feagi-java-sdk && gradlew.bat compileJava"
+  test: cmd /c "cd /d C:\Users\bendc\Documents\GitHub\feagi-java-sdk && gradlew.bat build"
+  test_core: cmd /c "cd /d C:\Users\bendc\Documents\GitHub\feagi-java-sdk && gradlew.bat :sdk-core:test"
+  test_native_compile: cmd /c "cd /d C:\Users\bendc\Documents\GitHub\feagi-java-sdk && gradlew.bat :sdk-native:compileTestJava"
+  jar_core: cmd /c "cd /d C:\Users\bendc\Documents\GitHub\feagi-java-sdk && gradlew.bat :sdk-core:jar"
+  jar_native: cmd /c "cd /d C:\Users\bendc\Documents\GitHub\feagi-java-sdk && gradlew.bat :sdk-native:jar"
+  native_jars: cmd /c "cd /d C:\Users\bendc\Documents\GitHub\feagi-java-sdk && gradlew.bat :sdk-native:nativeJars"
+  clean: cmd /c "cd /d C:\Users\bendc\Documents\GitHub\feagi-java-sdk && gradlew.bat clean"
+
+services: {}

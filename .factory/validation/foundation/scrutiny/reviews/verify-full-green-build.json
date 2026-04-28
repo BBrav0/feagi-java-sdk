@@ -1,0 +1,33 @@
+{
+  "featureId": "verify-full-green-build",
+  "reviewedAt": "2026-04-18T20:50:00.000Z",
+  "commitId": "9ec76d7",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Minimal, correct 2-line fix to sdk-native/build.gradle.kts. The cmakeAvailable check now requires feagiFfiIncludeDir.exists() via short-circuit AND before attempting the cmake PATH check. This ensures cmake tasks are only registered when BOTH the FFI include directory exists AND cmake is on PATH. The logic handles all four boolean combinations correctly. The full build passes cleanly: 960 tests, 0 failures, 0 errors, 2 skipped.",
+    "issues": [
+      {
+        "file": "sdk-native/build.gradle.kts",
+        "line": 97,
+        "severity": "non_blocking",
+        "description": "The else-branch log message says 'cmake not found on PATH' but the condition now checks two things (directory existence AND cmake availability). When the real reason for skipping is a missing feagi-java-ffi directory (not cmake), the message is misleading. Consider updating to: 'sdk-native: feagi-java-ffi not found or cmake not on PATH — skipping native JNI build tasks'."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The AGENTS.md says 'The sdk-native build task has a dependsOn(cmakeBuild) hook that will fail without cmake — this must be made conditional'. This is now fully resolved (the hook is conditional on both cmake + FFI dir). AGENTS.md could be updated to note this is done, preventing future workers from re-investigating.",
+      "evidence": "AGENTS.md line about cmake hook vs. sdk-native/build.gradle.kts showing the conditional is now in place with both checks."
+    },
+    {
+      "area": "skills",
+      "observation": "Feature skillName is 'java-worker' but the actual change was a Gradle build script modification (build.gradle.kts). The 'config-worker' skill would have been more appropriate. The worker still followed procedure correctly since the java-worker skill's steps are general enough to cover this.",
+      "evidence": "features.json has skillName: 'java-worker', but commit 9ec76d7 only changes sdk-native/build.gradle.kts (a Kotlin DSL build config file, not Java source/test code)."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Clean pass. The 2-line change correctly adds feagiFfiIncludeDir.exists() as a short-circuit AND condition before the cmake PATH check, ensuring cmake tasks only register when both prerequisites are met. The full clean build succeeds with 960 tests passing (0 failures). One non-blocking cosmetic issue: the else-branch log message doesn't distinguish between missing cmake vs. missing FFI directory."
+}

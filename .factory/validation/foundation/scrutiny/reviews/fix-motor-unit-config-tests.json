@@ -1,0 +1,39 @@
+{
+  "featureId": "fix-motor-unit-config-tests",
+  "reviewedAt": "2026-04-18T20:50:00.000Z",
+  "commitId": "e8be614",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All stale API references (minRange, maxRange, bidirectional) properly updated in MotorUnitConfigTest.java. equals/hashCode/toString implementations added to MotorUnitConfig.java following the exact same pattern as VisionUnitConfig and SensorySocketConfig (instanceof pattern matching, Objects.hash, string concatenation). All 5 fields included in all three methods. Worker also proactively fixed 4 other test files (AgentCapabilitiesUnitSupportTest, BaseAgentTest, FeagiClientConfigTest, ZmqTransportTest) to unblock compileTestJava, which was required for the verification steps. Test coverage is solid: 11 test methods covering builder defaults, servo/rotary/stepper configs, individual setters, null/empty type validation, min>max validation, unit/group out-of-range validation, equals/hashCode equality and inequality, and toString format.",
+    "issues": [
+      {
+        "file": "sdk-core/tests/io/feagi/sdk/core/MotorUnitConfigTest.java",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "equals() tests only cover one inequality case (type differs). Missing: equals(null), equals(different-type-object), and inequality tests for each individual field (minValue, maxValue, unit, group differ). This is adequate for the feature scope but leaves some equals contract edge cases untested."
+      },
+      {
+        "file": "sdk-core/tests/io/feagi/sdk/core/MotorUnitConfigTest.java",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "No test for NaN range values. The MotorUnitConfig constructor validates against NaN (throws IllegalArgumentException), but no test exercises this code path."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Worker discovered that compileTestJava compiles ALL test files together, meaning fixing one test file is insufficient if other test files have errors. The worker proactively fixed 4 additional test files (AgentCapabilitiesUnitSupportTest, BaseAgentTest, FeagiClientConfigTest, ZmqTransportTest) to unblock compilation. The worker's skillFeedback.suggestedChanges notes this: 'compileTestJava compiles ALL tests together, so fixing one test file may still fail compilation due to other test files, requiring those to be fixed too even if they belong to other features.' The java-worker skill procedure should note this dependency.",
+      "evidence": "Transcript shows worker ran compileTestJava, got 8 errors from other files, then fixed AgentCapabilitiesUnitSupportTest.java, BaseAgentTest.java, FeagiClientConfigTest.java, ZmqTransportTest.java even though they belong to other features (VAL-FOUND-002 through VAL-FOUND-005)."
+    },
+    {
+      "area": "conventions",
+      "observation": "The equals/hashCode/toString pattern for config classes in the codebase uses two styles: older classes (WebSocketRelayConfig, WebSocketEndpoints, etc.) use 'o == null || getClass() != o.getClass()' while newer classes (VisionUnitConfig, SensorySocketConfig, NeuronPotential, MotorUnitConfig) use 'instanceof' pattern matching. Both are valid for final classes. AGENTS.md doesn't specify which pattern to use for equals/hashCode. Not a problem since the newer pattern is cleaner, but the inconsistency exists.",
+      "evidence": "WebSocketRelayConfig.java uses 'if (o == null || getClass() != o.getClass())' while MotorUnitConfig.java, VisionUnitConfig.java use 'if (!(o instanceof MotorUnitConfig that))'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. All 24+ compilation errors eliminated: minRange/maxRange renamed to minValue/maxValue, bidirectional references removed, default range updated from (0,180) to (0,1), type made explicitly required. equals/hashCode/toString correctly implemented following VisionUnitConfig pattern with all 5 fields included. Worker also unblocked compileTestJava by fixing 4 other test files that had separate compilation errors. Two non-blocking observations: (1) equals tests cover limited inequality cases, (2) NaN validation path untested. Both are acceptable for the feature scope."
+}

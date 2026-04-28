@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
@@ -76,13 +78,17 @@ public class DataLogger implements Monitor, AutoCloseable {
     private final boolean includeDataSamples;
     private final int maxSampleSize;
     private final boolean enabled;
+    private final int maxEntries;
+    private final WhenFull whenFull;
 
     private final ConcurrentLinkedQueue<Map<String, Object>> entries;
     private PrintWriter fileHandle;
-    private PrintWriter csvWriter;
     private final AtomicLong packetCounter;
+    private final AtomicLong droppedEntries;
     private final Random random;
     private final Object fileLock = new Object();
+    private final AtomicBoolean closed;
+    private final AtomicInteger entryCount;  // Track entry count to avoid O(n) size() calls
 
     private volatile boolean csvHeaderWritten;
 
@@ -96,6 +102,16 @@ public class DataLogger implements Monitor, AutoCloseable {
         JSONL,
         /** CSV tabular format */
         CSV
+    }
+
+    /**
+     * Behavior when maxEntries limit is reached (JSON format only).
+     */
+    public enum WhenFull {
+        /** Drop oldest entries when limit is reached */
+        DROP_OLDEST,
+        /** Drop new entries when limit is reached */
+        DROP_NEWEST
     }
 
     /**
@@ -113,10 +129,15 @@ public class DataLogger implements Monitor, AutoCloseable {
         this.includeDataSamples = builder.includeDataSamples;
         this.maxSampleSize = builder.maxSampleSize > 0 ? builder.maxSampleSize : 10;
         this.enabled = builder.enabled;
+        this.maxEntries = builder.maxEntries;
+        this.whenFull = builder.whenFull;
 
         this.entries = new ConcurrentLinkedQueue<>();
         this.random = new Random();
         this.packetCounter = new AtomicLong(0);
+        this.droppedEntries = new AtomicLong(0);
+        this.closed = new AtomicBoolean(false);
+        this.entryCount = new AtomicInteger(0);
         this.csvHeaderWritten = false;
 
         // Create output directory if needed
@@ -292,8 +313,25 @@ public class DataLogger implements Monitor, AutoCloseable {
                 }
             }
         } else if (format == Format.JSON) {
-            // JSON array format (accumulate in memory - ConcurrentLinkedQueue is thread-safe)
+            // JSON array format (accumulate in memory - enforce maxEntries limit)
+            if (maxEntries > 0) {
+                // Check if we're at the limit (note: not atomic, may temporarily exceed)
+                while (entryCount.get() >= maxEntries) {
+                    if (whenFull == WhenFull.DROP_OLDEST) {
+                        // Remove oldest entry to make room
+                        if (entries.poll() != null) {
+                            entryCount.decrementAndGet();
+                            droppedEntries.incrementAndGet();
+                        }
+                    } else {
+                        // DROP_NEWEST - skip this entry
+                        droppedEntries.incrementAndGet();
+                        return;
+                    }
+                }
+            }
             entries.add(entry);
+            entryCount.incrementAndGet();
         } else if (format == Format.CSV) {
             // CSV format - synchronized file access
             writeCsvEntry(entry);
@@ -366,30 +404,47 @@ public class DataLogger implements Monitor, AutoCloseable {
     /**
      * Closes the log file and flushes data.
      *
+     * <p>This method is idempotent and thread-safe. Multiple calls will only process
+     * the close operation once. Callers must stop writing entries before calling close()
+     * to ensure all entries are flushed.</p>
+     *
      * @throws IOException if write fails
      */
     @Override
     public void close() throws IOException {
-        if (format == Format.JSON && !entries.isEmpty()) {
+        // Use CAS for idempotent close - ensures only one thread proceeds
+        if (!closed.compareAndSet(false, true)) {
+            return;  // Already closed by another thread
+        }
+
+        if (format == Format.JSON) {
             // Write accumulated entries to JSON file using Gson
-            // Snapshot the queue to avoid concurrent modification
-            List<Map<String, Object>> snapshot = new ArrayList<>(entries);
-            try (PrintWriter writer = new PrintWriter(
-                    Files.newBufferedWriter(outputFile, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))) {
-                writer.println("[");
-                int size = snapshot.size();
-                int i = 0;
-                for (Map<String, Object> entry : snapshot) {
-                    writer.print("  ");
-                    writer.print(GSON.toJson(entry));
-                    if (i < size - 1) {
-                        writer.println(",");
-                    } else {
-                        writer.println();
+            // Drain the queue under synchronization to avoid race conditions
+            List<Map<String, Object>> snapshot;
+            synchronized (fileLock) {
+                snapshot = new ArrayList<>(entries);
+                entries.clear();
+                entryCount.set(0);
+            }
+
+            if (!snapshot.isEmpty()) {
+                try (PrintWriter writer = new PrintWriter(
+                        Files.newBufferedWriter(outputFile, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))) {
+                    writer.println("[");
+                    int size = snapshot.size();
+                    int i = 0;
+                    for (Map<String, Object> entry : snapshot) {
+                        writer.print("  ");
+                        writer.print(GSON.toJson(entry));
+                        if (i < size - 1) {
+                            writer.println(",");
+                        } else {
+                            writer.println();
+                        }
+                        i++;
                     }
-                    i++;
+                    writer.println("]");
                 }
-                writer.println("]");
             }
         }
 
@@ -401,7 +456,11 @@ public class DataLogger implements Monitor, AutoCloseable {
         }
 
         if (enabled) {
-            LOGGER.info("Data logger closed: " + packetCounter.get() + " packets logged");
+            String msg = "Data logger closed: " + packetCounter.get() + " packets logged";
+            if (droppedEntries.get() > 0) {
+                msg += ", " + droppedEntries.get() + " entries dropped (maxEntries limit reached)";
+            }
+            LOGGER.info(msg);
         }
     }
 
@@ -412,6 +471,15 @@ public class DataLogger implements Monitor, AutoCloseable {
      */
     public long getPacketCount() {
         return packetCounter.get();
+    }
+
+    /**
+     * Returns the number of entries dropped due to maxEntries limit (JSON format only).
+     *
+     * @return dropped entry count
+     */
+    public long getDroppedEntryCount() {
+        return droppedEntries.get();
     }
 
     /**
@@ -426,6 +494,8 @@ public class DataLogger implements Monitor, AutoCloseable {
         private boolean includeDataSamples = false;
         private int maxSampleSize = 10;
         private boolean enabled = true;
+        private int maxEntries = 0;  // 0 = unlimited
+        private WhenFull whenFull = WhenFull.DROP_OLDEST;
 
         /**
          * Sets the output file path.
@@ -512,6 +582,38 @@ public class DataLogger implements Monitor, AutoCloseable {
          */
         public Builder enabled(boolean enabled) {
             this.enabled = enabled;
+            return this;
+        }
+
+        /**
+         * Sets the maximum number of entries to keep in memory (JSON format only).
+         *
+         * <p>When the limit is reached, the behavior is determined by {@link #whenFull(WhenFull)}.
+         * Default is 0 (unlimited).</p>
+         *
+         * @param maxEntries maximum entries (0 = unlimited, must be >= 0)
+         * @return this builder
+         * @throws IllegalArgumentException if maxEntries is negative
+         */
+        public Builder maxEntries(int maxEntries) {
+            if (maxEntries < 0) {
+                throw new IllegalArgumentException("maxEntries must be >= 0, got: " + maxEntries);
+            }
+            this.maxEntries = maxEntries;
+            return this;
+        }
+
+        /**
+         * Sets the behavior when maxEntries limit is reached (JSON format only).
+         *
+         * <p>Default is {@link WhenFull#DROP_OLDEST}.</p>
+         *
+         * @param whenFull the behavior when full
+         * @return this builder
+         * @throws NullPointerException if whenFull is null
+         */
+        public Builder whenFull(WhenFull whenFull) {
+            this.whenFull = Objects.requireNonNull(whenFull, "whenFull must not be null");
             return this;
         }
 

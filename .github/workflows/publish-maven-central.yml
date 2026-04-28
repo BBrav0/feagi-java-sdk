@@ -1,0 +1,167 @@
+# Publish FEAGI Java SDK to Maven Central
+#
+# Workflow Structure:
+# 1. Checkout repository
+# 2. Set up JDK 17 with Maven cache and server credentials
+# 3. (Conditional) Download native binaries from remote source
+# 4. Validate native binaries exist for all 5 supported platforms
+# 5. Import GPG signing key
+# 6. Deploy all artifacts (sdk-core, sdk-native + classified JARs, sources, javadocs)
+#
+# Triggers:
+# - Automatically on GitHub Release publication
+# - Manually via workflow_dispatch with optional native_binary_source input
+#
+# Required GitHub Secrets:
+# - OSSRH_USERNAME: Sonatype Central portal token username
+# - OSSRH_TOKEN: Sonatype Central portal token password
+# - MAVEN_GPG_PRIVATE_KEY: Base64-encoded GPG armored private key for signing
+# - MAVEN_GPG_PASSPHRASE: Passphrase for the GPG key
+
+name: Publish to Maven Central
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      native_binary_source:
+        description: >
+          Source for pre-built native binaries.
+          Use 'local' to use binaries already present in the repository,
+          or provide a base URL to download them from (e.g., https://example.com/binaries/).
+        required: true
+        default: 'local'
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # ── Step 1: Checkout ─────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Step 2: Set up JDK 17 with Maven cache ────────────────────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+
+      # ── Step 3: Download native binaries (skipped when source is 'local') ────
+      # When native_binary_source is not 'local', binaries are fetched from the
+      # provided base URL and placed under sdk-native/src/main/resources/native/.
+      # Expected URL pattern: <base_url>/<platform>/<libname>
+      # Supported platforms: linux-x86_64, linux-aarch64, osx-x86_64, osx-aarch64, windows-x86_64
+      - name: Download native binaries
+        if: ${{ github.event.inputs.native_binary_source != 'local' && github.event.inputs.native_binary_source != '' }}
+        run: |
+          BASE_URL="${{ github.event.inputs.native_binary_source }}"
+          # Strip trailing slash from base URL if present
+          BASE_URL="${BASE_URL%/}"
+
+          echo "Downloading native binaries from: ${BASE_URL}"
+
+          # Define platform-to-library-filename mapping
+          declare -A PLATFORM_LIBS=(
+            ["linux-x86_64"]="libfeagi_java_ffi.so"
+            ["linux-aarch64"]="libfeagi_java_ffi.so"
+            ["osx-x86_64"]="libfeagi_java_ffi.dylib"
+            ["osx-aarch64"]="libfeagi_java_ffi.dylib"
+            ["windows-x86_64"]="feagi_java_ffi.dll"
+          )
+
+          for PLATFORM in "${!PLATFORM_LIBS[@]}"; do
+            LIB="${PLATFORM_LIBS[$PLATFORM]}"
+            DEST_DIR="sdk-native/src/main/resources/native/${PLATFORM}"
+            DEST_FILE="${DEST_DIR}/${LIB}"
+            URL="${BASE_URL}/${PLATFORM}/${LIB}"
+
+            mkdir -p "${DEST_DIR}"
+            echo "  Downloading ${URL} -> ${DEST_FILE}"
+            curl -fsSL --output "${DEST_FILE}" "${URL}" || {
+              echo "ERROR: Failed to download ${URL}"
+              exit 1
+            }
+          done
+
+          echo "All native binaries downloaded successfully."
+
+      # ── Step 4: Validate native binaries exist for all 5 platforms ───────────
+      # This step runs for both 'local' and remote-download scenarios.
+      # If any platform's native library is missing, the workflow fails with
+      # a descriptive error listing which platforms are absent.
+      - name: Validate native binaries
+        run: |
+          NATIVE_ROOT="sdk-native/src/main/resources/native"
+          MISSING=()
+
+          # Expected native library file per platform
+          declare -A PLATFORM_LIBS=(
+            ["linux-x86_64"]="libfeagi_java_ffi.so"
+            ["linux-aarch64"]="libfeagi_java_ffi.so"
+            ["osx-x86_64"]="libfeagi_java_ffi.dylib"
+            ["osx-aarch64"]="libfeagi_java_ffi.dylib"
+            ["windows-x86_64"]="feagi_java_ffi.dll"
+          )
+
+          for PLATFORM in "${!PLATFORM_LIBS[@]}"; do
+            LIB="${PLATFORM_LIBS[$PLATFORM]}"
+            EXPECTED="${NATIVE_ROOT}/${PLATFORM}/${LIB}"
+            if [ ! -f "${EXPECTED}" ]; then
+              MISSING+=("${EXPECTED}")
+            fi
+          done
+
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "ERROR: The following native library files are missing:"
+            for F in "${MISSING[@]}"; do
+              echo "  - ${F}"
+            done
+            echo ""
+            echo "To resolve this:"
+            echo "  - If binaries are checked into the repo, ensure they are committed and pushed."
+            echo "  - If using remote binaries, provide a valid 'native_binary_source' URL when"
+            echo "    triggering the workflow via workflow_dispatch."
+            exit 1
+          fi
+
+          echo "All 5 platform native libraries validated successfully:"
+          for PLATFORM in "${!PLATFORM_LIBS[@]}"; do
+            LIB="${PLATFORM_LIBS[$PLATFORM]}"
+            echo "  ✓ ${NATIVE_ROOT}/${PLATFORM}/${LIB}"
+          done
+
+      # ── Step 5: Import GPG signing key ────────────────────────────────────────
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | base64 --decode | gpg --batch --import
+
+      # ── Step 6: Deploy all artifacts to Maven Central ─────────────────────────
+      # Runs with -Prelease which activates:
+      # - maven-source-plugin (sources JAR)
+      # - maven-javadoc-plugin (javadoc JAR)
+      # - maven-gpg-plugin (GPG signatures)
+      # - maven-assembly-plugin (5 platform-classified native JARs for sdk-native)
+      - name: Publish signed artifacts
+        env:
+          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.OSSRH_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: >
+          mvn -B
+          -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}"
+          --batch-mode
+          --no-transfer-progress
+          -Dgpg.pinEntryMode=loopback
+          -Prelease
+          clean deploy

@@ -1,0 +1,21 @@
+{
+  "featureId": "relocate-native-libs",
+  "reviewedAt": "2026-04-18T21:35:00.000Z",
+  "commitId": "db83976",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation correctly relocates native library placeholder files from sdk-native/src/test/resources/native/ to sdk-native/src/main/resources/native/ for all 5 platforms (linux-x86_64, linux-aarch64, osx-x86_64, osx-aarch64, windows-x86_64). The .gitignore is properly updated with negation rules that override the global *.so/*.dylib/*.dll ignore patterns, and the rules are placed in the correct order (after the global ignores). The sdk-native/build.gradle.kts correctly excludes native/** from the default JAR task, ensuring the main JAR contains only Java classes while platform-classified JARs (handled separately by Maven assembly-plugin) will include platform-specific native libs. Test resources at src/test/resources/native/ are preserved for test compatibility. All 5 native lib files are tracked by git (verified via git ls-files and git check-ignore). The exclude pattern 'native/**' in tasks.jar only affects JAR output, not the test classpath, so existing tests continue to work. The resource path structure (native/{platform}/{libfilename}) is consistent with FeagiNativeLibrary.extractAndLoadFromClasspath() which looks up 'native/' + platform + '/' + libFilename.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The native lib files committed to src/main/resources/native/ are text-based placeholder files (e.g. containing 'not-a-native-library', 'placeholder linux-x86_64'), not actual binary libraries. This is correct for the current dev stage but AGENTS.md doesn't document that these are placeholders to be replaced by real compiled binaries later (likely via CI). Future workers should know these are stand-ins.",
+      "evidence": "git show db83976 shows file contents like '+not-a-native-library' and '+placeholder linux-x86_64' for the .so/.dylib/.dll files"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Clean implementation that fully satisfies all feature requirements. Native libs are correctly placed in 5 platform subdirectories under src/main/resources/native/, .gitignore negation rules properly track them, the default JAR excludes native files, test resources are preserved, and the resource path structure matches the FeagiNativeLibrary loader. No blocking issues found."
+}

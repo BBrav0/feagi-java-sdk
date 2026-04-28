@@ -87,8 +87,8 @@ class AgentCapabilitiesUnitSupportTest {
 
             assertNotNull(caps.motorUnit());
             assertEquals("servo", caps.motorUnit().type());
-            assertEquals(0.0, caps.motorUnit().minRange());
-            assertEquals(180.0, caps.motorUnit().maxRange());
+            assertEquals(0.0, caps.motorUnit().minValue());
+            assertEquals(180.0, caps.motorUnit().maxValue());
             assertTrue(caps.hasMotorUnit());
             assertTrue(caps.motorUnits().isEmpty());
         }
@@ -132,7 +132,6 @@ class AgentCapabilitiesUnitSupportTest {
             MotorUnitConfig rotaryMotor = MotorUnitConfig.builder()
                 .type("rotary")
                 .range(-1.0, 1.0)
-                .bidirectional(true)
                 .unit(1)
                 .group(1)
                 .build();
@@ -151,7 +150,6 @@ class AgentCapabilitiesUnitSupportTest {
 
             MotorUnitConfig second = motorUnits.get(1);
             assertEquals("rotary", second.type());
-            assertTrue(second.isBidirectional());
 
             assertTrue(caps.hasMotorUnits());
             assertFalse(caps.hasMotorUnit());
@@ -171,11 +169,11 @@ class AgentCapabilitiesUnitSupportTest {
         @DisplayName("should return unmodifiable motorUnits list")
         void shouldReturnUnmodifiableMotorUnitsList() {
             AgentCapabilities caps = AgentCapabilities.builder()
-                .addMotorUnit(MotorUnitConfig.builder().build())
+                .addMotorUnit(MotorUnitConfig.builder().type("servo").build())
                 .build();
 
             assertThrows(UnsupportedOperationException.class, () ->
-                caps.motorUnits().add(MotorUnitConfig.builder().build())
+                caps.motorUnits().add(MotorUnitConfig.builder().type("servo").build())
             );
         }
     }
@@ -205,7 +203,6 @@ class AgentCapabilitiesUnitSupportTest {
             MotorUnitConfig rotaryMotor = MotorUnitConfig.builder()
                 .type("rotary")
                 .range(-1.0, 1.0)
-                .bidirectional(true)
                 .unit(1)
                 .group(1)
                 .build();

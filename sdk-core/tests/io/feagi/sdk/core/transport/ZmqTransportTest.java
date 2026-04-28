@@ -45,7 +45,7 @@ public class ZmqTransportTest {
 
     private static final Duration ONE_SECOND = Duration.ofSeconds(1);
     private static final SensorySocketConfig DEFAULT_SENSORY_SOCKET = new SensorySocketConfig(1, 0, false);
-    private static final MotorSocketConfig DEFAULT_MOTOR_SOCKET = new MotorSocketConfig(1, 0);
+    private static final MotorSocketConfig DEFAULT_MOTOR_SOCKET = new MotorSocketConfig(1, 0, false);
 
     private ZContext feagiContext;
     private ZMQ.Socket mockFeagiSensorySocket;
